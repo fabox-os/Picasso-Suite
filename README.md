@@ -86,8 +86,8 @@ FFmpeg is included in all of them.
 | OS | Package | Install |
 |---|---|---|
 | Windows | `picasso-suite-0.6.3-windows.zip` | Unzip the whole folder and run `picasso-suite.exe` |
-| macOS (Apple silicon and Intel) | `picasso-suite-0.6.3-macos-universal.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); Intel Macs need macOS 15 or newer |
-| macOS (Apple silicon only) | `picasso-suite-0.6.3-macos-arm64.zip` | Unzip, move to Applications, right-click → Open (the app is not signed) |
+| macOS (Apple silicon and Intel) | `picasso-suite-0.6.3-macos-universal.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); needs macOS 15 or newer (0.6.3 and later; 0.6.2 and earlier ran on macOS 14 on Apple silicon) |
+| macOS (Apple silicon only) | `picasso-suite-0.6.3-macos-arm64.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); needs macOS 15 or newer |
 | Debian/Ubuntu (22.04 or newer) | `picasso-suite-0.6.3-amd64.deb` | `sudo apt install ./picasso-suite-0.6.3-amd64.deb` |
 | Fedora/openSUSE | `picasso-suite-0.6.3-x86_64.rpm` | `sudo dnf install ./picasso-suite-0.6.3-x86_64.rpm` (openSUSE: `sudo zypper install`) |
 | Any Linux | `picasso-suite-0.6.3.flatpak` | `flatpak install ./picasso-suite-0.6.3.flatpak` |
