@@ -14,6 +14,13 @@ Picasso Suite 0.6.3 makes **File > Media Management...** cover the whole media p
 - ✅ **Linux, Wayland: a note on lost drops:** **File > Media Management...** says on a Wayland desktop that files dragged from the file manager may not arrive, and points at **File > Import** and a session on Xorg.
 - ✅ **Tests that make a video or a tone no longer fail at random:** the tests that write a file with ffmpeg wrote the same file in the temp folder and ran at the same time, so one could read it while another rewrote it; each test has a file of its own now.
 
+### ⚠️ Known limitations
+- ❌ **The Wayland drop change and the monitor crash fix** have not been tried on a real Wayland desktop or on the Intel graphics that crashed: they are checked by tests of the list reading and by compiling for Linux only. A large drag can still lose files; the session log says why.
+- ❌ **A native Wayland window** still takes no dropped files (winit 0.30), so the window opens through XWayland until winit supports it.
+- ❌ **The Apple silicon app needs macOS 15 or newer:** a Mac on macOS 14 or older stays on 0.6.2.
+- ❌ **Optimise All** now makes a copy of every video of the media pool, which takes long on a big project (Cancel stops it); Archive Project still copies only the files the timelines use.
+- ❌ **The packages** were built and started by the release checks (the Linux ones in containers, the macOS ones on GitHub's machines), not tried by hand on real Macs or Linux desktops.
+
 ## 0.6.2
 
 Picasso Suite 0.6.2 is the biggest update since 0.6.0: the program can be shown in 39 languages (**Help > Language**, kept for the next start), videos can have small Optimised Media copies for smooth scrubbing, work is saved by autosave and can be recovered, missing media can be relinked and a project archived, and the updater is safer. It also fixes exports that read back one frame short and menus that did not open on two pages. The project file format is the same as in 0.6.1.
