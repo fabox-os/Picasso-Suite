@@ -843,7 +843,9 @@ fn revert_goes_back_to_what_was_opened() {
 /// Makes a two-second 24 fps clip with the `ffmpeg` program; `None` when it is not installed.
 #[cfg(not(target_arch = "wasm32"))]
 fn video_file() -> Option<String> {
-    let path = std::env::temp_dir().join("picasso_ui_video_test.mp4");
+    // One file for each test (see `video_with_sound`).
+    let test = std::thread::current().name().unwrap_or("test").replace("::", "_");
+    let path = std::env::temp_dir().join(format!("picasso_ui_video_test_{test}.mp4"));
     std::process::Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
         .arg("testsrc=duration=2:size=320x180:rate=24")
@@ -935,7 +937,10 @@ fn playing_a_video_never_blocks_drawing() {
 /// A clip with a picture and a 440 Hz tone, for the sound tests.
 #[cfg(not(target_arch = "wasm32"))]
 fn video_with_sound() -> Option<String> {
-    let path = std::env::temp_dir().join("picasso_ui_sound_test.mp4");
+    // One file for each test: they run at the same time, and one writing the file again while
+    // another imports it left the other with an empty timeline.
+    let test = std::thread::current().name().unwrap_or("test").replace("::", "_");
+    let path = std::env::temp_dir().join(format!("picasso_ui_sound_test_{test}.mp4"));
     std::process::Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
         .arg("testsrc=duration=2:size=64x64:rate=24")
@@ -992,7 +997,9 @@ fn a_video_with_sound_gets_a_waveform_and_a_play_plan() {
 /// A two-second WAV tone; `None` when the `ffmpeg` program is not installed.
 #[cfg(not(target_arch = "wasm32"))]
 fn tone_file() -> Option<String> {
-    let path = std::env::temp_dir().join("picasso_ui_tone_test.wav");
+    // One file for each test (see `video_with_sound`).
+    let test = std::thread::current().name().unwrap_or("test").replace("::", "_");
+    let path = std::env::temp_dir().join(format!("picasso_ui_tone_test_{test}.wav"));
     std::process::Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
         .arg("sine=frequency=440:duration=2:sample_rate=44100")

@@ -70,7 +70,7 @@ the old address; not tried).
    ```yaml
    - type: git
      url: https://github.com/fabox-os/Picasso-Suite.git
-     tag: v0.6.2
+     tag: v0.6.3
      commit: <the tag's full commit id>
    ```
    Open the pull request against the `new-pr` branch, following

@@ -606,16 +606,19 @@ fn signature<'a>(
 }
 
 impl StudioApp {
-    /// The video files the project's timelines use, as they are on disk.
-    pub(crate) fn project_videos(&self) -> Vec<String> {
+    /// The video files in the media pool, used on a timeline or not, as they are on disk. A file
+    /// imported twice is listed once. This is what Media Management lists, makes copies of and
+    /// deletes copies of, as the viewer reads a copy for any video of the pool.
+    pub(crate) fn pool_videos(&self) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
         self.project()
-            .media_used()
+            .media
             .iter()
-            .filter_map(|m| self.project().media(*m))
             .filter_map(|m| match &m.source {
                 picasso_core::MediaSource::Video { path } => Some(path.clone()),
                 _ => None,
             })
+            .filter(|path| seen.insert(path.clone()))
             .collect()
     }
 
@@ -680,11 +683,11 @@ impl StudioApp {
         }
     }
 
-    /// The video files the timelines use that have no copy yet, and are not being made.
+    /// The video files of the media pool that have no copy yet, and are not being made.
     /// Files that are not on disk (offline) are skipped: there is nothing to read a copy from,
     /// and Optimised Media is only for files that play.
     pub(crate) fn optimise_wanted(&self) -> Vec<String> {
-        self.project_videos()
+        self.pool_videos()
             .into_iter()
             .filter(|path| Path::new(path).is_file())
             .filter(|path| self.proxies.path_for(path).is_none())
@@ -693,7 +696,7 @@ impl StudioApp {
             .collect()
     }
 
-    /// Makes the copies of the video files the timelines use, one after another.
+    /// Makes the copies of the video files of the media pool, one after another.
     pub(crate) fn optimise_media(&mut self) {
         #[cfg(target_arch = "wasm32")]
         {
@@ -707,7 +710,7 @@ impl StudioApp {
             }
             let wanted = self.optimise_wanted();
             if wanted.is_empty() {
-                self.info("Every video the timelines use has an optimised copy");
+                self.info("Every video in the media pool has an optimised copy");
                 return;
             }
             for path in &wanted {
@@ -782,9 +785,9 @@ impl StudioApp {
         }
     }
 
-    /// Deletes the copies of the video files the timelines use.
+    /// Deletes the copies of the video files of the media pool.
     pub(crate) fn forget_proxies(&mut self) {
-        let wanted = self.project_videos();
+        let wanted = self.pool_videos();
         let mut gone = 0;
         for (source, _) in self.proxies.copies() {
             if wanted.contains(&source) {
@@ -795,7 +798,7 @@ impl StudioApp {
         self.proxies.save();
         self.refresh_proxies();
         if gone == 0 {
-            self.info("The timelines' video files have no optimised copy");
+            self.info("The media pool's video files have no optimised copy");
         } else {
             self.info(format!("Deleted {gone} optimised copy(ies)"));
         }
@@ -1198,6 +1201,37 @@ mod tests {
         // Once it is in line it is not asked for again.
         app.proxy_jobs.enqueue(&two);
         assert!(app.optimise_wanted().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_video_in_the_pool_on_no_timeline_is_optimised_and_deleted_like_the_others() {
+        let dir = scratch("pool");
+        let used = source(&dir, "A001.mov");
+        let unused = source(&dir, "A002.mov");
+        let mut app = app_with_video(&used);
+        // Imported to the pool, never put on a timeline; and the same file imported again.
+        for name in ["A002", "A002 again"] {
+            app.run(picasso_core::Command::AddMedia {
+                name: name.into(),
+                source: picasso_core::MediaSource::Video {
+                    path: unused.clone(),
+                },
+                length: Some(50),
+                default_duration: 50,
+            })
+            .expect("the file was added");
+        }
+        assert_eq!(app.pool_videos(), vec![used.clone(), unused.clone()], "each file once");
+        assert_eq!(app.optimise_wanted(), vec![used.clone(), unused.clone()]);
+
+        // A copy of the unused one is read by the viewer, listed, and deleted by Delete Copies.
+        let place = with_copy(&mut app, &dir, &unused);
+        assert_eq!(app.optimise_wanted(), vec![used.clone()], "only the other one is wanted");
+        assert!(app.cache.copy_for(&unused).is_some());
+        app.forget_proxies();
+        assert!(!place.is_file(), "the copy of a video on no timeline goes too");
+        assert_eq!(app.cache.copy_for(&unused), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

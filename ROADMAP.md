@@ -1,6 +1,6 @@
 # Roadmap
 
-Status at 0.6.2.
+Status at 0.6.3.
 
 ## Done
 
@@ -72,8 +72,14 @@ Status at 0.6.2.
 - [x] Editing: Timeline > New Effects Clip (`Alt+Shift+E`; a transparent clip on a free video track whose grade, effects, transform, opacity and blend mode apply to the composite of the tracks below; one undo, adds no timeline; written to OpenTimelineIO, left out of XML and AAF)
 - [x] Interface: "Exit Picasso Suite?" when the window is closed with unsaved changes (Exit without saving, or Save Project and then exit), in the same box as the frame rate question
 - [x] Interface: Help > Language: the menus and the pages in Español, Português, Français, Deutsch, Italiano, Nederlands, Polski, Türkçe, Svenska, Norsk, Русский, Українська, Ελληνικά, Dansk, Suomi, Bahasa Indonesia, Čeština, Slovenčina, Română, Magyar, Hrvatski, Bosanski, Српски, Català, Eesti, Latviešu, Lietuvių, Íslenska, Lëtzebuergesch, Shqip, Filipino, Tiếng Việt, 한국어, বাংলা, ไทย, 中文, 日本語, العربية and हिन्दी, English (Default) first, kept for the next start; a translation is never wider than the English, a long word is a short form (`scripts/i18n`)
-- [x] Performance: Optimised Media: small H.264 copies of video files (1280 px, a key frame every 8 pictures) in the data folder, used by the viewer and the timeline with Playback > Use Optimised Media; File > Media Management lists, makes and deletes them
+- [x] Performance: Optimised Media: small H.264 copies of video files (1280 px, a key frame every 8 pictures) in the data folder, used by the viewer and the timeline with Playback > Use Optimised Media; File > Media Management lists, makes and deletes them for every video of the media pool, on a timeline or not (a file imported twice once), as Resolve does
 - [x] Editing: Clip > Auto Align Clips > Based on Waveform (GCC-PHAT on the voice band; the earliest clip stays, one undo step, refused when no sound is clearly shared)
+- [x] Project: autosave every minute beside the project file with "Recover unsaved changes?" at the next open; File > Media Management: Relink Missing Media (matched by name, never guessed when two files share one) and Archive Project (the files the timelines use copied into a folder with a project that points at them)
+- [x] Performance: Optimised Media can be cancelled, and a file with a variable frame rate is read as it is instead of getting a constant-rate copy a frame off
+- [x] Security: the updater downloads over HTTPS only, takes only a plain package file name from GitHub and works in a private folder nobody can guess; the optimised media index can only name files inside its folder
+- [x] Fixes: the Edit page's Inspector scrolls with the wheel (it shared an id with another list; a test now checks that no page draws two widgets with one id); its Effects button opens the Inspector instead of jumping to Fusion; menus open on the Media and Deliver pages; exports no longer read back one frame short
+- [x] Development: the tests that make a video or a tone with ffmpeg each write a file of their own, so the whole suite no longer fails at random when they run at the same time
+- [x] Linux: the program no longer closes when the X server cannot list the monitors (`RandrBadCrtc` on Intel graphics made winit panic, even at the start; it logs a warning and carries on), from a copy of winit 0.30.13 in `third_party/winit`
 
 ## To do
 
@@ -84,12 +90,12 @@ Status at 0.6.2.
 - [ ] Multicam: sync by timecode or waveform, live angle previews, switching sound
 - [ ] Audio: choosing the input device, the "Bus 1 -> Auto" output, ADR, audio effect cache, link groups
 - [ ] Performance: optimised media's menu items and Media Management section are translated (the Cancel button and the "Read as it is" state are done: a copy can be stopped, and a variable frame rate file is read as it is)
-- [ ] Project: libraries, archives, media management, metadata import/export, Lightbox, dual screen, clean feed
+- [ ] Project: libraries, metadata import/export, Lightbox, dual screen, clean feed
 - [ ] Help: tutorials (the Welcome dialog was removed); Check for Updates: the release workflow now updates the .deb, .rpm, macOS app, Windows folder and Flatpak in place on every build (`--update-from`), and its first run is still to come (0.6.0's Flatpak test failed because the build container has no `flatpak-session-helper`); the download from GitHub itself is only tried on Windows
 - [ ] Plugins: OpenFX (OFX) image effect plugins, the open standard: find and load plugins from the standard folders, show their parameters in the inspector, run them on a clip and in an export, on the processor first and then the graphics card
 - [ ] Effect bundles: `.drfx` files (a zip of effect templates, titles, transitions and LUTs) installed from the menu and offered in the effects library, read within size limits like every other file
 - [ ] Platforms: macOS (Metal), Linux (Vulkan), browser limits
-- [ ] Linux: native Wayland drag and drop: not possible yet. eframe 0.37 uses winit 0.30.13, which takes no files dropped on a Wayland window; winit's own work on it (rust-windowing/winit#4773 is open, #4009 was closed unmerged) is in no release, 0.31 is a beta. Until then the window opens through XWayland. Writing it here against Wayland's data device would be a second, untestable copy of what winit will do
+- [ ] Linux: native Wayland drag and drop: not possible yet. eframe 0.37 uses winit 0.30.13, which takes no files dropped on a Wayland window; winit's own work on it (rust-windowing/winit#4773 is open, #4009 was closed unmerged) is in no release, 0.31 is a beta. Until then the window opens through XWayland. Writing it here against Wayland's data device would be a second, untestable copy of what winit will do. Meanwhile the XWayland path is made sturdier (a copy of winit 0.30.13 with its X11 drop reader changed, `third_party/winit`: each file of a drag is read on its own, a drop that comes before the file manager's list waits for it, and every failure is a warning in the session log; File > Media Management says so on Wayland). It compiles for Linux and its list reading is tested, but it has not been tried on a Wayland desktop: a tester with Nautilus and a large batch is needed, and the session log says which cause it was if files are still lost
 - [ ] Linux: Flathub submission, for the project's owner: a pull request to flathub/flathub with the manifest. The linter's findings on it: the id `io.github.fabox_os.PicassoSuite` does not match the repository's name (`appid-url-not-reachable`: it looks for github.com/fabox-os/picassosuite, the repository is Picasso-Suite; changing the id would make it a new app for people with the current Flatpak, so the id stays and the request for an exception is written in `packaging/flathub/README.md`); the X11 + Wayland sockets (exception text in `packaging/flathub/README.md`); and a newer runtime (26.08)
 - [ ] Graphics: Vulkan on real cards: the check and the report form exist; the NVIDIA, Intel, AMD (Linux, Mesa), Apple and ARM GPUs need people to run `--graphics-check` and send it in
 - [ ] Hardware: try the NVIDIA, Intel, Apple and VA-API encoders and decoding on those cards (only AMD on Windows is tried)

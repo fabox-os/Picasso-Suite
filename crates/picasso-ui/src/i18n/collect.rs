@@ -100,6 +100,9 @@ fn painted_in(language: crate::i18n::Language) -> BTreeSet<String> {
     crate::i18n::set(language);
     crate::i18n::sync_fonts(&ctx);
     let mut found = BTreeSet::new();
+    // The project manager is the first thing a program with saved projects shows; one with none
+    // (a clean computer, the test runners) opens on the editor, so it is opened here.
+    app.manager.open = true;
     frames(&mut app, &ctx, (1920.0, 1080.0), &mut found);
     app.manager.open = false;
     app.page = Page::Media;

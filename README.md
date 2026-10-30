@@ -30,12 +30,12 @@ Edit, Fusion, Color, Fairlight and Deliver pages. Windows, Linux and macOS.
 ## Status
 
 <!-- status:start -->
-![Status: 90.52% of the menu entries work, 78.65% of the roadmap is done](docs/status.svg)
+![Status: 90.52% of the menu entries work, 80.00% of the roadmap is done](docs/status.svg)
 
 | | Done | Total | |
 |---|---|---|---|
 | Menu entries | 277 | 306 | 90.52% |
-| Roadmap items* | 70 | 89 | 78.65% |
+| Roadmap items* | 76 | 95 | 80.00% |
 
 Green is made, grey is not. Menu entries: every entry of every menu ([`Menu-Status.md`](Menu-Status.md)); the rest are shown disabled. \* Roadmap items ([`ROADMAP.md`](ROADMAP.md)): the to-do items are bigger than the done ones, so this share looks better than the work left. Made by `python3 scripts/status.py`.
 <!-- status:end -->
@@ -85,14 +85,14 @@ FFmpeg is included in all of them.
 
 | OS | Package | Install |
 |---|---|---|
-| Windows | `picasso-suite-0.6.2-windows.zip` | Unzip the whole folder and run `picasso-suite.exe` |
-| macOS (Apple silicon and Intel) | `picasso-suite-0.6.2-macos-universal.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); Intel Macs need macOS 15 or newer |
-| macOS (Apple silicon only) | `picasso-suite-0.6.2-macos-arm64.zip` | Unzip, move to Applications, right-click → Open (the app is not signed) |
-| Debian/Ubuntu (22.04 or newer) | `picasso-suite-0.6.2-amd64.deb` | `sudo apt install ./picasso-suite-0.6.2-amd64.deb` |
-| Fedora/openSUSE | `picasso-suite-0.6.2-x86_64.rpm` | `sudo dnf install ./picasso-suite-0.6.2-x86_64.rpm` (openSUSE: `sudo zypper install`) |
-| Any Linux | `picasso-suite-0.6.2.flatpak` | `flatpak install ./picasso-suite-0.6.2.flatpak` |
-| Any Linux (glibc 2.35 or newer), no install | `picasso-suite-0.6.2-x86_64.AppImage` | `chmod +x picasso-suite-0.6.2-x86_64.AppImage`, then run it |
-| Linux on ARM64 | `picasso-suite-0.6.2-arm64.deb`, `-aarch64.rpm`, `-aarch64.AppImage`, `-aarch64.flatpak` | as above |
+| Windows | `picasso-suite-0.6.3-windows.zip` | Unzip the whole folder and run `picasso-suite.exe` |
+| macOS (Apple silicon and Intel) | `picasso-suite-0.6.3-macos-universal.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); Intel Macs need macOS 15 or newer |
+| macOS (Apple silicon only) | `picasso-suite-0.6.3-macos-arm64.zip` | Unzip, move to Applications, right-click → Open (the app is not signed) |
+| Debian/Ubuntu (22.04 or newer) | `picasso-suite-0.6.3-amd64.deb` | `sudo apt install ./picasso-suite-0.6.3-amd64.deb` |
+| Fedora/openSUSE | `picasso-suite-0.6.3-x86_64.rpm` | `sudo dnf install ./picasso-suite-0.6.3-x86_64.rpm` (openSUSE: `sudo zypper install`) |
+| Any Linux | `picasso-suite-0.6.3.flatpak` | `flatpak install ./picasso-suite-0.6.3.flatpak` |
+| Any Linux (glibc 2.35 or newer), no install | `picasso-suite-0.6.3-x86_64.AppImage` | `chmod +x picasso-suite-0.6.3-x86_64.AppImage`, then run it |
+| Linux on ARM64 | `picasso-suite-0.6.3-arm64.deb`, `-aarch64.rpm`, `-aarch64.AppImage`, `-aarch64.flatpak` | as above |
 
 The ARM64 packages, the AppImage and the ARM64 Flatpak come with releases after 0.2.1; the universal macOS app with 0.3.0 and later.
 

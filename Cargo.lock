@@ -2051,7 +2051,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "picasso-aaf"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "cfb",
  "picasso-core",
@@ -2060,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-audio"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "cpal",
  "picasso-core",
@@ -2070,14 +2070,14 @@ dependencies = [
 
 [[package]]
 name = "picasso-bridge"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "picasso-drp",
 ]
 
 [[package]]
 name = "picasso-color"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-core"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "picasso-color",
  "quick-xml",
@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-decode"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ffmpeg-next",
  "thiserror 2.0.21",
@@ -2106,7 +2106,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-drp"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "flate2",
  "picasso-core",
@@ -2117,7 +2117,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-export"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ffmpeg-next",
  "picasso-audio",
@@ -2130,7 +2130,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-media"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "picasso-decode",
  "rusqlite",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-render"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "ab_glyph",
  "image",
@@ -2149,7 +2149,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-suite"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "eframe",
  "image",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-ui"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "egui",
  "picasso-aaf",
@@ -3835,8 +3835,6 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 [[package]]
 name = "winit"
 version = "0.30.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d"
 dependencies = [
  "ahash",
  "android-activity",

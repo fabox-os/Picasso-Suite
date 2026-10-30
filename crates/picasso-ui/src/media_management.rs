@@ -115,6 +115,16 @@ impl StudioApp {
                 }
                 ui.separator();
                 self.optimised_media_section(ui);
+                if on_wayland() {
+                    ui.separator();
+                    ui.heading("Drag and Drop");
+                    ui.label(
+                        "On Wayland, files dragged from the file manager may not arrive at all, with no \
+                         message, above all in large batches: the window gets no word of a drop \
+                         that failed on the way. If nothing appears in the Media Pool, use \
+                         File > Import, or start a session on Xorg.",
+                    );
+                }
             });
         if !open {
             self.extra.media_management = false;
@@ -125,9 +135,9 @@ impl StudioApp {
     fn optimised_media_section(&mut self, ui: &mut egui::Ui) {
         ui.heading("Optimised Media");
         ui.label(
-            "Small copies of the video files that decode quickly, so the timeline and the viewer \
-             keep up. They are kept in the data folder and shared by every project; exports read \
-             the originals unless the Deliver page says otherwise.",
+            "Small copies of the video files of the media pool that decode quickly, so the \
+             timeline and the viewer keep up. They are kept in the data folder and shared by \
+             every project; exports read the originals unless the Deliver page says otherwise.",
         );
         let mut use_them = self.use_optimised;
         if ui
@@ -138,9 +148,9 @@ impl StudioApp {
             self.set_optimised(use_them);
         }
 
-        let videos = self.project_videos();
+        let videos = self.pool_videos();
         if videos.is_empty() {
-            ui.label("The timelines use no video files.");
+            ui.label("The media pool has no video files.");
             return;
         }
         let mut rows: Vec<(String, String, String)> = Vec::new();
@@ -179,7 +189,7 @@ impl StudioApp {
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(waiting > 0, egui::Button::new("Optimise All"))
-                .on_hover_text("Makes a copy of every video the timelines use")
+                .on_hover_text("Makes a copy of every video in the media pool")
                 .clicked()
             {
                 self.optimise_media();
@@ -355,6 +365,12 @@ impl StudioApp {
             missing,
         })
     }
+}
+
+/// Whether the desktop is a Wayland one, where large drag and drop batches can lose files on the
+/// way through XWayland.
+fn on_wayland() -> bool {
+    cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
 /// A file name no other file in the archive has, adding `-2`, `-3` before the extension.

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.3
+
+Picasso Suite 0.6.3 makes **File > Media Management...** cover the whole media pool, and fixes two Linux problems in the window library: files dragged from the file manager on a Wayland desktop that were lost without a word, and a crash when the X server could not list the monitors. Both Linux fixes are checked by tests and by building for Linux, but have not been tried on a Wayland desktop or on the Intel graphics that crashed. The project file format is the same as in 0.6.2.
+
+### ✨ New
+- ✅ **Optimised Media covers the whole media pool:** **File > Media Management... > Optimised Media** lists every video of the media pool, used on a timeline or not (a file imported twice once), as Resolve does; **Optimise All** makes a copy of each, **Delete Copies** deletes this project's copies of them (the other projects' copies stay) and **Delete All** deletes every project's. The viewer already read a copy for any video of the pool; only the list and the buttons were limited to what the timelines use. Archive Project still copies only the files the timelines use. Asked by GANESH NIKAM.
+
+### 🐛 Fixed
+- ✅ **Linux, Wayland: files dragged from the file manager are no longer lost silently:** the window opens through XWayland on a Wayland desktop, and winit's X11 drag and drop gave up on the whole drag for one thing it could not read, or dropped nothing when the drop came before the file manager's list of files did (slower for a large batch). The program now uses winit 0.30.13 with that part changed (`third_party/winit`, see `PICASSO.md` there): each file in the list stands alone (a name that is not UTF-8, `file://localhost/`, a NUL at the end, a file that is gone no longer spoil the others), a drop that comes before the list waits for it, and every way a drag can still fail is a warning in the session log (`PICASSO_LOG=debug` for more), with the reason. **File > Media Management...** has a note about it on Wayland. The change is checked by tests of the list reading and by compiling for Linux; it has not been tried on a Wayland desktop. Reported by GANESH NIKAM.
+- ✅ **Linux: the program no longer closes when the X server cannot list the monitors:** a `RandrBadCrtc` answer (seen on Intel graphics, even at the start) made winit panic with "Failed to get monitor list"; the four places that did it now log a warning and carry on (`third_party/winit`, see `PICASSO.md`). Reported by GANESH NIKAM.
+- ✅ **Linux, Wayland: a note on lost drops:** **File > Media Management...** says on a Wayland desktop that files dragged from the file manager may not arrive, and points at **File > Import** and a session on Xorg.
+- ✅ **Tests that make a video or a tone no longer fail at random:** the tests that write a file with ffmpeg wrote the same file in the temp folder and ran at the same time, so one could read it while another rewrote it; each test has a file of its own now.
+
 ## 0.6.2
 
 Picasso Suite 0.6.2 is the biggest update since 0.6.0: the program can be shown in 39 languages (**Help > Language**, kept for the next start), videos can have small Optimised Media copies for smooth scrubbing, work is saved by autosave and can be recovered, missing media can be relinked and a project archived, and the updater is safer. It also fixes exports that read back one frame short and menus that did not open on two pages. The project file format is the same as in 0.6.1.

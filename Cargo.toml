@@ -1,9 +1,10 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*"]
+exclude = ["third_party"]
 
 [workspace.package]
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 license = "GPL-3.0-or-later"
 rust-version = "1.95"
@@ -30,6 +31,12 @@ tracing = "0.1"  # MIT
 serde = { version = "1", features = ["derive"] }  # MIT OR Apache-2.0
 serde_json = "1"  # MIT OR Apache-2.0
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }  # MIT OR Apache-2.0
+
+# winit 0.30.13 with one change, in its X11 drag and drop (see third_party/winit/PICASSO.md): files
+# dragged from a file manager on a Wayland desktop (the window runs through XWayland) were lost
+# without a word. Remove this when eframe uses a winit that takes Wayland drops itself.
+[patch.crates-io]
+winit = { path = "third_party/winit" }
 
 [workspace.lints.rust]
 # Denied everywhere; picasso-decode's `hw` module (FFmpeg's hardware devices, which ffmpeg-next
