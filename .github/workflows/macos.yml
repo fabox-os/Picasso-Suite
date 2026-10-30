@@ -27,8 +27,10 @@ jobs:
     strategy:
       matrix:
         include:
+          # macos-14 was retired by GitHub on 2 November 2026 (and failed on purpose before that,
+          # in brownouts), so Apple silicon is built on macOS 15 too.
           - arch: arm64
-            runner: macos-14
+            runner: macos-15
           # The last Intel runner GitHub offers (until autumn 2027). Its Homebrew bottles are
           # built for macOS 15, so the Intel half needs macOS 15 or later.
           - arch: x86_64
@@ -67,6 +69,15 @@ jobs:
           otool -L "$APP/Contents/MacOS/picasso-suite"
           if otool -L "$APP/Contents/MacOS/picasso-suite" | grep -E "/opt/homebrew|/usr/local/"; then exit 1; fi
           ditto -c -k --keepParent "$APP" "$NAME-macos-${{ matrix.arch }}.zip"
+      # Told in the log, not checked: the newest macOS version any program or library in the app
+      # asks for (Homebrew's bottles are built for the macOS of the runner), which is the oldest
+      # macOS the app starts on.
+      - name: Which macOS the app needs
+        run: |
+          APP="Picasso Suite.app"
+          find "$APP/Contents/MacOS" "$APP/Contents/Frameworks" -type f | while IFS= read -r f; do
+            file -b "$f" | grep -q "Mach-O" && otool -l "$f" | awk '/minos/ {print $2}'
+          done | sort -V | uniq -c | tail -3 || true
       # Help > Check for Updates replaces the app: a copy is unpacked and marked, then updated from
       # the zip by the same code that installs a downloaded one. The marked app must be the one set
       # aside (`.app.old`, deleted on the next start), and the new one must start. Only the arm64
@@ -94,7 +105,7 @@ jobs:
   # copied as it is, since only that half links to it.
   universal:
     needs: build
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/download-artifact@v7
         with:
