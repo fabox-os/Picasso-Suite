@@ -41,6 +41,11 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+      - name: Clippy on changed crates
+        run: |
+          # Only enforce clippy on the crates touched by this change. The workspace has
+          # pre-existing lint and formatting warnings in untouched code.
+          cargo clippy -p picasso-decode -p picasso-core -p picasso-ui 2>&1
       - name: Build and test
         env:
           LIBCLANG_PATH: /usr/lib/llvm-19/lib

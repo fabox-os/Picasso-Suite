@@ -398,6 +398,9 @@ pub struct VideoDecoder {
     /// The converter's output, kept so each picture is not written into a fresh allocation of
     /// several megabytes (which costs page faults, more of them on Windows).
     rgba: ff::frame::Video,
+    /// A CPU decoder pre-opened so fallback from a failed GPU decode is instant (no 0.1–0.3 s
+    /// stall from opening a new Input); `None` when decoding is already on the processor.
+    cpu: Option<Box<VideoDecoder>>,
 }
 
 impl VideoDecoder {
@@ -427,6 +430,13 @@ impl VideoDecoder {
             count: if on_card { 1 } else { 0 },
         });
         let decoder = context.decoder().video()?;
+        // Pre-warm a CPU decoder while the GPU one is open, so a GPU failure during playback
+        // falls back instantly instead of stalling for the time it takes to open the file.
+        let cpu = if hardware && on_card {
+            Self::open_with(path, false).ok().map(Box::new)
+        } else {
+            None
+        };
         Ok(Self {
             path: path.to_path_buf(),
             on_card,
@@ -442,6 +452,7 @@ impl VideoDecoder {
             trial: (on_card && learnt.is_none()).then(Trial::default),
             sought: false,
             rgba: ff::frame::Video::empty(),
+            cpu,
         })
     }
 
@@ -606,9 +617,14 @@ impl VideoDecoder {
                     self.path.display()
                 );
                 let asked = self.asked;
-                *self = Self::open_with(&self.path.clone(), false)?;
-                // Still counts as opened with the setting on, so it is not opened again for it.
-                self.asked = asked;
+                // Use the pre-warmed CPU decoder if available; open one now only if the
+                // pre-warm failed or was not done (e.g. a file opened before this feature).
+                let mut cpu = match self.cpu.take() {
+                    Some(cpu) => *cpu,
+                    None => Self::open_with(&self.path, false)?,
+                };
+                cpu.asked = asked;
+                *self = cpu;
                 self.read(pts_us, reduce, scrub)
             }
             other => other,
@@ -637,6 +653,14 @@ impl VideoDecoder {
     /// be reopened to read the new one.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Whether this decoder is currently decoding on the graphics card. `false` means it fell
+    /// back to the processor — either because the card could not be used when the file was
+    /// opened, or because decoding on the card failed during playback and a pre-warmed CPU
+    /// decoder took over.
+    pub fn on_card(&self) -> bool {
+        self.on_card
     }
 
     fn read(
@@ -1017,6 +1041,28 @@ mod tests {
                 "{mean} levels apart at {t} (card: {})",
                 card.on_card
             );
+        }
+        let _ = std::fs::remove_file(path);
+        Ok(())
+    }
+
+    #[test]
+    fn a_gpu_decoder_pre_warms_a_cpu_fallback() -> Result<(), String> {
+        let Some(path) = test_clip("picasso_decode_hw.mp4") else {
+            return Ok(());
+        };
+        let card = VideoDecoder::open_with(&path, true).map_err(|e| e.to_string())?;
+        // Only meaningful when the card actually decoded: otherwise there is no fallback.
+        if !card.on_card {
+            return Ok(());
+        }
+        assert!(
+            card.cpu.is_some(),
+            "a GPU decoder should pre-warm a CPU fallback, but cpu was None"
+        );
+        if let Some(cpu) = &card.cpu {
+            assert!(!cpu.on_card, "the pre-warmed fallback is a CPU decoder");
+            assert!(!cpu.cpu.is_some(), "a CPU decoder has no fallback of its own");
         }
         let _ = std::fs::remove_file(path);
         Ok(())

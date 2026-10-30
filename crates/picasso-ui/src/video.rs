@@ -79,6 +79,9 @@ mod native {
         workers: HashSet<MediaId>,
         /// Videos that could not be opened or decoded; they show the offline picture.
         broken: HashSet<MediaId>,
+        /// Whether each media's worker is currently decoding on CPU after a GPU fallback, so
+        /// the status line can tell the user "decoding on processor".
+        on_cpu: HashSet<MediaId>,
         /// The file each media was most recently asked for (the original or its optimised copy),
         /// so a switch between them can drop the now-stale cached frames and reopen the decoder.
         last_path: HashMap<MediaId, String>,
@@ -359,6 +362,17 @@ mod native {
                 }
             }
             let Some(d) = decoder.as_mut() else { return };
+            // Track whether this decoder fell back to the CPU, so the status line can warn.
+            if !d.on_card() {
+                shared.lock().on_cpu.insert(media);
+                crate::session_log::note(
+                    "WARN",
+                    &format!(
+                        "{} fell back to processor decoding (GPU decode failed)",
+                        path
+                    ),
+                );
+            }
             // The same picture as the last one (a project that plays faster than its video asks
             // for each picture several times): keep that answer, convert nothing.
             if let (Some(held), Some((at, size, image))) = (d.held_picture_at(time_us), &last) {
