@@ -730,19 +730,45 @@ const EFFECTS: &[Entry] = &[
         &[
             sub(
                 "Color",
-                &[item("Sepia", &[], Act::AddEffect(EffectKind::Sepia))],
+                &[
+                    item("Sepia", &[], Act::AddEffect(EffectKind::Sepia)),
+                    item(
+                        "RGB Mixer",
+                        &[],
+                        Act::AddEffect(EffectKind::RgbMixer),
+                    ),
+                    item(
+                        "Color Temperature",
+                        &[],
+                        Act::AddEffect(EffectKind::ColorTemperature),
+                    ),
+                ],
             ),
             sub(
                 "Blur",
-                &[item(
-                    "Soft Blur",
-                    &[],
-                    Act::AddEffect(EffectKind::GaussianBlur),
-                )],
+                &[
+                    item(
+                        "Soft Blur",
+                        &[],
+                        Act::AddEffect(EffectKind::GaussianBlur),
+                    ),
+                    item(
+                        "Directional Blur",
+                        &[],
+                        Act::AddEffect(EffectKind::DirectionalBlur),
+                    ),
+                ],
             ),
             sub(
                 "Light",
-                &[item("Glow", &[], Act::AddEffect(EffectKind::Glow))],
+                &[
+                    item("Glow", &[], Act::AddEffect(EffectKind::Glow)),
+                    item(
+                        "Diffusion",
+                        &[],
+                        Act::AddEffect(EffectKind::Diffusion),
+                    ),
+                ],
             ),
             sub(
                 "Stylize",

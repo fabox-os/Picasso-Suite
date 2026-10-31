@@ -188,6 +188,10 @@ pub struct StudioApp {
     /// Where the project was opened from or saved to (desktop only).
     pub(crate) project_path: Option<String>,
     pub(crate) show_shortcuts: bool,
+    /// Whether the "Save Effects Preset" name dialog is open.
+    pub(crate) show_effect_preset_name_dialog: bool,
+    /// The name being typed in the "Save Effects Preset" dialog, held between frames.
+    pub(crate) preset_name: String,
 }
 
 /// What a video or sound file says about itself (its media id is filled in when it is added).
@@ -328,6 +332,8 @@ impl StudioApp {
             inbox: Inbox::default(),
             project_path: None,
             show_shortcuts: false,
+            show_effect_preset_name_dialog: false,
+            preset_name: String::new(),
         };
         // A project opened at the start may already have copies of its files.
         app.refresh_proxies();

@@ -1268,7 +1268,62 @@ impl StudioApp {
                     command = Some(vec![Command::RemoveEffect { clip: id, index }]);
                 }
             });
-            ui.add(egui::Slider::new(&mut e.amount, 0.0..=100.0).text("Amount"));
+            ui.add(
+                egui::Slider::new(&mut e.amount, 0.0..=100.0)
+                    .text("Amount"),
+            );
+
+            // Show param sliders for effects that need extra parameters.
+            match e.kind {
+                EffectKind::RgbMixer => {
+                    // The 3x3 matrix: 9 values, each 0..2 where 1.0 = passthrough.
+                    // Layout: row-major [R→R, R→G, R→B, G→R, G→G, G→B, B→R, B→G, B→B].
+                    ui.label(
+                        egui::RichText::new("RGB Mixer Matrix").size(14.0),
+                    );
+                    ui.label(egui::RichText::new(
+                        "Each cell controls how much of the input channel\ncontributes to the output. 1.0 = normal.",
+                    ).size(11.0));
+                    for (i, label) in [
+                        "Red→Red", "Red→Green", "Red→Blue",
+                        "Green→Red", "Green→Green", "Green→Blue",
+                        "Blue→Red", "Blue→Green", "Blue→Blue",
+                    ].iter().enumerate() {
+                        ui.label(egui::RichText::new(*label).size(13.0));
+                        ui.add(
+                            egui::Slider::new(&mut e.params[i], 0.0..=2.0)
+                                .text(label.to_string()),
+                        );
+                    }
+                }
+                EffectKind::ColorTemperature => {
+                    ui.label(egui::RichText::new("Temperature").size(14.0));
+                    ui.label(egui::RichText::new(
+                        "Negative (cool/blue, 10K), 0 (neutral 6.6K),\npositive (warm/orange, 3.2K).",
+                    ).size(11.0));
+                    ui.add(
+                        egui::Slider::new(&mut e.params[0], -100.0..=100.0)
+                            .text("Shift"),
+                    );
+                }
+                EffectKind::DirectionalBlur => {
+                    ui.label(egui::RichText::new("Direction").size(14.0));
+                    ui.label(egui::RichText::new(
+                        "Blur direction in degrees. Amount stretches it.",
+                    ).size(11.0));
+                    ui.add(
+                        egui::Slider::new(&mut e.params[0], 0.0..=360.0)
+                            .text("Angle"),
+                    );
+                }
+                EffectKind::Diffusion => {
+                    ui.label(egui::RichText::new("Diffusion").size(14.0));
+                    ui.label(egui::RichText::new(
+                        "Blurred duplicate, screen-blended back\nfor a soft glow look.",
+                    ).size(11.0));
+                }
+                _ => {}
+            }
             if e != before && command.is_none() {
                 self.run_gesture(
                     ctx,
@@ -1297,6 +1352,62 @@ impl StudioApp {
             });
         if let Some(kind) = add {
             self.run(Command::AddEffect { clip: id, kind });
+        }
+        // Effects presets.
+        let effects = self.project().clip(id).map(|(_, c)| c.effects.clone());
+        ui.separator();
+        ui.label(egui::RichText::new("Presets").size(14.0));
+        if ui.button("Save Current...").clicked() {
+            self.show_effect_preset_name_dialog = true;
+        }
+        for name in crate::effect_presets::list_presets() {
+            if ui.button(&name).clicked() {
+                if let Some(preset) = crate::effect_presets::load_preset(&name) {
+                    self.run_gesture(
+                        ctx,
+                        Command::SetEffects {
+                            clip: id,
+                            effects: preset.effects.clone(),
+                        },
+                    );
+                    self.info(format!("Applied preset: {}", name));
+                }
+            }
+        }
+
+        // Save dialog popup.
+        if self.show_effect_preset_name_dialog {
+            egui::Window::new("Save Effects Preset")
+                .id(egui::Id::new("save_preset_dialog"))
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Enter a name for this preset:");
+                    ui.add(egui::TextEdit::singleline(&mut self.preset_name));
+                    ui.horizontal(|ui| {
+                        if ui.button("Save").clicked() {
+                            if !self.preset_name.is_empty() {
+                                if let Some(effects) = &effects {
+                                    if crate::effect_presets::save_preset(
+                                        &self.preset_name,
+                                        effects,
+                                    ) {
+                                        self.info(format!(
+                                            "Saved preset: {}",
+                                            self.preset_name
+                                        ));
+                                    }
+                                }
+                                self.show_effect_preset_name_dialog = false;
+                                self.preset_name.clear();
+                            }
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.show_effect_preset_name_dialog = false;
+                            self.preset_name.clear();
+                        }
+                    });
+                });
         }
     }
 

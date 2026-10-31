@@ -2180,6 +2180,7 @@ dependencies = [
  "picasso-render",
  "pollster 0.4.0",
  "rfd",
+ "serde",
  "serde_json",
  "tracing",
  "tracing-subscriber",
