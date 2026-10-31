@@ -258,6 +258,11 @@ pub enum Command {
         clip: ClipId,
         index: usize,
     },
+    /// Replaces the entire effects list of a clip (used by presets).
+    SetEffects {
+        clip: ClipId,
+        effects: Vec<crate::Effect>,
+    },
     /// Takes away every keyframe of `param`: the property holds its value again.
     ClearKeyframes {
         clip: ClipId,
@@ -545,6 +550,7 @@ impl Command {
             Self::SetTrackFx { .. } => "track.set_fx",
             Self::SetEffect { .. } => "clip.set_effect",
             Self::RemoveEffect { .. } => "clip.remove_effect",
+            Self::SetEffects { .. } => "clip.set_effects",
             Self::ClearKeyframes { .. } => "clip.clear_keyframes",
             Self::InsertClip { .. } => "clip.insert",
             Self::OverwriteClip { .. } => "clip.overwrite",
@@ -636,6 +642,7 @@ impl Command {
             Self::SetTrackFx { .. } => "Track EQ and dynamics",
             Self::SetEffect { .. } => "Change effect",
             Self::RemoveEffect { .. } => "Remove effect",
+            Self::SetEffects { .. } => "Replace effects",
             Self::ClearKeyframes { .. } => "Clear keyframes",
             Self::InsertClip { .. } => "Insert clip",
             Self::OverwriteClip { .. } => "Overwrite clip",
@@ -1444,6 +1451,14 @@ impl Command {
                     return Err(EditError::Invalid("there is no such effect"));
                 }
                 effects.remove(index);
+                Ok(Outcome::Clip(clip))
+            }
+            Self::SetEffects { clip, effects } => {
+                let (ti, ci) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+                if effects.len() > crate::MAX_EFFECTS {
+                    return Err(EditError::Invalid("a clip has at most 16 effects"));
+                }
+                p.tracks[ti].clips[ci].effects = effects;
                 Ok(Outcome::Clip(clip))
             }
             Self::ClearKeyframes { clip, param } => {
