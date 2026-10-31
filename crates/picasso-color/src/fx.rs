@@ -117,7 +117,7 @@ impl Effect {
 
     /// Default `params` value for each effect kind. RGB Mixer defaults to the identity matrix
     /// (1.0 on the diagonal, 0 elsewhere) so it starts as a no-op. All others start at zeros.
-    fn default_params(kind: EffectKind) -> [f32; 9] {
+    pub fn default_params(kind: EffectKind) -> [f32; 9] {
         match kind {
             EffectKind::RgbMixer => {
                 // [R→R, R→G, R→B, G→R, G→G, G→B, B→R, B→G, B→B]

@@ -1268,10 +1268,17 @@ impl StudioApp {
                     command = Some(vec![Command::RemoveEffect { clip: id, index }]);
                 }
             });
-            ui.add(
-                egui::Slider::new(&mut e.amount, 0.0..=100.0)
-                    .text("Amount"),
-            );
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::Slider::new(&mut e.amount, 0.0..=100.0)
+                        .text("Amount"),
+                );
+                if ui.button("Reset").on_hover_text("Reset to defaults").clicked() {
+                    let mut reset = picasso_core::Effect::new(e.kind);
+                    reset.enabled = e.enabled;
+                    e = reset;
+                }
+            });
 
             // Show param sliders for effects that need extra parameters.
             match e.kind {
@@ -1284,27 +1291,39 @@ impl StudioApp {
                     ui.label(egui::RichText::new(
                         "Each cell controls how much of the input channel\ncontributes to the output. 1.0 = normal.",
                     ).size(11.0));
-                    for (i, label) in [
-                        "Red→Red", "Red→Green", "Red→Blue",
-                        "Green→Red", "Green→Green", "Green→Blue",
-                        "Blue→Red", "Blue→Green", "Blue→Blue",
-                    ].iter().enumerate() {
-                        ui.label(egui::RichText::new(*label).size(13.0));
-                        ui.add(
-                            egui::Slider::new(&mut e.params[i], 0.0..=2.0)
-                                .text(label.to_string()),
-                        );
-                    }
+                    ui.horizontal(|ui| {
+                        for (i, label) in [
+                            "Red→Red", "Red→Green", "Red→Blue",
+                            "Green→Red", "Green→Green", "Green→Blue",
+                            "Blue→Red", "Blue→Green", "Blue→Blue",
+                        ].iter().enumerate() {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new(*label).size(13.0));
+                                ui.add(
+                                    egui::Slider::new(&mut e.params[i], 0.0..=2.0)
+                                        .text(label.to_string()),
+                                );
+                            });
+                        }
+                        if ui.button("Identity").on_hover_text("Reset to identity matrix").clicked() {
+                            e.params = picasso_core::Effect::default_params(e.kind);
+                        }
+                    });
                 }
                 EffectKind::ColorTemperature => {
                     ui.label(egui::RichText::new("Temperature").size(14.0));
                     ui.label(egui::RichText::new(
                         "Negative (cool/blue, 10K), 0 (neutral 6.6K),\npositive (warm/orange, 3.2K).",
                     ).size(11.0));
-                    ui.add(
-                        egui::Slider::new(&mut e.params[0], -100.0..=100.0)
-                            .text("Shift"),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::Slider::new(&mut e.params[0], -100.0..=100.0)
+                                .text("Shift"),
+                        );
+                        if ui.button("Neutral").on_hover_text("Reset to 0 (neutral)").clicked() {
+                            e.params[0] = 0.0;
+                        }
+                    });
                 }
                 EffectKind::DirectionalBlur => {
                     ui.label(egui::RichText::new("Direction").size(14.0));
