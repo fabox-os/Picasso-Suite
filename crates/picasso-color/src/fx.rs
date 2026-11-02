@@ -1,6 +1,8 @@
-//! Video effects on a clip's picture, after its grade: blurs, sharpening, glow, mosaic, colour
-//! looks, a vignette and film grain. Each effect has one strength, 0 to 100; sizes are in
-//! thousandths of the picture's height, so an effect looks the same at any resolution.
+//! Video effects on a clip's picture, after its grade: blurs (including directional),
+//! sharpening, glow and diffusion, mosaic, colour looks, a channel mixer, a white balance shift,
+//! a vignette and film grain. Each effect has one strength, 0 to 100; a few also have their own
+//! params; sizes are in thousandths of the picture's height, so an effect looks the same at any
+//! resolution.
 
 use serde::{Deserialize, Serialize};
 
@@ -21,10 +23,11 @@ pub enum EffectKind {
     Vignette,
     FilmGrain,
     /// Adjust the contribution of each source channel to each output channel (3x3 matrix).
-    /// params[0..8] maps to [R→R, R→G, R→B, G→R, G→G, G→B, B→R, B→G, B→B];
+    /// The nine params are [R→R, R→G, R→B, G→R, G→G, G→B, B→R, B→G, B→B];
     /// each is 0..2 where 1.0 = full channel passthrough.
     RgbMixer,
-    /// Shift the white balance: amount is blend strength (0–100, default 100),\n    /// params[0] is temperature shift (-100 = cool/10000K, 0 = neutral/6600K, +100 = warm/3200K).
+    /// Shift the white balance: amount is blend strength (0–100, default 100),
+    /// params[0] is temperature shift (-100 = cool/10000K, 0 = neutral/6600K, +100 = warm/3200K).
     ColorTemperature,
     /// Blur along a direction: amount is strength (0–100), params[0] is angle in degrees (0–360).
     DirectionalBlur,
