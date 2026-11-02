@@ -33,6 +33,9 @@ jobs:
         # either of those changes.
         run: python3 scripts/status.py --check
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # `cargo clippy` below needs the component; the stable image does not bring it.
+          components: clippy
       - uses: actions/cache@v5
         with:
           path: |
