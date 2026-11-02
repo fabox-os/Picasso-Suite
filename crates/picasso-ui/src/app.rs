@@ -125,6 +125,8 @@ pub struct StudioApp {
     pub(crate) scopes_visible: bool,
     pub(crate) marker_dialog: Option<MarkerDialog>,
     pub(crate) show_about: bool,
+    /// The credits line under About, which shift-clicking the version number opens.
+    pub(crate) show_credits: bool,
     /// Help > Check for Updates.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) updater: crate::update::Updater,
@@ -277,6 +279,7 @@ impl StudioApp {
             scopes_visible: true,
             marker_dialog: None,
             show_about: false,
+            show_credits: false,
             #[cfg(not(target_arch = "wasm32"))]
             updater: crate::update::Updater::default(),
             saved_text: None,

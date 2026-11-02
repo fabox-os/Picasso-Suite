@@ -11,6 +11,7 @@ mod capture;
 mod chrome;
 mod clip_more;
 mod color_page;
+mod credits;
 mod cut;
 mod deliver;
 mod deliver_clips;

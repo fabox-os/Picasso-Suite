@@ -1765,7 +1765,15 @@ impl StudioApp {
                 .resizable(false)
                 .show(ctx, |ui| {
                     ui.heading("Picasso Suite");
-                    ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                    // Shift-click the version for the credits line (`crate::credits`); a plain
+                    // click does nothing, so it stays a discovery.
+                    let version = ui.add(
+                        egui::Label::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
+                            .sense(egui::Sense::click()),
+                    );
+                    if version.clicked() && ui.input(|i| i.modifiers.shift) {
+                        self.show_credits = true;
+                    }
                     if let Some((card, api)) = &self.graphics {
                         ui.label(format!("Graphics: {card} ({api})"));
                     }
@@ -1773,8 +1781,15 @@ impl StudioApp {
                         "A video editor written in Rust for Windows, Linux, macOS and the web.",
                     );
                     ui.label("Free software under the GPL, version 3 or later.");
+                    if self.show_credits {
+                        ui.separator();
+                        crate::credits::row(ui);
+                    }
                 });
             self.show_about = open;
+            if !self.show_about {
+                self.show_credits = false;
+            }
         }
         self.keyboard_window(ctx);
         let mut dialog = self.marker_dialog.take();
