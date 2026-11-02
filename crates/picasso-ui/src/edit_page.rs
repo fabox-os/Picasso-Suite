@@ -14,7 +14,7 @@ use egui::{
     pos2, vec2, Align2, Color32, Context, Painter, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui,
     UiBuilder,
 };
-use picasso_core::{BlendMode, ColorGrade, Command, Transform, MAX_SPEED, MIN_SPEED};
+use picasso_core::{BlendMode, ColorGrade, Command, Effect, Transform, MAX_SPEED, MIN_SPEED};
 
 use crate::app::StudioApp;
 use crate::capture::fit;
@@ -1405,21 +1405,7 @@ impl StudioApp {
                     ui.add(egui::TextEdit::singleline(&mut self.preset_name));
                     ui.horizontal(|ui| {
                         if ui.button("Save").clicked() {
-                            if !self.preset_name.is_empty() {
-                                if let Some(effects) = &effects {
-                                    if crate::effect_presets::save_preset(
-                                        &self.preset_name,
-                                        effects,
-                                    ) {
-                                        self.info(format!(
-                                            "Saved preset: {}",
-                                            self.preset_name
-                                        ));
-                                    }
-                                }
-                                self.show_effect_preset_name_dialog = false;
-                                self.preset_name.clear();
-                            }
+                            self.save_effect_preset(effects.as_deref());
                         }
                         if ui.button("Cancel").clicked() {
                             self.show_effect_preset_name_dialog = false;
@@ -1428,6 +1414,23 @@ impl StudioApp {
                     });
                 });
         }
+    }
+
+    /// Saves the effects shown in the Inspector as a preset under the name in the save dialog,
+    /// then closes the dialog. An empty name does nothing and leaves the dialog open, and a clip
+    /// with no effects to read closes the dialog without writing a preset.
+    fn save_effect_preset(&mut self, effects: Option<&[Effect]>) {
+        let name = self.preset_name.trim().to_string();
+        if name.is_empty() {
+            return;
+        }
+        if let Some(effects) = effects {
+            if crate::effect_presets::save_preset(&name, effects) {
+                self.info(format!("Saved preset: {}", name));
+            }
+        }
+        self.show_effect_preset_name_dialog = false;
+        self.preset_name.clear();
     }
 
     /// The clip's gain and fades.

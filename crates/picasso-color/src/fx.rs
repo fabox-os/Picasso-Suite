@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn rgb_mixer_keeps_alpha() {
         let mut p = vec![200u8, 100, 50, 128];
-        let mut e = Effect::new(EffectKind::RgbMixer);
+        let e = Effect::new(EffectKind::RgbMixer);
         e.apply(&mut p, 1, 1, 0);
         assert_eq!(p[3], 128, "alpha is preserved");
     }

@@ -28,7 +28,7 @@ pub(crate) fn preset_dir() -> Option<PathBuf> {
 
 /// The file a preset with `name` is saved to.
 pub(crate) fn preset_path(name: &str) -> Option<PathBuf> {
-    preset_dir().map(|d| d.join(format!("{}", sanitize_for_filename(name))))
+    preset_dir().map(|d| d.join(sanitize_for_filename(name)))
 }
 
 /// Replaces characters that are unsafe in file names with `-`.
@@ -48,8 +48,8 @@ pub(crate) fn list_presets() -> Vec<String> {
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for e in entries.flatten() {
             if let Some(name) = e.file_name().to_str() {
-                if name.ends_with(".json") {
-                    names.push(name[..name.len() - 5].to_string());
+                if let Some(stem) = name.strip_suffix(".json") {
+                    names.push(stem.to_string());
                 }
             }
         }
