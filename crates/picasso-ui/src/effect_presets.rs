@@ -41,7 +41,8 @@ fn sanitize_for_filename(name: &str) -> String {
         .collect()
 }
 
-/// Lists the preset names saved on disk, newest first.
+/// Lists the preset names saved on disk, in alphabetical order (the same order the Inspector
+/// shows them in).
 pub(crate) fn list_presets() -> Vec<String> {
     let Some(dir) = preset_dir() else { return Vec::new() };
     let mut names = Vec::new();
