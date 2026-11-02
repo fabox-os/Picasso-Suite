@@ -1289,7 +1289,7 @@ impl StudioApp {
                         egui::RichText::new("RGB Mixer Matrix").size(14.0),
                     );
                     ui.label(egui::RichText::new(
-                        "Each cell controls how much of the input channel\ncontributes to the output. 1.0 = normal.",
+                        "Each cell is how much of that input channel goes into\nthat output channel. 1.00 = normal, 0.00 = none.",
                     ).size(11.0));
                     ui.horizontal(|ui| {
                         for (i, label) in [
@@ -1301,7 +1301,8 @@ impl StudioApp {
                                 ui.label(egui::RichText::new(*label).size(13.0));
                                 ui.add(
                                     egui::Slider::new(&mut e.params[i], 0.0..=2.0)
-                                        .text(label.to_string()),
+                                        .show_value(true)
+                                        .max_decimals(2),
                                 );
                             });
                         }
@@ -1313,7 +1314,7 @@ impl StudioApp {
                 EffectKind::ColorTemperature => {
                     ui.label(egui::RichText::new("Temperature").size(14.0));
                     ui.label(egui::RichText::new(
-                        "Negative (cool/blue, 10K), 0 (neutral 6.6K),\npositive (warm/orange, 3.2K).",
+                        "-100 = cooler (~10000 K, bluer), 0 = neutral (~6600 K),\n+100 = warmer (~3200 K, oranger).",
                     ).size(11.0));
                     ui.horizontal(|ui| {
                         ui.add(
@@ -1328,10 +1329,10 @@ impl StudioApp {
                 EffectKind::DirectionalBlur => {
                     ui.label(egui::RichText::new("Direction").size(14.0));
                     ui.label(egui::RichText::new(
-                        "Blur direction in degrees. Amount stretches it.",
+                        "Blur direction in degrees, 0 = to the right, 90 = down.\nAmount stretches it.",
                     ).size(11.0));
                     ui.add(
-                        egui::Slider::new(&mut e.params[0], 0.0..=360.0)
+                        egui::Slider::new(&mut e.params[0], 0.0..=359.0)
                             .text("Angle"),
                     );
                 }
