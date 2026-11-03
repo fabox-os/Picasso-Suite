@@ -125,6 +125,8 @@ pub struct StudioApp {
     pub(crate) scopes_visible: bool,
     pub(crate) marker_dialog: Option<MarkerDialog>,
     pub(crate) show_about: bool,
+    /// The credits line under About, which shift-clicking the version number opens.
+    pub(crate) show_credits: bool,
     /// Help > Check for Updates.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) updater: crate::update::Updater,
@@ -188,6 +190,13 @@ pub struct StudioApp {
     /// Where the project was opened from or saved to (desktop only).
     pub(crate) project_path: Option<String>,
     pub(crate) show_shortcuts: bool,
+    /// Whether the "Save Effects Preset" name dialog is open.
+    pub(crate) show_effect_preset_name_dialog: bool,
+    /// The name being typed in the "Save Effects Preset" dialog, held between frames.
+    pub(crate) preset_name: String,
+    /// The saved effects presets as last read from disk, and the time (egui seconds) it was
+    /// read at: the folder is not read again on every repaint.
+    pub(crate) preset_list: (f64, Vec<String>),
 }
 
 /// What a video or sound file says about itself (its media id is filled in when it is added).
@@ -273,6 +282,7 @@ impl StudioApp {
             scopes_visible: true,
             marker_dialog: None,
             show_about: false,
+            show_credits: false,
             #[cfg(not(target_arch = "wasm32"))]
             updater: crate::update::Updater::default(),
             saved_text: None,
@@ -328,6 +338,9 @@ impl StudioApp {
             inbox: Inbox::default(),
             project_path: None,
             show_shortcuts: false,
+            show_effect_preset_name_dialog: false,
+            preset_name: String::new(),
+            preset_list: (f64::NEG_INFINITY, Vec::new()),
         };
         // A project opened at the start may already have copies of its files.
         app.refresh_proxies();

@@ -11,6 +11,7 @@ mod capture;
 mod chrome;
 mod clip_more;
 mod color_page;
+mod credits;
 mod cut;
 mod deliver;
 mod deliver_clips;
@@ -49,6 +50,8 @@ mod composer;
 mod render_cache;
 #[cfg(not(target_arch = "wasm32"))]
 mod render_presets;
+#[cfg(not(target_arch = "wasm32"))]
+mod effect_presets;
 #[cfg(not(target_arch = "wasm32"))]
 mod resolve;
 mod sound;

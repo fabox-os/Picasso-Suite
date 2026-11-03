@@ -1,6 +1,8 @@
-//! Video effects on a clip's picture, after its grade: blurs, sharpening, glow, mosaic, colour
-//! looks, a vignette and film grain. Each effect has one strength, 0 to 100; sizes are in
-//! thousandths of the picture's height, so an effect looks the same at any resolution.
+//! Video effects on a clip's picture, after its grade: blurs (including directional),
+//! sharpening, glow and diffusion, mosaic, colour looks, a channel mixer, a white balance shift,
+//! a vignette and film grain. Each effect has one strength, 0 to 100; a few also have their own
+//! params; sizes are in thousandths of the picture's height, so an effect looks the same at any
+//! resolution.
 
 use serde::{Deserialize, Serialize};
 
@@ -20,10 +22,22 @@ pub enum EffectKind {
     Glow,
     Vignette,
     FilmGrain,
+    /// Adjust the contribution of each source channel to each output channel (3x3 matrix).
+    /// The nine params are [R→R, R→G, R→B, G→R, G→G, G→B, B→R, B→G, B→B];
+    /// each is 0..2 where 1.0 = full channel passthrough.
+    RgbMixer,
+    /// Shift the white balance: amount is blend strength (0–100, default 100),
+    /// params[0] is temperature shift (-100 = cool/10000K, 0 = neutral/6600K, +100 = warm/3200K).
+    ColorTemperature,
+    /// Blur along a direction: amount is strength (0–100), params[0] is angle in degrees (0–360).
+    DirectionalBlur,
+    /// A soft glow: duplicates the picture, blurs it, and blends it back with the original
+    /// (screen blend mode), creating a diffusion/halation look.
+    Diffusion,
 }
 
 impl EffectKind {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 13] = [
         Self::GaussianBlur,
         Self::Sharpen,
         Self::Mosaic,
@@ -33,6 +47,10 @@ impl EffectKind {
         Self::Glow,
         Self::Vignette,
         Self::FilmGrain,
+        Self::RgbMixer,
+        Self::ColorTemperature,
+        Self::DirectionalBlur,
+        Self::Diffusion,
     ];
 
     pub fn label(self) -> &'static str {
@@ -46,6 +64,10 @@ impl EffectKind {
             Self::Glow => "Glow",
             Self::Vignette => "Vignette",
             Self::FilmGrain => "Film Grain",
+            Self::RgbMixer => "RGB Mixer",
+            Self::ColorTemperature => "Color Temperature",
+            Self::DirectionalBlur => "Directional Blur",
+            Self::Diffusion => "Diffusion",
         }
     }
 
@@ -59,6 +81,10 @@ impl EffectKind {
             Self::Glow => 50.0,
             Self::Vignette => 50.0,
             Self::FilmGrain => 30.0,
+            Self::RgbMixer => 100.0,
+            Self::ColorTemperature => 100.0,
+            Self::DirectionalBlur => 50.0,
+            Self::Diffusion => 50.0,
         }
     }
 }
@@ -71,6 +97,11 @@ pub struct Effect {
     pub amount: f32,
     #[serde(default = "on")]
     pub enabled: bool,
+    /// Extra parameters for effects that need more than `amount`. Stored as a fixed array so
+    /// the struct stays `Copy`; defaults to zeros for backward compatibility (projects saved
+    /// before this field existed load with all params at 0).
+    #[serde(default)]
+    pub params: [f32; 9],
 }
 
 fn on() -> bool {
@@ -83,6 +114,23 @@ impl Effect {
             kind,
             amount: kind.default_amount(),
             enabled: true,
+            params: Effect::default_params(kind),
+        }
+    }
+
+    /// Default `params` value for each effect kind. RGB Mixer defaults to the identity matrix
+    /// (1.0 on the diagonal, 0 elsewhere) so it starts as a no-op. All others start at zeros.
+    pub fn default_params(kind: EffectKind) -> [f32; 9] {
+        match kind {
+            EffectKind::RgbMixer => {
+                // [R→R, R→G, R→B, G→R, G→G, G→B, B→R, B→G, B→B]
+                [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            }
+            EffectKind::ColorTemperature => {
+                // params[0] = temperature shift: 0 = neutral (6600K)
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            }
+            _ => [0.0; 9],
         }
     }
 
@@ -92,6 +140,29 @@ impl Effect {
         } else {
             self.kind.default_amount()
         };
+        // Sanitize params: replace NaN/Inf with 0, clamp to safe ranges per effect kind.
+        for p in &mut self.params {
+            if !p.is_finite() {
+                *p = 0.0;
+            }
+        }
+        match self.kind {
+            EffectKind::RgbMixer => {
+                // RGB Mixer matrix values: 0..2 where 1.0 = passthrough.
+                for p in &mut self.params {
+                    *p = p.clamp(0.0, 2.0);
+                }
+            }
+            EffectKind::ColorTemperature => {
+                // params[0] is the temperature shift: -100..100.
+                self.params[0] = self.params[0].clamp(-100.0, 100.0);
+            }
+            EffectKind::DirectionalBlur => {
+                // params[0] is the angle: wrap to 0..360.
+                self.params[0] = self.params[0].rem_euclid(360.0);
+            }
+            _ => {}
+        }
         self
     }
 
@@ -185,6 +256,109 @@ impl Effect {
                     }
                 }
             }
+            EffectKind::RgbMixer => {
+                // Each output channel is a linear blend of the input channels:
+                //   out_R = R*rr + G*gr + B*br
+                //   out_G = R*rg + G*gg + B*bg
+                //   out_B = R*rb + G*gb + B*bb
+                // params[0..9] hold the 3x3 matrix as row-major: [R→R, R→G, R→B, G→R, G→G, G→B, B→R, B→G, B→B].
+                let m = self.params;
+                for px in rgba.chunks_exact_mut(4) {
+                    let r = f32::from(px[0]) / 255.0;
+                    let g = f32::from(px[1]) / 255.0;
+                    let b = f32::from(px[2]) / 255.0;
+                    let nr = (r * m[0] + g * m[3] + b * m[6]).clamp(0.0, 1.0);
+                    let ng = (r * m[1] + g * m[4] + b * m[7]).clamp(0.0, 1.0);
+                    let nb = (r * m[2] + g * m[5] + b * m[8]).clamp(0.0, 1.0);
+                    // Interpolate between the original and the mixed result by `a`.
+                    px[0] = ((nr * a + r * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
+                    px[1] = ((ng * a + g * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
+                    px[2] = ((nb * a + b * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+            EffectKind::ColorTemperature => {
+                // Shift the white point by multiplying with a blackbody color.
+                // params[0] is the temperature shift: -100 (cool/10000K), 0 (neutral/6600K),
+                // +100 (warm/3200K). The amount blends between the original and the tinted
+                // result. We interpolate the temperature along the Planckian locus.
+                let shift = self.params[0].clamp(-100.0, 100.0);
+                let k = 6600.0 - shift * 34.0; // 6600K at shift=0, ±3400K at ±100
+                let rgb = blackbody(k);
+                for px in rgba.chunks_exact_mut(4) {
+                    let r = f32::from(px[0]) / 255.0;
+                    let g = f32::from(px[1]) / 255.0;
+                    let b = f32::from(px[2]) / 255.0;
+                    // Multiply the pixel by the blackbody color, then blend with original by `a`.
+                    px[0] = ((r * rgb[0] * a + r * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
+                    px[1] = ((g * rgb[1] * a + g * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
+                    px[2] = ((b * rgb[2] * a + b * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+            EffectKind::DirectionalBlur => {
+                // Blur along an angle (params[0], degrees), `a` sets the length. Samples are
+                // taken both ways along the direction (one-axis motion blur). The offsets are
+                // worked out once, and at most MAX_TAPS of them are used however long the blur
+                // is, so the cost per pixel is bounded (a 4K picture at full strength would
+                // otherwise take well over a hundred taps per pixel).
+                const MAX_TAPS: usize = 33;
+                let angle = if self.params[0].is_finite() {
+                    self.params[0].rem_euclid(360.0)
+                } else {
+                    0.0
+                };
+                let rad = angle.to_radians();
+                let (dx, dy) = (rad.cos(), rad.sin());
+                let distance = (a * 40.0 * unit).round();
+                if distance < 1.0 {
+                    return;
+                }
+                let half = (MAX_TAPS / 2) as f32;
+                let stride = (distance / half).max(1.0);
+                let taps = ((distance / stride).floor() as i32).min(half as i32);
+                let offsets: Vec<(isize, isize)> = (-taps..=taps)
+                    .map(|t| {
+                        let d = t as f32 * stride;
+                        ((dx * d).round() as isize, (dy * d).round() as isize)
+                    })
+                    .collect();
+                let src = rgba.to_vec();
+                let (wi, hi) = (w as isize, h as isize);
+                for (y, row) in rgba.chunks_exact_mut(w * 4).enumerate() {
+                    for (x, px) in row.chunks_exact_mut(4).enumerate() {
+                        let mut sum = [0u32; 3];
+                        let mut n = 0u32;
+                        for &(ox, oy) in &offsets {
+                            let (sx, sy) = (x as isize + ox, y as isize + oy);
+                            if sx >= 0 && sy >= 0 && sx < wi && sy < hi {
+                                let si = (sy as usize * w + sx as usize) * 4;
+                                sum[0] += u32::from(src[si]);
+                                sum[1] += u32::from(src[si + 1]);
+                                sum[2] += u32::from(src[si + 2]);
+                                n += 1;
+                            }
+                        }
+                        // The pixel itself is always one of the taps (offset 0), so n >= 1.
+                        px[0] = (sum[0] / n) as u8;
+                        px[1] = (sum[1] / n) as u8;
+                        px[2] = (sum[2] / n) as u8;
+                    }
+                }
+            }
+            EffectKind::Diffusion => {
+                // Soft glow: blur a copy, scale it by the strength, then screen-blend it back
+                // onto the original: the classic soft-focus look where bright areas glow.
+                let mut blurred = rgba.to_vec();
+                let radius = (a * 15.0 * unit).round().max(1.0) as usize;
+                gaussian(&mut blurred, w, h, radius);
+                for (px, bg) in rgba.chunks_exact_mut(4).zip(blurred.chunks_exact(4)) {
+                    for c in 0..3 {
+                        let x = f32::from(px[c]) / 255.0;
+                        let y = f32::from(bg[c]) / 255.0 * a;
+                        // Screen blend: 1 - (1-x)(1-y), with y already scaled by `a`.
+                        px[c] = ((1.0 - (1.0 - x) * (1.0 - y)) * 255.0).round() as u8;
+                    }
+                }
+            }
         }
     }
 }
@@ -214,6 +388,39 @@ fn noise(i: u64, frame: u64) -> f32 {
     x = x.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
     x ^= x >> 33;
     (x & 0xffff) as f32 / 32767.5 - 1.0
+}
+
+/// Approximates the RGB color of a blackbody radiator at temperature `k` in Kelvin.
+/// Uses piecewise-linear interpolation between known anchor points on the Planckian locus.
+/// Returns RGB values normalized to 0..1.
+///
+/// At 6600K the result is near-white (neutral). Below 6600K shifts toward orange/red (warm).
+/// Above 6600K shifts toward blue (cool). This matches how Resolve's Color Temperature
+/// effect shifts all three channels multiplicatively.
+fn blackbody(k: f32) -> [f32; 3] {
+    // Anchor points on the Planckian locus: (K, [R, G, B]) in 0..1.
+    // 3200K = candlelight/warm (red-heavy). 6600K = daylight neutral. 10000K = cool/blue.
+    const ANCHORS: [(f32, [f32; 3]); 4] = [
+        (3200.0, [1.0, 0.55, 0.22]),
+        (4500.0, [1.0, 0.82, 0.48]),
+        (6600.0, [1.0, 1.0, 1.0]),
+        (10000.0, [0.61, 0.72, 1.0]),
+    ];
+    let k = k.clamp(3200.0, 10000.0);
+    // Find the two surrounding anchors and lerp.
+    for w in 0..ANCHORS.len() - 1 {
+        if k <= ANCHORS[w + 1].0 || w == ANCHORS.len() - 2 {
+            let (t0, c0) = ANCHORS[w];
+            let (t1, c1) = ANCHORS[w + 1];
+            let s = (k - t0) / (t1 - t0);
+            return [
+                c0[0] + (c1[0] - c0[0]) * s,
+                c0[1] + (c1[1] - c0[1]) * s,
+                c0[2] + (c1[2] - c0[2]) * s,
+            ];
+        }
+    }
+    ANCHORS[0].1
 }
 
 /// Blocks of `size` pixels, each the average of its pixels.
@@ -386,5 +593,233 @@ mod tests {
         let mut tiny = vec![1u8; 3];
         Effect::new(EffectKind::GaussianBlur).apply(&mut tiny, 4, 4, 0);
         assert_eq!(tiny, vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn rgb_mixer_identity_leaves_pixels_unchanged() {
+        // With the identity matrix and amount=100, RGB Mixer should leave pixels unchanged.
+        let mut p = vec![200u8, 100, 50, 255, 30, 200, 80, 255];
+        let before = p.clone();
+        Effect::new(EffectKind::RgbMixer).apply(&mut p, 2, 1, 0);
+        assert_eq!(p, before, "identity matrix is a no-op");
+    }
+
+    #[test]
+    fn rgb_mixer_swaps_channels() {
+        // Swap R and B channels: set the matrix to swap red and blue.
+        let mut p = vec![200u8, 100, 50, 255];
+        let mut e = Effect::new(EffectKind::RgbMixer);
+        // params: [R→R=0, R→G=0, R→B=1, G→R=0, G→G=1, G→B=0, B→R=1, B→G=0, B→B=0]
+        e.params = [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0];
+        e.apply(&mut p, 1, 1, 0);
+        assert_eq!(p[0], 50, "red channel now holds original blue");
+        assert_eq!(p[2], 200, "blue channel now holds original red");
+        assert_eq!(p[1], 100, "green is unchanged");
+    }
+
+    #[test]
+    fn rgb_mixer_amount_zero_is_noop() {
+        let mut p = vec![200u8, 100, 50, 255, 30, 200, 80, 255];
+        let before = p.clone();
+        let e = Effect { amount: 0.0, kind: EffectKind::RgbMixer, ..Effect::new(EffectKind::RgbMixer) };
+        e.apply(&mut p, 2, 1, 0);
+        assert_eq!(p, before, "amount=0 leaves pixels unchanged");
+    }
+
+    #[test]
+    fn rgb_mixer_keeps_alpha() {
+        let mut p = vec![200u8, 100, 50, 128];
+        let e = Effect::new(EffectKind::RgbMixer);
+        e.apply(&mut p, 1, 1, 0);
+        assert_eq!(p[3], 128, "alpha is preserved");
+    }
+
+    #[test]
+    fn color_temperature_warm_is_more_red_than_cool() {
+        // A neutral grey pixel: warming should boost red, cooling should boost blue.
+        let grey = || vec![128u8; 4 * 32 * 32];
+        let mut warm = grey();
+        let mut cool = grey();
+        let mut e = Effect::new(EffectKind::ColorTemperature);
+        e.params[0] = 100.0; // warm (3200K)
+        e.apply(&mut warm, 32, 32, 0);
+        let mut e = Effect::new(EffectKind::ColorTemperature);
+        e.params[0] = -100.0; // cool (10000K)
+        e.apply(&mut cool, 32, 32, 0);
+        assert!(warm[0] > cool[0], "warm has more red: {} vs {}", warm[0], cool[0]);
+        assert!(warm[2] < cool[2], "warm has less blue: {} vs {}", warm[2], cool[2]);
+    }
+
+    #[test]
+    fn color_temperature_neutral_leaves_pixels_unchanged() {
+        // At shift=0 (6600K) the white point is exactly white: the effect is a no-op.
+        let mut p: Vec<u8> = (0..4 * 8 * 8).map(|i| (i * 7 % 256) as u8).collect();
+        let before = p.clone();
+        Effect::new(EffectKind::ColorTemperature).apply(&mut p, 8, 8, 0);
+        assert_eq!(p, before, "neutral is a no-op");
+    }
+
+    #[test]
+    fn directional_blur_blurs_along_the_axis() {
+        // A sharp edge: left half black, right half white. A horizontal blur (angle=0)
+        // should soften the edge; a vertical blur (angle=90) should not.
+        let mut horizontal = halves();
+        let mut vertical = halves();
+        let mut e = Effect::new(EffectKind::DirectionalBlur);
+        e.amount = 100.0;
+        e.params[0] = 0.0; // horizontal
+        e.apply(&mut horizontal, 32, 32, 0);
+        e.params[0] = 90.0; // vertical
+        e.apply(&mut vertical, 32, 32, 0);
+        // Horizontal blur softens the vertical edge.
+        assert!(
+            at(&horizontal, 15, 16) > 0 && at(&horizontal, 16, 16) < 255,
+            "horizontal blur softens the edge"
+        );
+        // Vertical blur does not soften the vertical edge (all pixels in a row are the same).
+        let mut unchanged = true;
+        for x in 0..16 {
+            if at(&vertical, x, 16) != 0 {
+                unchanged = false;
+            }
+        }
+        assert!(unchanged, "vertical blur does not soften horizontal edge");
+    }
+
+    #[test]
+    fn directional_blur_angle_wraps_and_survives_bad_values() {
+        let blur = |angle: f32| {
+            let mut p = halves();
+            let mut e = Effect::new(EffectKind::DirectionalBlur);
+            e.amount = 100.0;
+            e.params[0] = angle;
+            e.apply(&mut p, 32, 32, 0);
+            p
+        };
+        assert_eq!(blur(370.0), blur(10.0), "370 degrees is 10 degrees");
+        assert_eq!(blur(-90.0), blur(270.0));
+        assert_eq!(blur(f32::NAN), blur(0.0), "a bad angle is treated as 0");
+    }
+
+    #[test]
+    fn directional_blur_of_a_big_picture_is_bounded_and_soft() {
+        // A long blur on a tall picture still takes a bounded number of taps per pixel; this
+        // would take minutes at one tap per distance pixel.
+        let (w, h) = (640usize, 2160usize);
+        let mut p: Vec<u8> = (0..w * h)
+            .flat_map(|i| {
+                let v = if i % w < w / 2 { 0 } else { 255 };
+                [v, v, v, 255]
+            })
+            .collect();
+        let mut e = Effect::new(EffectKind::DirectionalBlur);
+        e.amount = 100.0;
+        e.params[0] = 30.0;
+        let t = std::time::Instant::now();
+        e.apply(&mut p, w, h, 0);
+        assert!(t.elapsed().as_secs() < 20, "took {:?}", t.elapsed());
+        let mid = (1000 * w + w / 2) * 4;
+        assert!(p[mid] > 0 && p[mid] < 255, "the edge is softened");
+    }
+
+    #[test]
+    fn directional_blur_keeps_alpha() {
+        let mut p = vec![200u8, 100, 50, 128];
+        let mut e = Effect::new(EffectKind::DirectionalBlur);
+        e.amount = 100.0;
+        e.params[0] = 0.0;
+        e.apply(&mut p, 1, 1, 0);
+        assert_eq!(p[3], 128, "alpha is preserved");
+    }
+
+    #[test]
+    fn directional_blur_amount_zero_is_noop() {
+        let mut p = halves();
+        let before = p.clone();
+        let e = Effect { amount: 0.0, kind: EffectKind::DirectionalBlur, ..Effect::new(EffectKind::DirectionalBlur) };
+        e.apply(&mut p, 32, 32, 0);
+        assert_eq!(p, before, "amount=0 leaves pixels unchanged");
+    }
+
+    #[test]
+    fn diffusion_glow_is_brightened() {
+        // A dark pixel should get brighter from diffusion (blurred duplicate + screen blend).
+        let mut p = vec![50u8; 4 * 32 * 32];
+        Effect { amount: 100.0, kind: EffectKind::Diffusion, ..Effect::new(EffectKind::Diffusion) }
+            .apply(&mut p, 32, 32, 0);
+        assert!(p[0] > 50, "diffusion brightens dark pixels");
+    }
+
+    #[test]
+    fn diffusion_keeps_alpha() {
+        let mut p = vec![200u8, 100, 50, 128];
+        let mut e = Effect::new(EffectKind::Diffusion);
+        e.amount = 100.0;
+        e.apply(&mut p, 1, 1, 0);
+        assert_eq!(p[3], 128, "alpha is preserved");
+    }
+
+    #[test]
+    fn diffusion_amount_zero_is_noop() {
+        let mut p = halves();
+        let before = p.clone();
+        let e = Effect { amount: 0.0, kind: EffectKind::Diffusion, ..Effect::new(EffectKind::Diffusion) };
+        e.apply(&mut p, 32, 32, 0);
+        assert_eq!(p, before, "amount=0 leaves pixels unchanged");
+    }
+
+    #[test]
+    fn all_nine_effect_kinds_have_labels() {
+        for kind in EffectKind::ALL {
+            assert!(!kind.label().is_empty(), "{:?} has a label", kind);
+        }
+    }
+
+    #[test]
+    fn rgb_mixer_sanitizes_params_to_0_2() {
+        let e = Effect {
+            kind: EffectKind::RgbMixer,
+            amount: 50.0,
+            params: [3.0, -1.0, f32::NAN, 0.5, 1.0, 2.0, 0.0, f32::INFINITY, 0.5],
+            ..Effect::new(EffectKind::RgbMixer)
+        };
+        let s = e.sanitized();
+        assert!(s.params[0] == 2.0, "clamped to max");
+        assert!(s.params[1] == 0.0, "clamped to min");
+        assert!(s.params[2] == 0.0, "NaN becomes 0");
+        assert!(s.params[7] == 0.0, "Inf becomes 0");
+    }
+
+    #[test]
+    fn color_temperature_sanitizes_angle_range() {
+        let e = Effect {
+            kind: EffectKind::ColorTemperature,
+            amount: 50.0,
+            params: [150.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ..Effect::new(EffectKind::ColorTemperature)
+        };
+        let s = e.sanitized();
+        assert!(s.params[0] == 100.0, "clamped to +100");
+    }
+
+    #[test]
+    fn directional_blur_sanitizes_angle() {
+        let e = Effect {
+            kind: EffectKind::DirectionalBlur,
+            amount: 50.0,
+            params: [720.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ..Effect::new(EffectKind::DirectionalBlur)
+        };
+        let s = e.sanitized();
+        assert_eq!(s.params[0] % 360.0, 0.0, "720 wraps to 0");
+
+        let e = Effect {
+            kind: EffectKind::DirectionalBlur,
+            amount: 50.0,
+            params: [-90.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ..Effect::new(EffectKind::DirectionalBlur)
+        };
+        let s = e.sanitized();
+        assert_eq!(s.params[0], 270.0, "-90 wraps to 270");
     }
 }

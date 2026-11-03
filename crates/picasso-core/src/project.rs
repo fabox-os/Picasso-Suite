@@ -1627,4 +1627,44 @@ mod tests {
             Err(EditError::BadFile(_))
         ));
     }
+
+    #[test]
+    fn the_project_schema_has_its_expected_fields() {
+        // A regression guard: if a top-level field is removed or renamed, this fails.
+        let v: serde_json::Value =
+            serde_json::from_str(&Project::demo().to_json().unwrap()).unwrap();
+        let o = v.as_object().unwrap();
+        for field in [
+            "version", "width", "height", "fps", "name", "tracks", "media",
+        ] {
+            assert!(o.contains_key(field), "missing required field: {field}");
+        }
+        assert_eq!(v["version"], FILE_VERSION);
+        assert_eq!(v["fps"]["num"], 24);
+        assert_eq!(v["fps"]["den"], 1);
+    }
+
+    #[test]
+    fn a_truncated_project_is_refused_without_panicking() {
+        // Simulates a crash mid-write: the file is valid JSON up to a point, then cuts off.
+        let full = Project::demo().to_json().unwrap();
+        for cut in [10, 50, 200, 500, full.len() / 2].into_iter().take(5) {
+            let truncated = &full[..cut];
+            assert!(
+                Project::from_json(truncated).is_err(),
+                "truncated at {cut} should be refused, not panic"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_fields_are_ignored() {
+        // Forward compatibility: a project from a future version with extra fields still opens.
+        let mut v: serde_json::Value =
+            serde_json::from_str(&Project::demo().to_json().unwrap()).unwrap();
+        v["future_feature"] = serde_json::json!({ "new_thing": 42 });
+        v["tracks"][0]["clips"][0]["future_clip_field"] = "hello".into();
+        let mut p = Project::from_json(&v.to_string()).unwrap();
+        assert!(p.validate().is_ok());
+    }
 }

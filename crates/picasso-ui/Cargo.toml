@@ -30,6 +30,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 pollster = "0.4"  # MIT OR Apache-2.0
 # Help > Check for Updates reads GitHub's answer about the latest release.
 serde_json.workspace = true
+serde.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"  # MIT OR Apache-2.0

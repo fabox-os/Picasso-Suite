@@ -580,4 +580,35 @@ mod tests {
         assert!(again.recover.is_none(), "a saved project asks nothing");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn a_truncated_autosave_from_a_crash_is_refused_not_panicked_on() {
+        let dir = scratch("truncated");
+        let project = dir.join("shot.picasso");
+        std::fs::write(&project, b"{}").unwrap();
+        // Simulate: the autosave was being written, then the process was killed mid-write.
+        // The file is valid JSON syntax but truncated structurally — half a project.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let autosave = base(Some(&project), "shot").unwrap();
+        let good = StudioApp::new(&egui::Context::default());
+        let good_json = good.project().to_json().unwrap_or_default();
+        let half = good_json.len() / 2;
+        std::fs::write(&autosave, &good_json[..half]).unwrap();
+
+        let ctx = egui::Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.load_demo();
+        app.project_path = Some(project.to_string_lossy().into_owned());
+        app.look_for_autosave();
+        // The truncated copy is too new to ignore, so recovery is offered — but recovering
+        // from it must fail gracefully, not panic.
+        let found = app.recover.clone().expect("truncated copy is newer than the project");
+        let epoch = app.epoch;
+        app.recover_from(&found);
+        assert!(app.status.error, "truncated copy should be refused: {}", app.status.text);
+        assert_eq!(app.epoch, epoch, "the project was not changed");
+        // The copy is left on disk for Discard to remove.
+        assert!(autosave.is_file());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
