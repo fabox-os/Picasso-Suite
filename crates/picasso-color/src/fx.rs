@@ -295,44 +295,58 @@ impl Effect {
                 }
             }
             EffectKind::DirectionalBlur => {
-                // Blur along an angle (params[0], degrees) with strength `a`. We sample
-                // `distance` pixels each side along the direction vector, averaging. This
-                // matches the Resolve Directional Blur look (one-axis motion blur).
-                let angle = self.params[0].clamp(0.0, 359.0);
-                let rad = angle * std::f32::consts::PI / 180.0;
+                // Blur along an angle (params[0], degrees), `a` sets the length. Samples are
+                // taken both ways along the direction (one-axis motion blur). The offsets are
+                // worked out once, and at most MAX_TAPS of them are used however long the blur
+                // is, so the cost per pixel is bounded (a 4K picture at full strength would
+                // otherwise take well over a hundred taps per pixel).
+                const MAX_TAPS: usize = 33;
+                let angle = if self.params[0].is_finite() {
+                    self.params[0].rem_euclid(360.0)
+                } else {
+                    0.0
+                };
+                let rad = angle.to_radians();
                 let (dx, dy) = (rad.cos(), rad.sin());
-                let distance = (a * 40.0 * unit).round() as usize;
-                if distance == 0 {
+                let distance = (a * 40.0 * unit).round();
+                if distance < 1.0 {
                     return;
                 }
+                let half = (MAX_TAPS / 2) as f32;
+                let stride = (distance / half).max(1.0);
+                let taps = ((distance / stride).floor() as i32).min(half as i32);
+                let offsets: Vec<(isize, isize)> = (-taps..=taps)
+                    .map(|t| {
+                        let d = t as f32 * stride;
+                        ((dx * d).round() as isize, (dy * d).round() as isize)
+                    })
+                    .collect();
                 let src = rgba.to_vec();
-                for (i, px) in rgba.chunks_exact_mut(4).enumerate() {
-                    let x = (i % w) as f32;
-                    let y = (i / w) as f32;
-                    let mut sum = [0u64; 3];
-                    let mut n = 0u64;
-                    // Sample in both directions: -distance..=distance along the vector.
-                    for step in -(distance as i32)..=(distance as i32) {
-                        let sx = (x + dx * step as f32).round() as isize;
-                        let sy = (y + dy * step as f32).round() as isize;
-                        if sx >= 0 && sy >= 0 && (sx as usize) < w && (sy as usize) < h {
-                            let si = (sy as usize * w + sx as usize) * 4;
-                            sum[0] += u64::from(src[si]);
-                            sum[1] += u64::from(src[si + 1]);
-                            sum[2] += u64::from(src[si + 2]);
-                            n += 1;
+                let (wi, hi) = (w as isize, h as isize);
+                for (y, row) in rgba.chunks_exact_mut(w * 4).enumerate() {
+                    for (x, px) in row.chunks_exact_mut(4).enumerate() {
+                        let mut sum = [0u32; 3];
+                        let mut n = 0u32;
+                        for &(ox, oy) in &offsets {
+                            let (sx, sy) = (x as isize + ox, y as isize + oy);
+                            if sx >= 0 && sy >= 0 && sx < wi && sy < hi {
+                                let si = (sy as usize * w + sx as usize) * 4;
+                                sum[0] += u32::from(src[si]);
+                                sum[1] += u32::from(src[si + 1]);
+                                sum[2] += u32::from(src[si + 2]);
+                                n += 1;
+                            }
                         }
+                        // The pixel itself is always one of the taps (offset 0), so n >= 1.
+                        px[0] = (sum[0] / n) as u8;
+                        px[1] = (sum[1] / n) as u8;
+                        px[2] = (sum[2] / n) as u8;
                     }
-                    n = n.max(1);
-                    px[0] = (sum[0] / n) as u8;
-                    px[1] = (sum[1] / n) as u8;
-                    px[2] = (sum[2] / n) as u8;
                 }
             }
             EffectKind::Diffusion => {
-                // Soft glow: duplicate the picture, blur it, then screen-blend the blurred
-                // version back onto the original. This produces the classic "diffusion" /
-                // soft-focus look where bright areas glow.
+                // Soft glow: blur a copy, scale it by the strength, then screen-blend it back
+                // onto the original: the classic soft-focus look where bright areas glow.
                 let mut blurred = rgba.to_vec();
                 let radius = (a * 15.0 * unit).round().max(1.0) as usize;
                 gaussian(&mut blurred, w, h, radius);
@@ -340,7 +354,7 @@ impl Effect {
                     for c in 0..3 {
                         let x = f32::from(px[c]) / 255.0;
                         let y = f32::from(bg[c]) / 255.0 * a;
-                        // Screen blend: 1 - (1-x)(1-y), then interpolate by `a`.
+                        // Screen blend: 1 - (1-x)(1-y), with y already scaled by `a`.
                         px[c] = ((1.0 - (1.0 - x) * (1.0 - y)) * 255.0).round() as u8;
                     }
                 }
@@ -389,7 +403,7 @@ fn blackbody(k: f32) -> [f32; 3] {
     const ANCHORS: [(f32, [f32; 3]); 4] = [
         (3200.0, [1.0, 0.55, 0.22]),
         (4500.0, [1.0, 0.82, 0.48]),
-        (6600.0, [0.95, 0.97, 1.0]),
+        (6600.0, [1.0, 1.0, 1.0]),
         (10000.0, [0.61, 0.72, 1.0]),
     ];
     let k = k.clamp(3200.0, 10000.0);
@@ -637,18 +651,12 @@ mod tests {
     }
 
     #[test]
-    fn color_temperature_neutral_is_near_identity() {
-        // At shift=0 (6600K), the blackbody color is near-white (≈0.95×, 0.97×, 1.0×),
-        // so a grey pixel should change but only slightly.
-        let mut p = vec![128u8; 4 * 8 * 8];
+    fn color_temperature_neutral_leaves_pixels_unchanged() {
+        // At shift=0 (6600K) the white point is exactly white: the effect is a no-op.
+        let mut p: Vec<u8> = (0..4 * 8 * 8).map(|i| (i * 7 % 256) as u8).collect();
         let before = p.clone();
         Effect::new(EffectKind::ColorTemperature).apply(&mut p, 8, 8, 0);
-        for (i, (&v, &b)) in p.iter().zip(&before).enumerate() {
-            assert!(
-                (i32::from(v) - i32::from(b)).abs() < 10,
-                "pixel {i}: {v} vs {b} — too much change at neutral"
-            );
-        }
+        assert_eq!(p, before, "neutral is a no-op");
     }
 
     #[test]
@@ -676,6 +684,42 @@ mod tests {
             }
         }
         assert!(unchanged, "vertical blur does not soften horizontal edge");
+    }
+
+    #[test]
+    fn directional_blur_angle_wraps_and_survives_bad_values() {
+        let blur = |angle: f32| {
+            let mut p = halves();
+            let mut e = Effect::new(EffectKind::DirectionalBlur);
+            e.amount = 100.0;
+            e.params[0] = angle;
+            e.apply(&mut p, 32, 32, 0);
+            p
+        };
+        assert_eq!(blur(370.0), blur(10.0), "370 degrees is 10 degrees");
+        assert_eq!(blur(-90.0), blur(270.0));
+        assert_eq!(blur(f32::NAN), blur(0.0), "a bad angle is treated as 0");
+    }
+
+    #[test]
+    fn directional_blur_of_a_big_picture_is_bounded_and_soft() {
+        // A long blur on a tall picture still takes a bounded number of taps per pixel; this
+        // would take minutes at one tap per distance pixel.
+        let (w, h) = (640usize, 2160usize);
+        let mut p: Vec<u8> = (0..w * h)
+            .flat_map(|i| {
+                let v = if i % w < w / 2 { 0 } else { 255 };
+                [v, v, v, 255]
+            })
+            .collect();
+        let mut e = Effect::new(EffectKind::DirectionalBlur);
+        e.amount = 100.0;
+        e.params[0] = 30.0;
+        let t = std::time::Instant::now();
+        e.apply(&mut p, w, h, 0);
+        assert!(t.elapsed().as_secs() < 20, "took {:?}", t.elapsed());
+        let mid = (1000 * w + w / 2) * 4;
+        assert!(p[mid] > 0 && p[mid] < 255, "the edge is softened");
     }
 
     #[test]

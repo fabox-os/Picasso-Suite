@@ -1380,18 +1380,31 @@ impl StudioApp {
         if ui.button("Save Current...").clicked() {
             self.show_effect_preset_name_dialog = true;
         }
-        for name in crate::effect_presets::list_presets() {
-            if ui.button(&name).clicked() {
-                if let Some(preset) = crate::effect_presets::load_preset(&name) {
-                    self.run_gesture(
-                        ctx,
-                        Command::SetEffects {
-                            clip: id,
-                            effects: preset.effects.clone(),
-                        },
-                    );
-                    self.info(format!("Applied preset: {}", name));
+        let now = ctx.input(|i| i.time);
+        if now - self.preset_list.0 > 2.0 {
+            self.preset_list = (now, crate::effect_presets::list_presets());
+        }
+        let mut chosen = None;
+        egui::ScrollArea::vertical()
+            .id_salt("effect_presets_list")
+            .max_height(160.0)
+            .show(ui, |ui| {
+                for name in &self.preset_list.1 {
+                    if ui.button(name).clicked() {
+                        chosen = Some(name.clone());
+                    }
                 }
+            });
+        if let Some(name) = chosen {
+            if let Some(preset) = crate::effect_presets::load_preset(&name) {
+                self.run_gesture(
+                    ctx,
+                    Command::SetEffects {
+                        clip: id,
+                        effects: preset.effects,
+                    },
+                );
+                self.info(format!("Applied preset: {}", name));
             }
         }
 
@@ -1427,6 +1440,7 @@ impl StudioApp {
         }
         if let Some(effects) = effects {
             if crate::effect_presets::save_preset(&name, effects) {
+                self.preset_list.0 = f64::NEG_INFINITY; // read the folder again
                 self.info(format!("Saved preset: {}", name));
             }
         }

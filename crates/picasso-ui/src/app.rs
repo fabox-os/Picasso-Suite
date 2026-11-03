@@ -194,6 +194,9 @@ pub struct StudioApp {
     pub(crate) show_effect_preset_name_dialog: bool,
     /// The name being typed in the "Save Effects Preset" dialog, held between frames.
     pub(crate) preset_name: String,
+    /// The saved effects presets as last read from disk, and the time (egui seconds) it was
+    /// read at: the folder is not read again on every repaint.
+    pub(crate) preset_list: (f64, Vec<String>),
 }
 
 /// What a video or sound file says about itself (its media id is filled in when it is added).
@@ -337,6 +340,7 @@ impl StudioApp {
             show_shortcuts: false,
             show_effect_preset_name_dialog: false,
             preset_name: String::new(),
+            preset_list: (f64::NEG_INFINITY, Vec::new()),
         };
         // A project opened at the start may already have copies of its files.
         app.refresh_proxies();

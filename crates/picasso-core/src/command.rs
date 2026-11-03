@@ -1458,7 +1458,8 @@ impl Command {
                 if effects.len() > crate::MAX_EFFECTS {
                     return Err(EditError::Invalid("a clip has at most 16 effects"));
                 }
-                p.tracks[ti].clips[ci].effects = effects;
+                p.tracks[ti].clips[ci].effects =
+                    effects.into_iter().map(crate::Effect::sanitized).collect();
                 Ok(Outcome::Clip(clip))
             }
             Self::ClearKeyframes { clip, param } => {

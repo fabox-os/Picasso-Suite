@@ -1974,6 +1974,21 @@ fn text_plus_and_effects_from_the_menus() {
     assert_eq!(app.project().clip(a).unwrap().1.effects[0].amount, 100.0);
     app.run(Command::RemoveEffect { clip: a, index: 0 });
     assert!(app.project().clip(a).unwrap().1.effects.is_empty());
+    // A whole stack at once (an effects preset): values are kept in range, and more than a clip
+    // can hold is refused.
+    let mut mixer = picasso_core::Effect::new(EffectKind::RgbMixer);
+    mixer.params[1] = 9.0;
+    mixer.amount = 500.0;
+    app.run(Command::SetEffects { clip: a, effects: vec![mixer] });
+    let set = app.project().clip(a).unwrap().1.effects[0];
+    assert_eq!((set.amount, set.params[1]), (100.0, 2.0));
+    app.run(Command::SetEffects {
+        clip: a,
+        effects: vec![picasso_core::Effect::new(EffectKind::Invert); picasso_core::MAX_EFFECTS + 1],
+    });
+    assert_eq!(app.project().clip(a).unwrap().1.effects.len(), 1, "refused, the stack is kept");
+    app.run(Command::SetEffects { clip: a, effects: Vec::new() });
+    assert!(app.project().clip(a).unwrap().1.effects.is_empty());
     // A mask from the Effects page lands on the Color page's Window palette.
     app.go_to(5);
     app.add_window_from_effects(picasso_color::WindowShape::Circle);
