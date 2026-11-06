@@ -44,6 +44,39 @@ pub(crate) fn decode(bytes: Vec<u8>) -> Result<(String, Vec<MediaMetadata>), Str
         .map_err(|_| "that file is not a project (it is neither a database nor text)".to_string())
 }
 
+/// The project in a file the user opened, and the way back when the file is damaged: a
+/// database that fails SQLite's own check is reported with the newest autosave beside it, which
+/// is what to open instead. Files that are not damaged are read exactly as `decode` reads them.
+pub(crate) fn decode_open(
+    bytes: Vec<u8>,
+    project: Option<&std::path::Path>,
+) -> Result<(String, Vec<MediaMetadata>), String> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if picasso_media::is_database(&bytes) {
+            return picasso_media::from_bytes(&bytes).map_err(|e| damaged(e, project));
+        }
+    }
+    let _ = project;
+    decode(bytes)
+}
+
+/// What to tell someone whose project file is damaged: SQLite's own reason, and the newest
+/// autosave copy to recover from (the project's, kept beside it, or none at all).
+#[cfg(not(target_arch = "wasm32"))]
+fn damaged(e: picasso_media::MediaError, project: Option<&std::path::Path>) -> String {
+    if !matches!(e, picasso_media::MediaError::Corrupt(_)) {
+        return e.to_string();
+    }
+    match project.and_then(|path| crate::autosave::newest(Some(path), "")) {
+        Some(copy) => format!(
+            "{e}; the newest autosave copy to recover from is {}",
+            copy.display()
+        ),
+        None => format!("{e}; there is no autosave copy to recover from"),
+    }
+}
+
 /// The facts of a still image.
 pub(crate) fn image_facts(
     media: u64,
