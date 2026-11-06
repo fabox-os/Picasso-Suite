@@ -2266,6 +2266,54 @@ fn a_damaged_resolve_file_says_so_and_changes_nothing() {
 }
 
 #[test]
+fn a_truncated_project_names_the_newest_autosave_to_recover_from() {
+    let mut app = app();
+    let dir = std::env::temp_dir().join(format!("picasso-damaged-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("shot.picasso");
+    let bytes = crate::projectfile::encode(&app.project().to_json().unwrap(), &[]).unwrap();
+    std::fs::write(&file, &bytes).unwrap();
+    // Two copies beside the project; only the newer one is the one to point at.
+    let newest = std::path::PathBuf::from(format!("{}.autosave", file.display()));
+    let older = std::path::PathBuf::from(format!("{}.autosave.1", file.display()));
+    for (copy, age) in [(&newest, 60u64), (&older, 120)] {
+        std::fs::write(copy, b"copy").unwrap();
+        let when = std::time::SystemTime::now() - std::time::Duration::from_secs(age);
+        std::fs::File::options()
+            .write(true)
+            .open(copy)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    }
+    // The file cut short, as a crash while writing or a failing disk leaves it.
+    let mut half = bytes;
+    half.truncate(half.len() / 2);
+    app.open_bytes(
+        "shot.picasso",
+        Some(file.to_string_lossy().into_owned()),
+        half,
+    );
+    assert!(
+        app.status.error,
+        "a truncated project opened without a word: {}",
+        app.status.text
+    );
+    assert!(
+        app.status.text.contains(&newest.display().to_string()),
+        "the error does not name the newest autosave: {}",
+        app.status.text
+    );
+    assert!(
+        !app.status.text.contains(&older.display().to_string()),
+        "the error names an older copy: {}",
+        app.status.text
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn the_cut_page_arrows_change_the_track_height_and_reset_puts_it_back() {
     let mut app = app();
     let usual = app.cut_detail_row_h();
