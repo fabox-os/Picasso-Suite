@@ -838,6 +838,40 @@ mod tests {
         let _ = std::fs::remove_file(&s.path);
     }
 
+    /// The software H.264 encoder (libx264) writes 24 frames at 24 fps to a unique temp file,
+    /// and ffprobe reads them all back in one second.
+    #[test]
+    fn software_h264_writes_twenty_four_frames_in_one_second() {
+        let Some(p) = project(false) else { return };
+        let s = Settings {
+            preset: Preset::H264Web,
+            path: std::env::temp_dir().join(format!(
+                "picasso_export_software_h264_{}.mp4",
+                std::process::id()
+            )),
+            start: 0,
+            end: 24,
+            options: Options::default(),
+        };
+        render(&p, &MediaCache::new(), &s, &mut |_, _| true).unwrap();
+        let Some(lines) = probe(&s.path) else { return };
+        let frame_count = lines
+            .iter()
+            .find(|l| l.starts_with("h264,video,"))
+            .and_then(|l| l.split(',').nth(4).and_then(|n| n.parse::<u64>().ok()));
+        assert_eq!(frame_count, Some(24), "all pictures read back: {lines:?}");
+        let duration = lines
+            .last()
+            .and_then(|l| l.parse::<f64>().ok())
+            .unwrap_or(0.0);
+        let one_frame = 1.0 / 24.0;
+        assert!(
+            (1.0 - one_frame..=1.0 + one_frame).contains(&duration),
+            "one second within one frame: {duration} {lines:?}"
+        );
+        let _ = std::fs::remove_file(&s.path);
+    }
+
     /// One `codec,profile,type,pixel format` line per stream (ffprobe's order).
     fn streams(path: &Path) -> Option<String> {
         let out = std::process::Command::new("ffprobe")
