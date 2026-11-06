@@ -872,7 +872,7 @@ impl StudioApp {
             self.open_resolve_bytes(name, bytes);
             return;
         }
-        match crate::projectfile::decode(bytes) {
+        match crate::projectfile::decode_open(bytes, path.as_deref().map(std::path::Path::new)) {
             Ok((text, facts)) => {
                 if self.open_text(name, path, &text) {
                     self.media_facts = facts.into_iter().map(|f| (MediaId(f.media), f)).collect();
