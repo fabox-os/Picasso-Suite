@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.4
+
+Picasso Suite 0.6.4 adds four effects (RGB Mixer, Color Temperature, Directional Blur and Diffusion), effect presets, and a check that refuses a damaged project file and points at the newest autosave. The project file format is the same as in 0.6.3; a project that uses the new effects does not open in 0.6.3 or older. Contributed by GANESH NIKAM, with review fixes.
+
+### ✨ New
+- ✅ **Four effects:** RGB Mixer (a 3 x 3 channel matrix, starting as the identity), Color Temperature (one shift from cool to warm, 0 changes nothing), Directional Blur (along an angle) and Diffusion (a soft glow). Added from **Picasso FX** in the menu like the others; the Inspector has their controls, a Reset for each effect, and larger text in the effects area.
+- ✅ **Effect presets:** **Save Current...** in the Inspector keeps the selected clip's whole effect stack in the data folder (`presets/effects/<name>.json`), and the saved presets are listed under **Presets**; a click replaces the clip's effects as one undo step. Names are cleaned for use as file names, files over 1 MiB are not read, values from a preset file are kept in range, and a clip still holds at most 16 effects.
+- ✅ **About:** a credits line under a shift-click on the version number.
+
+### 🐛 Fixed
+- ✅ **Effect presets are listed and load back:** a saved preset was written without its `.json` ending, so the list never showed it and it could not be applied. Files are saved as `<name>.json` now; names that are empty, only dots, too long or a Windows device name are refused, files over 1 MiB and anything that is not a plain file are not read, at most 500 are listed, and the Inspector keeps the list instead of reading the folder on every repaint.
+- ✅ **Effects from a preset or a hand-edited file are kept in range:** replacing a clip's effects (`SetEffects`) and loading a preset run each effect's value checks and the 16-effect cap, so a bad number in a file cannot reach the renderer.
+- ✅ **Color Temperature at 0 changes nothing:** the 6600 K point is exactly white; it tinted the picture slightly before.
+- ✅ **Directional Blur is bounded and takes any angle:** the angle wraps, a bad value reads as 0, and the work for each pixel is limited (offsets worked out once, at most 33 samples).
+- ✅ **A damaged project file is refused with a way back:** opening a project runs SQLite's own integrity check first; a truncated or damaged file is not opened half-read, and the message names the newest autosave copy to recover from. Projects that are not damaged open as before.
+- ✅ **Playback:** a hardware decoder that cannot open falls back to a decoder on the processor prepared up front, so the clip does not fail or stall; the fallback is noted once in the session log.
+- ✅ **Tests and checks:** a project that is truncated, malformed or of the wrong kind is refused, not panicked on; an autosave cut short by a crash is refused, not "recovered"; the software H.264 export writes exactly 24 frames in a second; the CI runs clippy on the crates a change touches.
+
+### ⚠️ Known limitations
+- ❌ **Memory with hardware decoding:** the processor decoder prepared up front is a second decoder for every clip that plays on the graphics card, which takes more memory on a timeline with many clips. System Preferences > Decode Options turns hardware decoding off.
+- ❌ **The effects and presets** are checked by pixel tests and by tests of the files, not by hand on every control.
+- ❌ **The packages** were built and started by the release checks, not tried by hand on real Macs, Windows or Linux desktops.
+
 ## 0.6.3
 
 Picasso Suite 0.6.3 makes **File > Media Management...** cover the whole media pool, and fixes two Linux problems in the window library: files dragged from the file manager on a Wayland desktop that were lost without a word, and a crash when the X server could not list the monitors. Both Linux fixes are checked by tests and by building for Linux, but have not been tried on a Wayland desktop or on the Intel graphics that crashed. The project file format is the same as in 0.6.2.
