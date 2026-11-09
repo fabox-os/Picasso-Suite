@@ -29,6 +29,8 @@ pub enum MediaError {
     TooBig,
     #[error("the project file takes too long to read")]
     TooSlow,
+    #[error("the project file is damaged ({0})")]
+    Corrupt(String),
     #[error("the project file was made by a newer version (file layout {0})")]
     TooNew(i64),
     #[error("database error: {0}")]
@@ -220,19 +222,44 @@ fn from_bytes_within(
         return Err(MediaError::NotAProject("it is not a database".into()));
     }
     let mut db = Connection::open_in_memory()?;
-    db.deserialize_read_exact(MAIN_DB, Cursor::new(bytes), bytes.len(), true)?;
+    db.deserialize_read_exact(MAIN_DB, Cursor::new(bytes), bytes.len(), true)
+        .map_err(|e| MediaError::Corrupt(e.to_string()))?;
     // The file may come from anyone: its views and triggers must not run unsafe functions,
     // reading it must not change anything, and it must not run for ever: SQLite asks after every
     // thousand steps and stops the query once the time is up.
     db.execute_batch("PRAGMA trusted_schema = OFF; PRAGMA query_only = ON;")?;
     let deadline = std::time::Instant::now() + budget;
     db.progress_handler(1000, Some(move || std::time::Instant::now() > deadline))?;
+    // SQLite's own check of every page before any table is trusted: a file cut short, or one
+    // whose pages were damaged under it, can still deserialize and answer the first query, and
+    // would otherwise open as a project that lost half its media. The progress handler above
+    // stops a check that would take for ever.
+    let checked = quick_check(&db);
+    if checked.is_err() && std::time::Instant::now() > deadline {
+        return Err(MediaError::TooSlow);
+    }
+    let problems = checked.map_err(MediaError::Corrupt)?;
+    if problems.len() != 1 || problems[0] != "ok" {
+        return Err(MediaError::Corrupt(problems.join("; ")));
+    }
     let read = read_project(&db);
     // Whatever the error said, running out of time is the reason.
     if read.is_err() && std::time::Instant::now() > deadline {
         return Err(MediaError::TooSlow);
     }
     read
+}
+
+/// `PRAGMA quick_check` on an opened database: `["ok"]` when every page and index is sound,
+/// and otherwise SQLite's own description of what is wrong.
+fn quick_check(db: &Connection) -> Result<Vec<String>, String> {
+    let mut stmt = db
+        .prepare("PRAGMA quick_check")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
 }
 
 /// The project and the media facts in an opened project database.
@@ -366,6 +393,24 @@ mod tests {
             *b = 0xA5;
         }
         assert!(from_bytes(&junk).is_err());
+    }
+
+    #[test]
+    fn a_database_with_a_lost_page_is_damaged() {
+        // A page appended past the last one and counted in the header: every table still reads,
+        // and only SQLite's own check says the file is wrong ("Page 6: never used"). A project
+        // file that lost a page must not open as if nothing had happened.
+        let mut bytes = to_bytes("{}", &sample()).unwrap();
+        let pages = bytes.len() / 4096;
+        bytes.resize(bytes.len() + 4096, 0);
+        bytes[28..32].copy_from_slice(&(u32::try_from(pages + 1).unwrap()).to_be_bytes());
+        let read = from_bytes(&bytes);
+        assert!(read.is_err(), "a database with a lost page was opened");
+        let message = read.unwrap_err().to_string();
+        assert!(
+            message.starts_with("the project file is damaged"),
+            "{message}"
+        );
     }
 
     #[test]
