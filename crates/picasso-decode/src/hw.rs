@@ -92,10 +92,29 @@ impl Drop for BufferRef {
 
 /// Opens a device of `kind` on the default card, or says why FFmpeg would not.
 fn open_device_of(kind: ffi::AVHWDeviceType) -> Result<BufferRef, i32> {
+    open_device_named(kind, None)
+}
+
+/// Opens a device of `kind` on the card called `name` (a render node such as
+/// `/dev/dri/renderD129` for VA-API), or on the default card when there is no name.
+fn open_device_named(kind: ffi::AVHWDeviceType, name: Option<&str>) -> Result<BufferRef, i32> {
+    let name = match name.map(std::ffi::CString::new) {
+        None => None,
+        Some(Ok(c)) => Some(c),
+        Some(Err(_)) => return Err(ffi::AVERROR(ffi::EINVAL)),
+    };
     let mut device: *mut ffi::AVBufferRef = ptr::null_mut();
-    // SAFETY: FFmpeg fills `device` on success and leaves it null otherwise.
-    let made =
-        unsafe { ffi::av_hwdevice_ctx_create(&mut device, kind, ptr::null(), ptr::null_mut(), 0) };
+    // SAFETY: FFmpeg fills `device` on success and leaves it null otherwise; `name` outlives the
+    // call.
+    let made = unsafe {
+        ffi::av_hwdevice_ctx_create(
+            &mut device,
+            kind,
+            name.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
+            ptr::null_mut(),
+            0,
+        )
+    };
     if made >= 0 && !device.is_null() {
         Ok(BufferRef(device))
     } else {
@@ -103,9 +122,68 @@ fn open_device_of(kind: ffi::AVHWDeviceType) -> Result<BufferRef, i32> {
     }
 }
 
-/// Opens a device of `kind` on the default card.
-fn create_device(kind: ffi::AVHWDeviceType) -> Option<BufferRef> {
-    open_device_of(kind).ok()
+/// The graphics cards' render nodes (`/dev/dri/renderD128`, `renderD129`, ...) in order; none off
+/// Linux. A computer with two cards (a processor's graphics and a separate card) has two, and the
+/// default one is not always the card that can encode or decode a codec.
+pub fn vaapi_nodes() -> Vec<String> {
+    let mut nodes: Vec<String> = std::fs::read_dir("/dev/dri")
+        .map(|dir| {
+            dir.flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with("renderD"))
+                .map(|e| e.path().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    nodes.sort();
+    nodes
+}
+
+/// A VA-API device on the default card, or else on the first render node that opens.
+fn open_vaapi() -> Result<BufferRef, i32> {
+    let kind = ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI;
+    let first = open_device_of(kind);
+    if first.is_ok() {
+        return first;
+    }
+    for node in vaapi_nodes() {
+        if let Ok(device) = open_device_named(kind, Some(&node)) {
+            tracing::debug!("VA-API: the default card did not open, using {node}");
+            return Ok(device);
+        }
+    }
+    first
+}
+
+/// Where a VA-API encoder was found to work: the render node, and whether it needs the card's
+/// low-power mode.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct VaapiChoice {
+    /// `None`: the default card.
+    pub node: Option<String>,
+    pub low_power: bool,
+}
+
+static VAAPI_CHOICES: Mutex<Vec<(String, VaapiChoice)>> = Mutex::new(Vec::new());
+
+/// Remembers where the encoder `name` works, for [`VaapiFrames::new`] and the export.
+pub fn remember_vaapi_choice(name: &str, choice: VaapiChoice) {
+    let mut all = VAAPI_CHOICES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    all.retain(|(n, _)| n != name);
+    all.push((name.to_string(), choice));
+}
+
+/// Where the encoder `name` was found to work; the default card without low power when it was
+/// not checked.
+pub fn vaapi_choice(name: &str) -> VaapiChoice {
+    let all = VAAPI_CHOICES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    all.iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, c)| c.clone())
+        .unwrap_or_default()
 }
 
 /// The name people know a kind of device by.
@@ -121,6 +199,15 @@ fn kind_name(kind: ffi::AVHWDeviceType) -> &'static str {
     }
 }
 
+/// A device of `kind`; for VA-API on any card that opens, not only the default one.
+fn open_kind(kind: ffi::AVHWDeviceType) -> Result<BufferRef, i32> {
+    if kind == ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI {
+        open_vaapi()
+    } else {
+        open_device_of(kind)
+    }
+}
+
 /// The first of [`device_kinds`] that opens, if any, and why each one before it did not.
 ///
 /// FFmpeg's log is held quiet while this runs: a computer without a VA-API driver, or with a card
@@ -133,7 +220,9 @@ fn kind_name(kind: ffi::AVHWDeviceType) -> &'static str {
 /// at start, and a level saved while it runs would be Quiet, leaving FFmpeg silent for the rest
 /// of the run.
 fn open_device() -> (Option<(ffi::AVHWDeviceType, BufferRef)>, Vec<String>) {
-    let _probing = PROBING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _probing = PROBING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     probe_devices()
 }
 
@@ -145,15 +234,17 @@ static PROBING: Mutex<()> = Mutex::new(());
 fn probe_devices() -> (Option<(ffi::AVHWDeviceType, BufferRef)>, Vec<String>) {
     ff::util::log::set_level(ff::util::log::Level::Quiet);
     let mut failed = Vec::new();
-    let found = device_kinds().iter().find_map(|kind| match open_device_of(*kind) {
-        Ok(device) => Some((*kind, device)),
-        Err(code) => {
-            let why = format!("{}: {}", kind_name(*kind), ff::Error::from(code));
-            tracing::debug!("no hardware decoding with {why}");
-            failed.push(why);
-            None
-        }
-    });
+    let found = device_kinds()
+        .iter()
+        .find_map(|kind| match open_kind(*kind) {
+            Ok(device) => Some((*kind, device)),
+            Err(code) => {
+                let why = format!("{}: {}", kind_name(*kind), ff::Error::from(code));
+                tracing::debug!("no hardware decoding with {why}");
+                failed.push(why);
+                None
+            }
+        });
     ff::util::log::set_level(ff::util::log::Level::Error);
     (found, failed)
 }
@@ -306,10 +397,16 @@ pub struct VaapiFrames {
 
 impl VaapiFrames {
     /// A pool of `width` x `height` pictures that hold `layout` (NV12, or P010 for 10 bits) on the
-    /// default card.
-    pub fn new(width: u32, height: u32, layout: Pixel) -> Result<Self, String> {
-        let device = create_device(ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI)
-            .ok_or("no VA-API device: is there a graphics driver with VA-API?")?;
+    /// card with render node `node`, or on the default card (else the first that opens) when
+    /// there is none.
+    pub fn new(width: u32, height: u32, layout: Pixel, node: Option<&str>) -> Result<Self, String> {
+        let device = match node {
+            Some(node) => {
+                open_device_named(ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI, Some(node))
+            }
+            None => open_vaapi(),
+        }
+        .map_err(|_| "no VA-API device: is there a graphics driver with VA-API?".to_string())?;
         // SAFETY: the pool takes its own reference to the device; the context fields are set
         // before it is initialised, as FFmpeg asks.
         unsafe {
@@ -369,6 +466,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_remembered_choice_is_found_by_encoder_and_replaced() {
+        assert_eq!(vaapi_choice("never_checked_vaapi"), VaapiChoice::default());
+        let a = VaapiChoice {
+            node: Some("/dev/dri/renderD129".into()),
+            low_power: true,
+        };
+        remember_vaapi_choice("test_encoder_vaapi", a.clone());
+        assert_eq!(vaapi_choice("test_encoder_vaapi"), a);
+        remember_vaapi_choice("test_encoder_vaapi", VaapiChoice::default());
+        assert_eq!(vaapi_choice("test_encoder_vaapi"), VaapiChoice::default());
+    }
+
+    #[test]
+    fn render_nodes_are_listed_in_order() {
+        let nodes = vaapi_nodes();
+        assert!(nodes.windows(2).all(|w| w[0] < w[1]));
+        assert!(nodes.iter().all(|n| n.contains("renderD")));
+    }
+
+    #[test]
+    fn a_missing_render_node_is_an_error_not_a_crash() {
+        let r = open_device_named(
+            ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
+            Some("/dev/dri/renderD999"),
+        );
+        assert!(r.is_err());
+        let r = open_device_named(
+            ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
+            Some("bad\0name"),
+        );
+        assert!(r.is_err());
+    }
+
+    #[test]
     fn the_switch_and_the_environment_decide() {
         set_hardware_decoding(false);
         assert!(!hardware_decoding());
@@ -393,7 +524,9 @@ mod tests {
     fn the_probe_leaves_the_log_at_error_even_if_it_starts_quiet() {
         crate::init();
         // The other tests probe too, so the probes are kept out while this one looks.
-        let _probing = PROBING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _probing = PROBING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // The encoder check may have FFmpeg quiet when the probe starts; the probe must not keep
         // it that way.
         ff::util::log::set_level(ff::util::log::Level::Quiet);

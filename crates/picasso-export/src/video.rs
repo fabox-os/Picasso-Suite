@@ -261,8 +261,31 @@ fn video_spec(preset: Preset, o: &Options) -> Result<Option<VideoSpec>, ExportEr
     Ok(Some(spec))
 }
 
-/// Whether a graphics card's encoder opens here, tried with a small picture.
+/// Whether a graphics card's encoder opens here, tried with a small picture. VA-API is tried on
+/// the default card and then on every render node, each without and with the low-power mode; the
+/// first way that works is remembered for the export.
 pub(crate) fn opens(name: &str, hardware: Hardware) -> bool {
+    if hardware != Hardware::Vaapi {
+        return opens_on(name, hardware, &picasso_decode::hw::VaapiChoice::default());
+    }
+    let nodes = picasso_decode::hw::vaapi_nodes();
+    let candidates = std::iter::once(None).chain(nodes.into_iter().map(Some));
+    for node in candidates {
+        for low_power in [false, true] {
+            let choice = picasso_decode::hw::VaapiChoice {
+                node: node.clone(),
+                low_power,
+            };
+            if opens_on(name, hardware, &choice) {
+                picasso_decode::hw::remember_vaapi_choice(name, choice);
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn opens_on(name: &str, hardware: Hardware, choice: &picasso_decode::hw::VaapiChoice) -> bool {
     let Some(codec) = encoder::find_by_name(name) else {
         return false;
     };
@@ -278,7 +301,12 @@ pub(crate) fn opens(name: &str, hardware: Hardware) -> bool {
     enc.set_time_base(Rational(1, 30));
     enc.set_frame_rate(Some(Rational(30, 1)));
     let _frames = if hardware == Hardware::Vaapi {
-        let Ok(frames) = picasso_decode::hw::VaapiFrames::new(width, height, Pixel::NV12) else {
+        let Ok(frames) = picasso_decode::hw::VaapiFrames::new(
+            width,
+            height,
+            Pixel::NV12,
+            choice.node.as_deref(),
+        ) else {
             return false;
         };
         enc.set_format(Pixel::VAAPI);
@@ -288,7 +316,11 @@ pub(crate) fn opens(name: &str, hardware: Hardware) -> bool {
         enc.set_format(Pixel::NV12);
         None
     };
-    enc.open_with(Dictionary::new()).is_ok()
+    let mut options = Dictionary::new();
+    if choice.low_power {
+        options.set("low_power", "1");
+    }
+    enc.open_with(options).is_ok()
 }
 
 /// The sound encoder of a file and how it takes its samples.
@@ -509,20 +541,32 @@ pub(crate) fn encode(
             flags |= codec::Flags::QSCALE;
         }
         enc.set_flags(flags);
+        // Where the card encoder was found to work (its render node, and its low-power mode).
+        let choice = if spec.vaapi {
+            picasso_decode::hw::vaapi_choice(spec.encoder)
+        } else {
+            picasso_decode::hw::VaapiChoice::default()
+        };
         if spec.vaapi {
-            let frames =
-                picasso_decode::hw::VaapiFrames::new(width, height, spec.pixel).map_err(|why| {
-                    ExportError::Hardware {
-                        encoder: spec.encoder,
-                        why,
-                    }
-                })?;
+            let frames = picasso_decode::hw::VaapiFrames::new(
+                width,
+                height,
+                spec.pixel,
+                choice.node.as_deref(),
+            )
+            .map_err(|why| ExportError::Hardware {
+                encoder: spec.encoder,
+                why,
+            })?;
             frames.attach(&mut enc);
             vaapi = Some(frames);
         }
         let mut options = Dictionary::new();
         for (k, v) in &spec.options {
             options.set(k, v);
+        }
+        if choice.low_power {
+            options.set("low_power", "1");
         }
         // What the file says about its colours; the pictures themselves are not changed.
         options.set("color_primaries", o.color_primaries.unwrap_or("bt709"));
