@@ -34,10 +34,15 @@ pub enum EffectKind {
     /// A soft glow: duplicates the picture, blurs it, and blends it back with the original
     /// (screen blend mode), creating a diffusion/halation look.
     Diffusion,
+    /// Takes a green screen out of the picture (the strength is how far from the screen's green
+    /// a colour is still taken out).
+    GreenScreen,
+    /// The same for a blue screen.
+    BlueScreen,
 }
 
 impl EffectKind {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 15] = [
         Self::GaussianBlur,
         Self::Sharpen,
         Self::Mosaic,
@@ -51,6 +56,8 @@ impl EffectKind {
         Self::ColorTemperature,
         Self::DirectionalBlur,
         Self::Diffusion,
+        Self::GreenScreen,
+        Self::BlueScreen,
     ];
 
     pub fn label(self) -> &'static str {
@@ -68,6 +75,8 @@ impl EffectKind {
             Self::ColorTemperature => "Color Temperature",
             Self::DirectionalBlur => "Directional Blur",
             Self::Diffusion => "Diffusion",
+            Self::GreenScreen => "Green Screen",
+            Self::BlueScreen => "Blue Screen",
         }
     }
 
@@ -85,6 +94,7 @@ impl EffectKind {
             Self::ColorTemperature => 100.0,
             Self::DirectionalBlur => 50.0,
             Self::Diffusion => 50.0,
+            Self::GreenScreen | Self::BlueScreen => 30.0,
         }
     }
 }
@@ -246,6 +256,12 @@ impl Effect {
                         *v = (f32::from(*v) * dark).round() as u8;
                     }
                 }
+            }
+            EffectKind::GreenScreen => {
+                crate::key::apply_chroma_key(rgba, &crate::key::ChromaKey::green(a));
+            }
+            EffectKind::BlueScreen => {
+                crate::key::apply_chroma_key(rgba, &crate::key::ChromaKey::blue(a));
             }
             EffectKind::FilmGrain => {
                 let strength = a * 40.0;

@@ -11,6 +11,7 @@ pub mod curves;
 pub mod fx;
 pub mod grade;
 pub mod hdr;
+pub mod key;
 pub mod lut;
 pub mod mask;
 pub mod scopes;

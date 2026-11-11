@@ -607,6 +607,39 @@ mod tests {
     }
 
     #[test]
+    fn a_green_screen_clip_shows_the_track_below_through_it() {
+        let (mut p, under) = project_with([200, 0, 0]);
+        let Outcome::Media(screen) = (Command::AddMedia {
+            name: "screen".into(),
+            source: MediaSource::Solid { rgb: [0, 177, 64] },
+            length: None,
+            default_duration: 10,
+        })
+        .apply(&mut p)
+        .unwrap() else {
+            panic!()
+        };
+        place(&mut p, 0, under, 0);
+        let top = place(&mut p, 1, screen, 0);
+        let cache = MediaCache::new();
+        assert_eq!(
+            px(&render_frame(&p, &cache, 0, 2, 2).unwrap(), 0, 0),
+            [0, 177, 64, 255]
+        );
+        Command::AddEffect {
+            clip: top,
+            kind: picasso_core::EffectKind::GreenScreen,
+        }
+        .apply(&mut p)
+        .unwrap();
+        assert_eq!(
+            px(&render_frame(&p, &cache, 0, 2, 2).unwrap(), 0, 0),
+            [200, 0, 0, 255],
+            "the screen is keyed out"
+        );
+    }
+
+    #[test]
     fn muted_tracks_are_skipped() {
         let (mut p, m) = project_with([50, 60, 70]);
         place(&mut p, 0, m, 0);
