@@ -7,6 +7,7 @@ use picasso_core::{MediaItem, MediaSource, Project, TrackKind};
 
 use crate::cache::MediaCache;
 use crate::source;
+use crate::temporal;
 use crate::transform;
 use picasso_core::BlendMode;
 
@@ -195,7 +196,14 @@ fn compose_tracks(
                 }
             }
             clip.apply_nodes(&mut layer, w, h);
-            picasso_color::apply_effects(&clip.effects, &mut layer, w, h, at);
+            picasso_color::apply_effects_at(
+                &clip.effects,
+                &mut layer,
+                w,
+                h,
+                at,
+                project.fps.as_f64() as f32,
+            );
             let placed = clip.transform_at(at);
             if !placed.is_identity() {
                 moved.resize(w * h * 4, 0);
@@ -273,10 +281,17 @@ fn draw_clip(
             _ => layer.fill(0),
         }
     } else {
-        exact = source::draw(item, cache, (w, h), frame_time_us(project, frame), layer);
+        exact = source::draw(
+            item,
+            cache,
+            (w, h),
+            frame_time_us(project, frame),
+            project.fps.nominal(),
+            layer,
+        );
     }
     clip.apply_nodes(layer, w, h);
-    picasso_color::apply_effects(&clip.effects, layer, w, h, at);
+    apply_clip_effects(project, clip, item, cache, at, (w, h), layer);
     let placed = clip.transform_at(at);
     if !placed.is_identity() {
         moved.resize(w * h * 4, 0);
@@ -284,6 +299,60 @@ fn draw_clip(
         layer.copy_from_slice(moved);
     }
     exact
+}
+
+/// Applies the effects of `clip` in order. The ones that read other frames of the clip (Echo,
+/// Motion Trails, Smear, Motion Blur, Deflicker...) get those frames drawn here, from the clip's
+/// own footage and grade; a frame past either end of the clip is the nearest one it has.
+fn apply_clip_effects(
+    project: &Project,
+    clip: &picasso_core::Clip,
+    item: &picasso_core::MediaItem,
+    cache: &MediaCache,
+    at: u64,
+    (w, h): (usize, usize),
+    layer: &mut [u8],
+) {
+    let rate = project.fps.as_f64() as f32;
+    let effects = &clip.effects;
+    let mut done = 0;
+    for (i, e) in effects.iter().enumerate() {
+        if !(e.enabled && e.amount > 0.0 && e.kind.is_temporal()) {
+            continue;
+        }
+        picasso_color::apply_effects_at(&effects[done..i], layer, w, h, at, rate);
+        done = i + 1;
+        let a = e.amount / 100.0;
+        let local = at.saturating_sub(clip.start);
+        let wanted = temporal::offsets(e.kind, a, local);
+        let last = clip.end().saturating_sub(1).max(clip.start);
+        let frames: Vec<Vec<u8>> = wanted
+            .iter()
+            .map(|offset| {
+                let frame = (at as i64 + offset).clamp(clip.start as i64, last as i64) as u64;
+                if frame == at || matches!(item.source, MediaSource::Compound { .. }) {
+                    return layer.to_vec();
+                }
+                let mut source_frame = clip.source_frame_at(frame);
+                if item.length.is_some_and(|l| source_frame >= l) {
+                    source_frame = clip.source_frame_at(last);
+                }
+                let mut picture = vec![0u8; w * h * 4];
+                source::draw(
+                    item,
+                    cache,
+                    (w, h),
+                    frame_time_us(project, source_frame),
+                    project.fps.nominal(),
+                    &mut picture,
+                );
+                clip.apply_nodes(&mut picture, w, h);
+                picture
+            })
+            .collect();
+        temporal::apply(e.kind, a, layer, (w, h), local, &frames);
+    }
+    picasso_color::apply_effects_at(&effects[done..], layer, w, h, at, rate);
 }
 
 /// Makes `second` the picture `t` (0 to 1) of the way through a transition from `first`.
@@ -366,7 +435,7 @@ pub fn render_thumbnail_exact(
             exact = ok;
         }
     } else {
-        exact = source::draw(item, cache, (w, h), 0, &mut layer);
+        exact = source::draw(item, cache, (w, h), 0, project.fps.nominal(), &mut layer);
     }
     transform::blend(&mut out, &layer, 1.0, BlendMode::Normal);
     Ok((
@@ -407,6 +476,7 @@ pub fn render_media_frame(
             cache,
             (w, h),
             frame_time_us(project, frame),
+            project.fps.nominal(),
             &mut layer,
         );
     }
@@ -837,7 +907,10 @@ mod tests {
 
     #[test]
     fn the_extra_transitions_play_between_two_clips_and_leave_the_ends_alone() {
-        for kind in picasso_core::TransitionKind::extra() {
+        for kind in picasso_core::TransitionKind::extra()
+            .iter()
+            .chain(picasso_core::TransitionKind::wipes())
+        {
             let (mut p, m) = project_with([200, 0, 0]);
             let v1 = p.tracks[0].id;
             let Outcome::Media(blue) = (Command::AddMedia {
@@ -880,7 +953,10 @@ mod tests {
             for f in 6..14 {
                 let rgba = frame(f);
                 assert_eq!(rgba.len(), 64 * 36 * 4);
-                assert!(rgba.chunks_exact(4).all(|px| px[3] == 255), "{kind:?} frame {f}");
+                assert!(
+                    rgba.chunks_exact(4).all(|px| px[3] == 255),
+                    "{kind:?} frame {f}"
+                );
             }
         }
     }
@@ -1269,8 +1345,7 @@ mod tests {
             name: "Effects Clip 1".into(),
         })
         .apply(&mut p)
-        .unwrap()
-        else {
+        .unwrap() else {
             panic!()
         };
         // An invert effect on the effects clip: 200 -> 55, 0 -> 255.
@@ -1296,8 +1371,7 @@ mod tests {
             name: "Effects Clip 1".into(),
         })
         .apply(&mut p)
-        .unwrap()
-        else {
+        .unwrap() else {
             panic!()
         };
         let _ = effects;
@@ -1315,8 +1389,7 @@ mod tests {
             name: "Effects Clip 1".into(),
         })
         .apply(&mut p)
-        .unwrap()
-        else {
+        .unwrap() else {
             panic!()
         };
         // Moved half the frame to the right: the left half is empty, not the picture again.
@@ -1339,12 +1412,9 @@ mod tests {
         let (mut p, red) = project_with([200, 0, 0]);
         let clip = place(&mut p, 0, red, 0);
         // Half transparent: the viewer keeps it over black until the coverage is divided out.
-        Command::SetOpacity {
-            clip,
-            opacity: 0.5,
-        }
-        .apply(&mut p)
-        .unwrap();
+        Command::SetOpacity { clip, opacity: 0.5 }
+            .apply(&mut p)
+            .unwrap();
         let cache = MediaCache::new();
         let before = render_frame_alpha(&p, &cache, 0, 2, 2, true).unwrap().0;
         let Outcome::Clip(_effects) = (Command::CreateEffectsClip {
@@ -1352,8 +1422,7 @@ mod tests {
             name: "Effects Clip 1".into(),
         })
         .apply(&mut p)
-        .unwrap()
-        else {
+        .unwrap() else {
             panic!()
         };
         let after = render_frame_alpha(&p, &cache, 0, 2, 2, true).unwrap().0;
@@ -1376,10 +1445,76 @@ mod tests {
             name: "Effects Clip 1".into(),
         })
         .apply(&mut p)
-        .unwrap()
-        else {
+        .unwrap() else {
             panic!()
         };
         assert_eq!(p.timelines.len(), before, "no timeline added");
+    }
+
+    /// A clip of changing noise (a new picture every frame) with `kind` on it.
+    fn noisy_clip_with(kind: picasso_color::EffectKind) -> Project {
+        let mut p = Project::new("t");
+        let Outcome::Media(m) = (Command::AddMedia {
+            name: "n".into(),
+            source: MediaSource::Generator {
+                pattern: picasso_core::GeneratorKind::Noise,
+                colors: [[0; 3]; 4],
+            },
+            length: None,
+            default_duration: 30,
+        })
+        .apply(&mut p)
+        .unwrap() else {
+            panic!()
+        };
+        place(&mut p, 0, m, 0);
+        if let Some(clip) = p.tracks[0].clips.first_mut() {
+            clip.effects.push(picasso_color::Effect::new(kind));
+        }
+        p
+    }
+
+    #[test]
+    fn effects_that_read_other_frames_get_them_from_the_clip() {
+        use picasso_color::EffectKind as K;
+        let cache = MediaCache::new();
+        let plain = {
+            let mut p = noisy_clip_with(K::Echo);
+            if let Some(c) = p.tracks[0].clips.first_mut() {
+                c.effects.clear();
+            }
+            p
+        };
+        let frame = |p: &Project, at: u64| render_frame(p, &cache, at, 64, 36).unwrap().rgba;
+        for kind in [
+            K::Echo,
+            K::MotionTrails,
+            K::Smear,
+            K::FrameReplacerPrevious,
+            K::FrameReplacerNext,
+            K::FrameReplacerMix,
+        ] {
+            let p = noisy_clip_with(kind);
+            assert_ne!(frame(&p, 12), frame(&plain, 12), "{kind:?} did nothing");
+            // The same frame draws the same way every time.
+            assert_eq!(frame(&p, 12), frame(&p, 12), "{kind:?}");
+        }
+        // Strobe holds three frames: 12, 13 and 14 are one picture, 15 the next.
+        let p = noisy_clip_with(K::Strobe);
+        assert_eq!(frame(&p, 12), frame(&p, 13));
+        assert_eq!(frame(&p, 12), frame(&p, 14));
+        assert_ne!(frame(&p, 12), frame(&p, 15));
+        // The rest run on the first and last frames of the clip, where a neighbour is missing.
+        for kind in [
+            K::MotionBlur,
+            K::Deflicker,
+            K::ColorStabilizer,
+            K::DirtRemoval,
+        ] {
+            let p = noisy_clip_with(kind);
+            for at in [0, 12, 29] {
+                assert_eq!(frame(&p, at).len(), 64 * 36 * 4, "{kind:?} at {at}");
+            }
+        }
     }
 }

@@ -1449,6 +1449,13 @@ impl StudioApp {
                     rgb: self.pool.solid_color(),
                 },
             ),
+            Act::AddGenerator(pattern) => self.add_generated(
+                pattern.label(),
+                MediaSource::Generator {
+                    pattern,
+                    colors: pattern.default_colors(),
+                },
+            ),
             Act::GenerateBars => self.add_generated("Color Bars", MediaSource::ColorBars),
             Act::GenerateGradient => {
                 let (from, to) = self.pool.gradient_colors();

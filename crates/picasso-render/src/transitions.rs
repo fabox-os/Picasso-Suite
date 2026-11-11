@@ -1,4 +1,4 @@
-//! The more transitions: 29 ways to turn one picture into the next (zooms, rotations, glitch,
+//! The more transitions: 30 ways to turn one picture into the next (zooms, rotations, glitch,
 //! camera shake, slides, pans, a film strip, ...). Each is the outgoing picture at progress 0 and
 //! the incoming one at progress 1, whatever happens between.
 //!
@@ -13,12 +13,12 @@ use picasso_core::TransitionKind as K;
 const PI: f32 = std::f32::consts::PI;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct V2 {
-    x: f32,
-    y: f32,
+pub(crate) struct V2 {
+    pub(crate) x: f32,
+    pub(crate) y: f32,
 }
 
-const fn v2(x: f32, y: f32) -> V2 {
+pub(crate) const fn v2(x: f32, y: f32) -> V2 {
     V2 { x, y }
 }
 
@@ -65,26 +65,26 @@ impl Div<V2> for V2 {
 }
 
 impl V2 {
-    fn length(self) -> f32 {
+    pub(crate) fn length(self) -> f32 {
         self.x.hypot(self.y)
     }
-    fn dot(self, o: V2) -> f32 {
+    pub(crate) fn dot(self, o: V2) -> f32 {
         self.x * o.x + self.y * o.y
     }
 }
 
 /// A colour with premultiplied alpha.
-type C4 = [f32; 4];
+pub(crate) type C4 = [f32; 4];
 
-fn cmix(a: C4, b: C4, t: f32) -> C4 {
+pub(crate) fn cmix(a: C4, b: C4, t: f32) -> C4 {
     [0, 1, 2, 3].map(|i| a[i] + (b[i] - a[i]) * t)
 }
 
-fn cscale(a: C4, k: f32) -> C4 {
+pub(crate) fn cscale(a: C4, k: f32) -> C4 {
     a.map(|v| v * k)
 }
 
-fn cadd(a: C4, b: C4) -> C4 {
+pub(crate) fn cadd(a: C4, b: C4) -> C4 {
     [0, 1, 2, 3].map(|i| a[i] + b[i])
 }
 
@@ -102,11 +102,11 @@ fn darken(c: C4, amount: f32) -> C4 {
     ]
 }
 
-fn mix(a: f32, b: f32, t: f32) -> f32 {
+pub(crate) fn mix(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+pub(crate) fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
@@ -120,7 +120,7 @@ fn step(edge: f32, x: f32) -> f32 {
     }
 }
 
-fn fract(x: f32) -> f32 {
+pub(crate) fn fract(x: f32) -> f32 {
     x - x.floor()
 }
 
@@ -159,10 +159,10 @@ fn noise1(p: V2) -> f32 {
 }
 
 /// A picture to sample: RGBA8 with straight alpha.
-struct Pic<'a> {
-    data: &'a [u8],
-    w: usize,
-    h: usize,
+pub(crate) struct Pic<'a> {
+    pub(crate) data: &'a [u8],
+    pub(crate) w: usize,
+    pub(crate) h: usize,
 }
 
 impl Pic<'_> {
@@ -178,7 +178,7 @@ impl Pic<'_> {
     }
 
     /// Bilinear sample at (u, v), the position clamped into the picture.
-    fn tex(&self, p: V2) -> C4 {
+    pub(crate) fn tex(&self, p: V2) -> C4 {
         let x = (p.x.clamp(0.0, 1.0) * self.w as f32 - 0.5).clamp(0.0, (self.w - 1) as f32);
         let y = (p.y.clamp(0.0, 1.0) * self.h as f32 - 0.5).clamp(0.0, (self.h - 1) as f32);
         let (x0, y0) = (x as usize, y as usize);
@@ -190,7 +190,7 @@ impl Pic<'_> {
     }
 
     /// The same, transparent outside the picture.
-    fn inside(&self, p: V2) -> C4 {
+    pub(crate) fn inside(&self, p: V2) -> C4 {
         if p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 {
             [0.0; 4]
         } else {
@@ -269,6 +269,12 @@ enum Shape {
     ForegroundWipe,
     PaintOn,
     RoundAndDown,
+    BlurDissolve,
+    AdditiveDissolve,
+    NonAdditiveDissolve,
+    SlideOut,
+    BarnDoor,
+    Split,
 }
 
 impl Look {
@@ -305,6 +311,7 @@ fn look(kind: K, width: usize, height: usize) -> Option<Look> {
     let l = Look::new;
     let rgba = |r: f32, g: f32, b: f32| [r / 255.0, g / 255.0, b / 255.0, 1.0];
     Some(match kind {
+        // The dissolves are mixed by the compositor itself; the wipes are drawn in `wipes`.
         K::CrossDissolve | K::DipToBlack => return None,
         K::BrightnessFlash => Look {
             strength: 1.0,
@@ -438,6 +445,59 @@ fn look(kind: K, width: usize, height: usize) -> Option<Look> {
             pivot: v2(0.0, 1.0),
             ..l(Shape::RoundAndDown)
         },
+        K::BlurDissolve => Look {
+            blur: 0.04,
+            ..l(Shape::BlurDissolve)
+        },
+        K::SlideOutLeft => Look {
+            dir: SLIDE_LEFT,
+            ..l(Shape::SlideOut)
+        },
+        K::SlideOutRight => Look {
+            dir: SLIDE_RIGHT,
+            ..l(Shape::SlideOut)
+        },
+        K::SlideOutUp => Look {
+            dir: SLIDE_UP,
+            ..l(Shape::SlideOut)
+        },
+        K::SlideOutDown => Look {
+            dir: SLIDE_DOWN,
+            ..l(Shape::SlideOut)
+        },
+        // `dir` points along y for the horizontal presets; `flag` is the reverse.
+        K::BarnDoorVertical => l(Shape::BarnDoor),
+        K::BarnDoorHorizontal => Look {
+            dir: v2(0.0, 1.0),
+            ..l(Shape::BarnDoor)
+        },
+        K::BarnDoorVerticalReverse => Look {
+            flag: true,
+            ..l(Shape::BarnDoor)
+        },
+        K::BarnDoorHorizontalReverse => Look {
+            dir: v2(0.0, 1.0),
+            flag: true,
+            ..l(Shape::BarnDoor)
+        },
+        K::SplitHorizontal => Look {
+            dir: v2(0.0, 1.0),
+            ..l(Shape::Split)
+        },
+        K::SplitVertical => l(Shape::Split),
+        K::SplitHorizontalReverse => Look {
+            dir: v2(0.0, 1.0),
+            flag: true,
+            ..l(Shape::Split)
+        },
+        K::SplitVerticalReverse => Look {
+            flag: true,
+            ..l(Shape::Split)
+        },
+        K::AdditiveDissolve => l(Shape::AdditiveDissolve),
+        K::NonAdditiveDissolve => l(Shape::NonAdditiveDissolve),
+        // The wipes are drawn in `wipes`.
+        _ => return None,
     })
 }
 
@@ -751,6 +811,75 @@ fn shade(f: &Frame, l: &Look, uv: V2) -> C4 {
             let shadow = l.soft * 0.5 * (1.0 - smoothstep(0.0, 0.05, uv.x - edge_x));
             cmix(darken(f.a.tex(uv), shadow), f.b.tex(uv), painted)
         }
+        Shape::SlideOut => {
+            // The outgoing picture slides away, uncovering the incoming one.
+            let q = uv - l.dir * t;
+            over(f.a.inside(q), f.b.tex(uv))
+        }
+        Shape::BarnDoor => {
+            // The picture opens like a barn door from the middle (or closes, reversed): its two
+            // halves move apart along the axis and nothing is left in the gap.
+            let horizontal = l.dir.y.abs() > 0.5;
+            let c = if horizontal { uv.y } else { uv.x };
+            let h = 0.5 * if l.flag { 1.0 - t } else { t };
+            let halves = |pic: &Pic| -> C4 {
+                let moved = if c <= 0.5 - h {
+                    c + h
+                } else if c >= 0.5 + h {
+                    c - h
+                } else {
+                    return [0.0; 4];
+                };
+                pic.tex(if horizontal {
+                    v2(uv.x, moved)
+                } else {
+                    v2(moved, uv.y)
+                })
+            };
+            if l.flag {
+                over(halves(&f.b), f.a.tex(uv))
+            } else {
+                over(halves(&f.a), f.b.tex(uv))
+            }
+        }
+        Shape::Split => {
+            // The two halves of the screen push away from each other, the next picture coming
+            // in behind each.
+            let horizontal = l.dir.y.abs() > 0.5;
+            let first = if horizontal { uv.y } else { uv.x } < 0.5;
+            let along = if horizontal {
+                v2(1.0, 0.0)
+            } else {
+                v2(0.0, 1.0)
+            };
+            let sign = (if first { -1.0 } else { 1.0 }) * if l.flag { -1.0 } else { 1.0 };
+            let d = along * sign;
+            cadd(f.a.inside(uv - d * t), f.b.inside(uv - d * (t - 1.0)))
+        }
+        Shape::AdditiveDissolve | Shape::NonAdditiveDissolve => {
+            // Each picture at full strength from its half on: in the middle they add up (or the
+            // brighter wins).
+            let a = cscale(f.a.tex(uv), (2.0 * (1.0 - t)).min(1.0));
+            let b = cscale(f.b.tex(uv), (2.0 * t).min(1.0));
+            if matches!(l.shape, Shape::AdditiveDissolve) {
+                [0, 1, 2, 3].map(|i| (a[i] + b[i]).min(1.0))
+            } else {
+                [0, 1, 2, 3].map(|i| a[i].max(b[i]))
+            }
+        }
+        Shape::BlurDissolve => {
+            // Both pictures are blurred by a disc that is widest in the middle, and mix.
+            let radius = bell * l.blur;
+            let (mut a, mut b) = ([0.0f32; 4], [0.0f32; 4]);
+            for i in 0..32 {
+                let r = ((i as f32 + 0.5) / 32.0).sqrt();
+                let ang = i as f32 * 2.399_963;
+                let p = uv + v2(ang.cos(), ang.sin()) * (r * radius);
+                a = cadd(a, f.a(p));
+                b = cadd(b, f.b(p));
+            }
+            cmix(cscale(a, 1.0 / 32.0), cscale(b, 1.0 / 32.0), t)
+        }
         Shape::RoundAndDown => {
             let e = t;
             let d = (uv - l.pivot) * f.asp();
@@ -769,13 +898,18 @@ fn shade(f: &Frame, l: &Look, uv: V2) -> C4 {
 /// Whether `kind` is drawn by [`mix`]; the cross dissolve and the dip to black are mixed by the
 /// compositor itself.
 pub fn is_drawn_here(kind: K) -> bool {
-    look(kind, 1, 1).is_some()
+    look(kind, 1, 1).is_some() || crate::wipes::handles(kind) || crate::smooth_cut::handles(kind)
 }
 
 /// Makes `second` (the incoming picture, `width` x `height` RGBA8) the picture `t` (0 to 1) of
 /// the way through the transition `kind` from `first` (the outgoing one). Does nothing for kinds
 /// that are not drawn here, or when the pictures do not fit the size.
 pub fn mix_into(kind: K, first: &[u8], second: &mut [u8], width: usize, height: usize, t: f32) {
+    if crate::wipes::mix_into(kind, first, second, width, height, t)
+        || crate::smooth_cut::mix_into(kind, first, second, width, height, t)
+    {
+        return;
+    }
     let Some(l) = look(kind, width.max(1), height.max(1)) else {
         return;
     };
@@ -800,30 +934,22 @@ pub fn mix_into(kind: K, first: &[u8], second: &mut [u8], width: usize, height: 
         aspect: width as f32 / height as f32,
         t: t.clamp(0.0, 1.0),
     };
-    let threads = std::thread::available_parallelism()
-        .map_or(1, |n| n.get())
-        .min(16);
-    let rows = height.div_ceil(threads).max(1);
-    std::thread::scope(|scope| {
-        for (band, out) in second[..len].chunks_mut(rows * width * 4).enumerate() {
-            let (frame, l) = (&frame, &l);
-            scope.spawn(move || {
-                for (i, px) in out.chunks_exact_mut(4).enumerate() {
-                    let n = band * rows * width + i;
-                    let (x, y) = (n % width, n / width);
-                    let uv = v2(
-                        (x as f32 + 0.5) / width as f32,
-                        (y as f32 + 0.5) / height as f32,
-                    );
-                    let c = shade(frame, l, uv);
-                    let a = c[3].clamp(0.0, 1.0);
-                    let k = if a > 1e-6 { 1.0 / a } else { 0.0 };
-                    for ch in 0..3 {
-                        px[ch] = (c[ch] * k * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
-                    }
-                    px[3] = (a * 255.0 + 0.5) as u8;
-                }
-            });
+    let (frame, l) = (&frame, &l);
+    picasso_color::par::par_rows(&mut second[..len], width * 4, height, &|first_row, out| {
+        for (i, px) in out.chunks_exact_mut(4).enumerate() {
+            let n = first_row * width + i;
+            let (x, y) = (n % width, n / width);
+            let uv = v2(
+                (x as f32 + 0.5) / width as f32,
+                (y as f32 + 0.5) / height as f32,
+            );
+            let c = shade(frame, l, uv);
+            let a = c[3].clamp(0.0, 1.0);
+            let k = if a > 1e-6 { 1.0 / a } else { 0.0 };
+            for ch in 0..3 {
+                px[ch] = (c[ch] * k * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+            }
+            px[3] = (a * 255.0 + 0.5) as u8;
         }
     });
 }
@@ -866,10 +992,47 @@ mod tests {
     }
 
     #[test]
+    fn slide_out_takes_the_first_picture_away_and_a_barn_door_opens_from_the_middle() {
+        let (a, b) = (picture(0), picture(90));
+        let px = |p: &[u8], x: usize, y: usize| p[(y * W + x) * 4..(y * W + x) * 4 + 3].to_vec();
+        // Slide out to the left: the left half of the frame shows the right half of the first
+        // picture, the right half the second picture.
+        let out = run(K::SlideOutLeft, 0.5);
+        assert_eq!(px(&out, 0, 5), px(&a, W / 2, 5));
+        assert_eq!(px(&out, W - 1, 5), px(&b, W - 1, 5));
+        // A barn door opens: the middle already shows the second picture, the edges the first.
+        let door = run(K::BarnDoorVertical, 0.5);
+        assert_eq!(px(&door, W / 2, 5), px(&b, W / 2, 5));
+        assert_eq!(px(&door, 0, 5), px(&a, W / 4, 5));
+        // Reversed, it closes: it starts open and ends shut over the first picture.
+        let closed = run(K::BarnDoorVerticalReverse, 0.9);
+        assert_ne!(px(&closed, W / 2, 5), px(&b, W / 2, 5));
+        // A split sends the halves apart: the top left shows what came from the left.
+        let split = run(K::SplitVertical, 0.5);
+        assert_ne!(split, a);
+        assert_ne!(split, b);
+    }
+
+    #[test]
+    fn additive_adds_the_pictures_and_non_additive_keeps_the_brighter() {
+        let (a, b) = (picture(0), picture(90));
+        let add = run(K::AdditiveDissolve, 0.5);
+        let max = run(K::NonAdditiveDissolve, 0.5);
+        for i in 0..a.len() / 4 {
+            for c in 0..3 {
+                let j = i * 4 + c;
+                let sum = (u16::from(a[j]) + u16::from(b[j])).min(255);
+                assert!(add[j].abs_diff(sum as u8) <= 2, "additive at {j}");
+                assert!(max[j].abs_diff(a[j].max(b[j])) <= 2, "non-additive at {j}");
+            }
+        }
+    }
+
+    #[test]
     fn every_extra_transition_starts_as_the_first_picture_and_ends_as_the_second() {
         let (a, b) = (picture(0), picture(90));
         let mut checked = 0;
-        for kind in K::ALL {
+        for kind in K::extra().iter().copied() {
             if !is_drawn_here(kind) {
                 continue;
             }
@@ -886,13 +1049,13 @@ mod tests {
                 "{kind:?} does not end as the second picture ({end})"
             );
         }
-        assert_eq!(checked, 29);
+        assert_eq!(checked, 45);
     }
 
     #[test]
     fn the_middle_of_each_one_is_neither_picture_and_is_a_whole_picture() {
         let (a, b) = (picture(0), picture(90));
-        for kind in K::ALL {
+        for kind in K::extra().iter().copied() {
             if !is_drawn_here(kind) {
                 continue;
             }

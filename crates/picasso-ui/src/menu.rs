@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use egui::{Key, KeyboardShortcut, Modifiers};
-use picasso_core::{EffectKind, TransitionKind};
+use picasso_core::{EffectKind, GeneratorKind, TransitionKind};
 
 /// Everything a menu entry or a key can do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -208,6 +208,8 @@ pub(crate) enum Act {
     AddTextPlus,
     AddEffect(picasso_core::EffectKind),
     AddTransition(picasso_core::TransitionKind),
+    /// Adds a generator (a gradient, test pattern, noise, grid...) to the media pool.
+    AddGenerator(picasso_core::GeneratorKind),
     TrackEq,
     TrackDynamics,
     Preferences,
@@ -686,6 +688,312 @@ const EFFECTS: &[Entry] = &[
             item("Cross Dissolve", &[], Act::AddCrossDissolve),
             item("Dip to Color", &[], Act::AddDipToBlack),
             sub(
+                "Wipe",
+                &[
+                    item(
+                        "Wipe Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::WipeLeft),
+                    ),
+                    item(
+                        "Wipe Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::WipeRight),
+                    ),
+                    item("Wipe Up", &[], Act::AddTransition(TransitionKind::WipeUp)),
+                    item(
+                        "Wipe Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::WipeDown),
+                    ),
+                    item(
+                        "Push Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::PushLeft),
+                    ),
+                    item(
+                        "Push Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::PushRight),
+                    ),
+                    item("Push Up", &[], Act::AddTransition(TransitionKind::PushUp)),
+                    item(
+                        "Push Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::PushDown),
+                    ),
+                    item(
+                        "Band Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::BandWipe),
+                    ),
+                    item(
+                        "Band Wipe Vertical",
+                        &[],
+                        Act::AddTransition(TransitionKind::BandWipeVertical),
+                    ),
+                    item(
+                        "Band Wipe Bilinear",
+                        &[],
+                        Act::AddTransition(TransitionKind::BandWipeBilinear),
+                    ),
+                    item(
+                        "Band Wipe Vertical Bilinear",
+                        &[],
+                        Act::AddTransition(TransitionKind::BandWipeVerticalBilinear),
+                    ),
+                    item(
+                        "Center Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::CenterWipe),
+                    ),
+                    item(
+                        "Clock Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::ClockWipe),
+                    ),
+                    item(
+                        "Radial Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::RadialWipe),
+                    ),
+                    item(
+                        "Spiral Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::SpiralWipe),
+                    ),
+                    item(
+                        "Venetian Blind Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::VenetianBlindWipe),
+                    ),
+                    item("X Wipe", &[], Act::AddTransition(TransitionKind::XWipe)),
+                ],
+            ),
+            sub(
+                "Motion",
+                &[
+                    item(
+                        "Slide Out Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlideOutLeft),
+                    ),
+                    item(
+                        "Slide Out Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlideOutRight),
+                    ),
+                    item(
+                        "Slide Out Up",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlideOutUp),
+                    ),
+                    item(
+                        "Slide Out Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlideOutDown),
+                    ),
+                    item(
+                        "Barn Door Vertical",
+                        &[],
+                        Act::AddTransition(TransitionKind::BarnDoorVertical),
+                    ),
+                    item(
+                        "Barn Door Horizontal",
+                        &[],
+                        Act::AddTransition(TransitionKind::BarnDoorHorizontal),
+                    ),
+                    item(
+                        "Barn Door Vertical Reverse",
+                        &[],
+                        Act::AddTransition(TransitionKind::BarnDoorVerticalReverse),
+                    ),
+                    item(
+                        "Barn Door Horizontal Reverse",
+                        &[],
+                        Act::AddTransition(TransitionKind::BarnDoorHorizontalReverse),
+                    ),
+                    item(
+                        "Split Horizontal",
+                        &[],
+                        Act::AddTransition(TransitionKind::SplitHorizontal),
+                    ),
+                    item(
+                        "Split Vertical",
+                        &[],
+                        Act::AddTransition(TransitionKind::SplitVertical),
+                    ),
+                    item(
+                        "Split Horizontal Reverse",
+                        &[],
+                        Act::AddTransition(TransitionKind::SplitHorizontalReverse),
+                    ),
+                    item(
+                        "Split Vertical Reverse",
+                        &[],
+                        Act::AddTransition(TransitionKind::SplitVerticalReverse),
+                    ),
+                ],
+            ),
+            sub(
+                "Iris",
+                &[
+                    item(
+                        "Arrow Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::ArrowIris),
+                    ),
+                    item(
+                        "Cross Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::CrossIris),
+                    ),
+                    item(
+                        "Diamond Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::DiamondIris),
+                    ),
+                    item("Eye Iris", &[], Act::AddTransition(TransitionKind::EyeIris)),
+                    item(
+                        "Hexagon Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::HexagonIris),
+                    ),
+                    item(
+                        "Oval Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::OvalIris),
+                    ),
+                    item(
+                        "Pentagon Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::PentagonIris),
+                    ),
+                    item(
+                        "Square Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::SquareIris),
+                    ),
+                    item(
+                        "Triangle Iris",
+                        &[],
+                        Act::AddTransition(TransitionKind::TriangleIris),
+                    ),
+                    item(
+                        "Arrow Iris Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::ArrowIrisDown),
+                    ),
+                    item(
+                        "Arrow Iris Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::ArrowIrisLeft),
+                    ),
+                    item(
+                        "Arrow Iris Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::ArrowIrisRight),
+                    ),
+                    item(
+                        "Hexagon Iris Vertical",
+                        &[],
+                        Act::AddTransition(TransitionKind::HexagonIrisVertical),
+                    ),
+                    item(
+                        "Oval Iris Tall",
+                        &[],
+                        Act::AddTransition(TransitionKind::OvalIrisTall),
+                    ),
+                    item(
+                        "Pentagon Iris Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::PentagonIrisDown),
+                    ),
+                    item(
+                        "Triangle Iris Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::TriangleIrisDown),
+                    ),
+                    item(
+                        "Triangle Iris Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::TriangleIrisLeft),
+                    ),
+                    item(
+                        "Triangle Iris Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::TriangleIrisRight),
+                    ),
+                ],
+            ),
+            sub(
+                "Shape",
+                &[
+                    item(
+                        "Box Upper Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxUpperLeft),
+                    ),
+                    item(
+                        "Box Upper Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxUpperRight),
+                    ),
+                    item(
+                        "Box Lower Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxLowerLeft),
+                    ),
+                    item(
+                        "Box Lower Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxLowerRight),
+                    ),
+                    item(
+                        "Box Left Center",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxLeftCenter),
+                    ),
+                    item(
+                        "Box Top Center",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxTopCenter),
+                    ),
+                    item(
+                        "Box Right Center",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxRightCenter),
+                    ),
+                    item(
+                        "Box Bottom Center",
+                        &[],
+                        Act::AddTransition(TransitionKind::BoxBottomCenter),
+                    ),
+                    item("Heart", &[], Act::AddTransition(TransitionKind::HeartShape)),
+                    item("Star", &[], Act::AddTransition(TransitionKind::StarShape)),
+                    item(
+                        "Star 4-Point",
+                        &[],
+                        Act::AddTransition(TransitionKind::StarShape4),
+                    ),
+                    item(
+                        "Star 6-Point",
+                        &[],
+                        Act::AddTransition(TransitionKind::StarShape6),
+                    ),
+                    item(
+                        "Triangle Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::TriangleLeftShape),
+                    ),
+                    item(
+                        "Triangle Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::TriangleRightShape),
+                    ),
+                ],
+            ),
+            sub(
                 "More Transitions",
                 &[
                     item(
@@ -789,6 +1097,26 @@ const EFFECTS: &[Entry] = &[
                         &[],
                         Act::AddTransition(TransitionKind::RoundAndDown),
                     ),
+                    item(
+                        "Blur Dissolve",
+                        &[],
+                        Act::AddTransition(TransitionKind::BlurDissolve),
+                    ),
+                    item(
+                        "Additive Dissolve",
+                        &[],
+                        Act::AddTransition(TransitionKind::AdditiveDissolve),
+                    ),
+                    item(
+                        "Non-Additive Dissolve",
+                        &[],
+                        Act::AddTransition(TransitionKind::NonAdditiveDissolve),
+                    ),
+                    item(
+                        "Smooth Cut",
+                        &[],
+                        Act::AddTransition(TransitionKind::SmoothCut),
+                    ),
                 ],
             ),
         ],
@@ -842,27 +1170,70 @@ const EFFECTS: &[Entry] = &[
             sub(
                 "Key",
                 &[
+                    item("Green Screen", &[], Act::AddEffect(EffectKind::GreenScreen)),
+                    item("Blue Screen", &[], Act::AddEffect(EffectKind::BlueScreen)),
+                    item("Luma Key", &[], Act::AddEffect(EffectKind::LumaKey)),
+                    item("Red Screen", &[], Act::AddEffect(EffectKind::RedScreen)),
                     item(
-                        "Green Screen",
+                        "Magenta Screen",
                         &[],
-                        Act::AddEffect(EffectKind::GreenScreen),
+                        Act::AddEffect(EffectKind::MagentaScreen),
+                    ),
+                    item("Cyan Screen", &[], Act::AddEffect(EffectKind::CyanScreen)),
+                    item(
+                        "Yellow Screen",
+                        &[],
+                        Act::AddEffect(EffectKind::YellowScreen),
+                    ),
+                    item("HSL Key Red", &[], Act::AddEffect(EffectKind::HslKeyRed)),
+                    item(
+                        "HSL Key Yellow",
+                        &[],
+                        Act::AddEffect(EffectKind::HslKeyYellow),
                     ),
                     item(
-                        "Blue Screen",
+                        "HSL Key Green",
                         &[],
-                        Act::AddEffect(EffectKind::BlueScreen),
+                        Act::AddEffect(EffectKind::HslKeyGreen),
                     ),
+                    item("HSL Key Cyan", &[], Act::AddEffect(EffectKind::HslKeyCyan)),
+                    item("HSL Key Blue", &[], Act::AddEffect(EffectKind::HslKeyBlue)),
+                    item(
+                        "HSL Key Magenta",
+                        &[],
+                        Act::AddEffect(EffectKind::HslKeyMagenta),
+                    ),
+                    item(
+                        "3D Keyer Green",
+                        &[],
+                        Act::AddEffect(EffectKind::Keyer3dGreen),
+                    ),
+                    item(
+                        "3D Keyer Blue",
+                        &[],
+                        Act::AddEffect(EffectKind::Keyer3dBlue),
+                    ),
+                    item(
+                        "3D Keyer Green and Blue",
+                        &[],
+                        Act::AddEffect(EffectKind::Keyer3dGreenAndBlue),
+                    ),
+                    item("3D Keyer Red", &[], Act::AddEffect(EffectKind::Keyer3dRed)),
+                    item("Matte Shrink", &[], Act::AddEffect(EffectKind::MatteShrink)),
+                    item("Matte Grow", &[], Act::AddEffect(EffectKind::MatteGrow)),
+                    item("Matte Soften", &[], Act::AddEffect(EffectKind::MatteSoften)),
                 ],
             ),
             sub(
                 "Color",
                 &[
                     item("Sepia", &[], Act::AddEffect(EffectKind::Sepia)),
-                    item(
-                        "RGB Mixer",
-                        &[],
-                        Act::AddEffect(EffectKind::RgbMixer),
-                    ),
+                    item("Exposure", &[], Act::AddEffect(EffectKind::Exposure)),
+                    item("Posterize", &[], Act::AddEffect(EffectKind::Posterize)),
+                    item("Vibrance", &[], Act::AddEffect(EffectKind::Vibrance)),
+                    item("Duotone", &[], Act::AddEffect(EffectKind::Duotone)),
+                    item("Flicker", &[], Act::AddEffect(EffectKind::Flicker)),
+                    item("RGB Mixer", &[], Act::AddEffect(EffectKind::RgbMixer)),
                     item(
                         "Color Temperature",
                         &[],
@@ -873,26 +1244,274 @@ const EFFECTS: &[Entry] = &[
             sub(
                 "Blur",
                 &[
-                    item(
-                        "Soft Blur",
-                        &[],
-                        Act::AddEffect(EffectKind::GaussianBlur),
-                    ),
+                    item("Soft Blur", &[], Act::AddEffect(EffectKind::GaussianBlur)),
                     item(
                         "Directional Blur",
                         &[],
                         Act::AddEffect(EffectKind::DirectionalBlur),
                     ),
+                    item("Box Blur", &[], Act::AddEffect(EffectKind::BoxBlur)),
+                    item("Radial Blur", &[], Act::AddEffect(EffectKind::RadialBlur)),
+                    item("Zoom Blur", &[], Act::AddEffect(EffectKind::ZoomBlur)),
+                    item("Tilt-Shift", &[], Act::AddEffect(EffectKind::TiltShift)),
+                    item("Lens Blur", &[], Act::AddEffect(EffectKind::LensBlur)),
+                    item(
+                        "Noise Reduction",
+                        &[],
+                        Act::AddEffect(EffectKind::NoiseReduction),
+                    ),
+                    item("Unsharp Mask", &[], Act::AddEffect(EffectKind::UnsharpMask)),
                 ],
             ),
             sub(
                 "Light",
                 &[
                     item("Glow", &[], Act::AddEffect(EffectKind::Glow)),
+                    item("Diffusion", &[], Act::AddEffect(EffectKind::Diffusion)),
+                    item("Light Rays", &[], Act::AddEffect(EffectKind::LightRays)),
+                    item("Bloom", &[], Act::AddEffect(EffectKind::Bloom)),
+                    item("Halation", &[], Act::AddEffect(EffectKind::Halation)),
+                    item("Lens Flare", &[], Act::AddEffect(EffectKind::LensFlare)),
                     item(
-                        "Diffusion",
+                        "Aperture Diffraction",
                         &[],
-                        Act::AddEffect(EffectKind::Diffusion),
+                        Act::AddEffect(EffectKind::ApertureDiffraction),
+                    ),
+                    item(
+                        "Lens Reflections",
+                        &[],
+                        Act::AddEffect(EffectKind::LensReflections),
+                    ),
+                ],
+            ),
+            sub(
+                "Distort",
+                &[
+                    item("Twirl", &[], Act::AddEffect(EffectKind::Twirl)),
+                    item("Bulge", &[], Act::AddEffect(EffectKind::Bulge)),
+                    item("Pinch", &[], Act::AddEffect(EffectKind::Pinch)),
+                    item(
+                        "Kaleidoscope",
+                        &[],
+                        Act::AddEffect(EffectKind::Kaleidoscope),
+                    ),
+                    item("Mirror Split", &[], Act::AddEffect(EffectKind::MirrorSplit)),
+                    item("Tile", &[], Act::AddEffect(EffectKind::Tile)),
+                    item("Camera Shake", &[], Act::AddEffect(EffectKind::CameraShake)),
+                ],
+            ),
+            sub(
+                "Texture",
+                &[
+                    item("Fast Noise", &[], Act::AddEffect(EffectKind::FastNoise)),
+                    item("Texture Pop", &[], Act::AddEffect(EffectKind::TexturePop)),
+                    item(
+                        "Detail Recovery",
+                        &[],
+                        Act::AddEffect(EffectKind::DetailRecovery),
+                    ),
+                    item(
+                        "Analog Damage",
+                        &[],
+                        Act::AddEffect(EffectKind::AnalogDamage),
+                    ),
+                    item("Film Damage", &[], Act::AddEffect(EffectKind::FilmDamage)),
+                    item("JPEG Damage", &[], Act::AddEffect(EffectKind::JpegDamage)),
+                ],
+            ),
+            sub(
+                "Warp",
+                &[
+                    item("Lens Barrel", &[], Act::AddEffect(EffectKind::LensBarrel)),
+                    item(
+                        "Lens Pincushion",
+                        &[],
+                        Act::AddEffect(EffectKind::LensPincushion),
+                    ),
+                    item("Ripple", &[], Act::AddEffect(EffectKind::Ripple)),
+                    item("Wave", &[], Act::AddEffect(EffectKind::Wave)),
+                    item(
+                        "Vertical Wave",
+                        &[],
+                        Act::AddEffect(EffectKind::VerticalWave),
+                    ),
+                    item(
+                        "Horizontal Bow",
+                        &[],
+                        Act::AddEffect(EffectKind::HorizontalBow),
+                    ),
+                    item("Vertical Bow", &[], Act::AddEffect(EffectKind::VerticalBow)),
+                    item("Square Bulge", &[], Act::AddEffect(EffectKind::SquareBulge)),
+                    item("Square Pinch", &[], Act::AddEffect(EffectKind::SquarePinch)),
+                    item(
+                        "Corner Pin Left",
+                        &[],
+                        Act::AddEffect(EffectKind::CornerPinLeft),
+                    ),
+                    item(
+                        "Corner Pin Right",
+                        &[],
+                        Act::AddEffect(EffectKind::CornerPinRight),
+                    ),
+                    item(
+                        "Corner Pin Top",
+                        &[],
+                        Act::AddEffect(EffectKind::CornerPinTop),
+                    ),
+                    item(
+                        "Corner Pin Bottom",
+                        &[],
+                        Act::AddEffect(EffectKind::CornerPinBottom),
+                    ),
+                ],
+            ),
+            sub(
+                "Transform",
+                &[
+                    item(
+                        "Feathered Crop",
+                        &[],
+                        Act::AddEffect(EffectKind::FeatheredCrop),
+                    ),
+                    item(
+                        "Feathered Crop Left",
+                        &[],
+                        Act::AddEffect(EffectKind::FeatheredCropLeft),
+                    ),
+                    item(
+                        "Feathered Crop Right",
+                        &[],
+                        Act::AddEffect(EffectKind::FeatheredCropRight),
+                    ),
+                    item(
+                        "Feathered Crop Top",
+                        &[],
+                        Act::AddEffect(EffectKind::FeatheredCropTop),
+                    ),
+                    item(
+                        "Feathered Crop Bottom",
+                        &[],
+                        Act::AddEffect(EffectKind::FeatheredCropBottom),
+                    ),
+                    item("Collage 2x2", &[], Act::AddEffect(EffectKind::Collage2x2)),
+                    item("Collage 3x3", &[], Act::AddEffect(EffectKind::Collage3x3)),
+                    item("Collage 4x4", &[], Act::AddEffect(EffectKind::Collage4x4)),
+                ],
+            ),
+            sub(
+                "Sharpen",
+                &[
+                    item(
+                        "Sharpen Edges",
+                        &[],
+                        Act::AddEffect(EffectKind::SharpenEdges),
+                    ),
+                    item(
+                        "Soften and Sharpen",
+                        &[],
+                        Act::AddEffect(EffectKind::SoftenAndSharpen),
+                    ),
+                ],
+            ),
+            sub(
+                "Restore",
+                &[
+                    item(
+                        "Despill Green",
+                        &[],
+                        Act::AddEffect(EffectKind::DespillGreen),
+                    ),
+                    item("Despill Blue", &[], Act::AddEffect(EffectKind::DespillBlue)),
+                    item("Despill Red", &[], Act::AddEffect(EffectKind::DespillRed)),
+                    item(
+                        "Gamut Limiter to Rec. 709",
+                        &[],
+                        Act::AddEffect(EffectKind::GamutLimiterRec709),
+                    ),
+                    item(
+                        "Gamut Limiter to DCI-P3",
+                        &[],
+                        Act::AddEffect(EffectKind::GamutLimiterP3),
+                    ),
+                    item("Contrast Pop", &[], Act::AddEffect(EffectKind::ContrastPop)),
+                    item(
+                        "Fringe Fix Red",
+                        &[],
+                        Act::AddEffect(EffectKind::FringeFixRed),
+                    ),
+                    item(
+                        "Fringe Fix Blue",
+                        &[],
+                        Act::AddEffect(EffectKind::FringeFixBlue),
+                    ),
+                    item("Defringe", &[], Act::AddEffect(EffectKind::Defringe)),
+                    item(
+                        "False Color Exposure",
+                        &[],
+                        Act::AddEffect(EffectKind::FalseColorExposure),
+                    ),
+                    item(
+                        "False Color Thermal",
+                        &[],
+                        Act::AddEffect(EffectKind::FalseColorThermal),
+                    ),
+                    item(
+                        "False Color Rainbow",
+                        &[],
+                        Act::AddEffect(EffectKind::FalseColorRainbow),
+                    ),
+                    item("Dehaze", &[], Act::AddEffect(EffectKind::Dehaze)),
+                    item("Deband", &[], Act::AddEffect(EffectKind::Deband)),
+                    item(
+                        "Dead Pixel Fixer",
+                        &[],
+                        Act::AddEffect(EffectKind::DeadPixelFixer),
+                    ),
+                    item("Beauty", &[], Act::AddEffect(EffectKind::Beauty)),
+                    item(
+                        "Beauty Skin Only",
+                        &[],
+                        Act::AddEffect(EffectKind::BeautySkin),
+                    ),
+                ],
+            ),
+            sub(
+                "Time",
+                &[
+                    item("Echo", &[], Act::AddEffect(EffectKind::Echo)),
+                    item("Strobe", &[], Act::AddEffect(EffectKind::Strobe)),
+                    item(
+                        "Motion Trails",
+                        &[],
+                        Act::AddEffect(EffectKind::MotionTrails),
+                    ),
+                    item("Smear", &[], Act::AddEffect(EffectKind::Smear)),
+                    item("Motion Blur", &[], Act::AddEffect(EffectKind::MotionBlur)),
+                    item("Deflicker", &[], Act::AddEffect(EffectKind::Deflicker)),
+                    item(
+                        "Color Stabilizer",
+                        &[],
+                        Act::AddEffect(EffectKind::ColorStabilizer),
+                    ),
+                    item(
+                        "Frame Replacer Previous",
+                        &[],
+                        Act::AddEffect(EffectKind::FrameReplacerPrevious),
+                    ),
+                    item(
+                        "Frame Replacer Next",
+                        &[],
+                        Act::AddEffect(EffectKind::FrameReplacerNext),
+                    ),
+                    item(
+                        "Frame Replacer Mix",
+                        &[],
+                        Act::AddEffect(EffectKind::FrameReplacerMix),
+                    ),
+                    item(
+                        "Automatic Dirt Removal",
+                        &[],
+                        Act::AddEffect(EffectKind::DirtRemoval),
                     ),
                 ],
             ),
@@ -901,6 +1520,65 @@ const EFFECTS: &[Entry] = &[
                 &[
                     item("Vignette", &[], Act::AddEffect(EffectKind::Vignette)),
                     item("Film Grain", &[], Act::AddEffect(EffectKind::FilmGrain)),
+                    item("Scanlines", &[], Act::AddEffect(EffectKind::Scanlines)),
+                    item("Halftone", &[], Act::AddEffect(EffectKind::Halftone)),
+                    item(
+                        "Hexagon Pixelate",
+                        &[],
+                        Act::AddEffect(EffectKind::HexagonPixelate),
+                    ),
+                    item("Dot Pixelate", &[], Act::AddEffect(EffectKind::DotPixelate)),
+                    item(
+                        "Pencil Sketch",
+                        &[],
+                        Act::AddEffect(EffectKind::PencilSketch),
+                    ),
+                    item("Abstraction", &[], Act::AddEffect(EffectKind::Abstraction)),
+                    item("Prism", &[], Act::AddEffect(EffectKind::Prism)),
+                    item(
+                        "Colored Border",
+                        &[],
+                        Act::AddEffect(EffectKind::ColoredBorder),
+                    ),
+                    item(
+                        "Colored Border Rounded",
+                        &[],
+                        Act::AddEffect(EffectKind::ColoredBorderRounded),
+                    ),
+                    item(
+                        "Chromatic Aberration",
+                        &[],
+                        Act::AddEffect(EffectKind::ChromaticAberration),
+                    ),
+                    item("Edge Detect", &[], Act::AddEffect(EffectKind::EdgeDetect)),
+                    item(
+                        "Edge Detect Inverted",
+                        &[],
+                        Act::AddEffect(EffectKind::EdgeDetectInverted),
+                    ),
+                    item("Emboss", &[], Act::AddEffect(EffectKind::Emboss)),
+                    item("Stroke", &[], Act::AddEffect(EffectKind::Stroke)),
+                    item(
+                        "Stroke Inside",
+                        &[],
+                        Act::AddEffect(EffectKind::StrokeInside),
+                    ),
+                    item("Watercolor", &[], Act::AddEffect(EffectKind::Watercolor)),
+                    item(
+                        "Stylize Relief",
+                        &[],
+                        Act::AddEffect(EffectKind::StylizeRelief),
+                    ),
+                    item(
+                        "Stylize Ink Outline",
+                        &[],
+                        Act::AddEffect(EffectKind::StylizeInk),
+                    ),
+                    item(
+                        "Stylize Cutout",
+                        &[],
+                        Act::AddEffect(EffectKind::StylizeCutout),
+                    ),
                 ],
             ),
         ],
@@ -912,6 +1590,114 @@ const EFFECTS: &[Entry] = &[
             item("Solid Color", &[], Act::GenerateSolid),
             item("Color Bars", &[], Act::GenerateBars),
             item("Gradient", &[], Act::GenerateGradient),
+            sub(
+                "More Gradients",
+                &[
+                    item(
+                        "Four-Color Gradient",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::FourColorGradient),
+                    ),
+                    item(
+                        "Vertical Gradient",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::VerticalGradient),
+                    ),
+                    item(
+                        "Diagonal Gradient",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::DiagonalGradient),
+                    ),
+                    item(
+                        "Radial Gradient",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::RadialGradient),
+                    ),
+                ],
+            ),
+            sub(
+                "Test Patterns",
+                &[
+                    item(
+                        "Full-Field Color Bars",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::FullColorBars),
+                    ),
+                    item(
+                        "EBU Color Bars",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::EbuBars),
+                    ),
+                    item("Grey Ramp", &[], Act::AddGenerator(GeneratorKind::GreyRamp)),
+                    item(
+                        "Grey Scale",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::GreyScale),
+                    ),
+                    item(
+                        "100 mV Steps",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::Steps100mV),
+                    ),
+                    item(
+                        "YCbCr Ramp",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::YcbcrRamp),
+                    ),
+                    item(
+                        "HDR Bars (HLG, Narrow)",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::Bt2111HlgNarrow),
+                    ),
+                    item(
+                        "HDR Bars (PQ, Narrow)",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::Bt2111PqNarrow),
+                    ),
+                    item(
+                        "HDR Bars (PQ, Full)",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::Bt2111PqFull),
+                    ),
+                ],
+            ),
+            sub(
+                "Patterns and Utilities",
+                &[
+                    item("Noise", &[], Act::AddGenerator(GeneratorKind::Noise)),
+                    item(
+                        "Color Noise",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::ColorNoise),
+                    ),
+                    item(
+                        "Noise Gradient",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::NoiseGradient),
+                    ),
+                    item("Grid", &[], Act::AddGenerator(GeneratorKind::Grid)),
+                    item(
+                        "Window (Rectangle)",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::WindowRectangle),
+                    ),
+                    item(
+                        "Window (Ellipse)",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::WindowEllipse),
+                    ),
+                    item(
+                        "Countdown",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::Countdown),
+                    ),
+                    item(
+                        "Timecode Burn-In",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::TimecodeBurnIn),
+                    ),
+                ],
+            ),
         ],
     ),
     sub(
@@ -1721,6 +2507,33 @@ mod tests {
         assert!(report.contains("| Dynamic Trim Mode | `Alt+W` | works |"));
         assert!(report.contains("| Import > Media... | `Ctrl+I` | works |"));
         assert_eq!(report.matches("\n## ").count(), 13);
+    }
+
+    /// Two submenus of one menu with the same name are confusing (the second hides behind the
+    /// first), and two entries of one list with one name cannot be told apart.
+    #[test]
+    fn no_menu_lists_a_name_twice() {
+        fn check(entries: &[Entry], path: &str, found: &mut Vec<String>) {
+            let mut seen = std::collections::BTreeSet::new();
+            for entry in entries {
+                let label = match entry {
+                    Entry::Item { label, .. } => *label,
+                    Entry::Sub { label, .. } => *label,
+                    _ => continue,
+                };
+                if !seen.insert(label) {
+                    found.push(format!("{path} > {label}"));
+                }
+                if let Entry::Sub { label, items, .. } = entry {
+                    check(items, &format!("{path} > {label}"), found);
+                }
+            }
+        }
+        let mut found = Vec::new();
+        for (name, _, entries) in MENUS {
+            check(entries, name, &mut found);
+        }
+        assert!(found.is_empty(), "names listed twice: {found:?}");
     }
 
     /// `Menu-Status.md` is generated from the table above, so it must match it. Regenerate it with

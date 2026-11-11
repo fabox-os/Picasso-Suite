@@ -24,6 +24,8 @@ mod fps_prompt;
 mod icons;
 mod interchange;
 mod i18n;
+#[cfg(test)]
+mod shots;
 mod keyboard;
 mod keyframes_ui;
 mod layouts;

@@ -7,17 +7,28 @@
 //!
 //! Nothing here allocates per pixel, does I/O or can panic, so it is safe to run on any thread.
 
+mod blur;
 pub mod curves;
 pub mod fx;
 pub mod grade;
 pub mod hdr;
 pub mod key;
+mod keys;
+mod light;
+mod look;
+mod paint;
+mod restore;
+mod sharpen;
+mod texture;
+mod transform;
+mod warp;
+pub mod par;
 pub mod lut;
 pub mod mask;
 pub mod scopes;
 
 pub use curves::Curves;
-pub use fx::{apply_effects, Effect, EffectKind, MAX_EFFECTS};
+pub use fx::{apply_effects, apply_effects_at, Effect, EffectKind, DEFAULT_RATE, MAX_EFFECTS};
 pub use grade::{ColorGrade, NodeMode};
 pub use hdr::{map_rgba8_to_sdr, map_to_sdr, HdrMapping};
 pub use lut::{Lut, LutError, LutKind};

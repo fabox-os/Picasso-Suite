@@ -53,6 +53,18 @@ impl ChromaKey {
         }
     }
 
+    /// A screen of any other colour, with the usual softness and no spill removal (spill is only
+    /// taken off for green and blue screens).
+    pub fn plain(screen: [f32; 3], tolerance: f32) -> Self {
+        Self {
+            screen,
+            tolerance,
+            softness: 0.2,
+            spill_amount: 0.0,
+            spill: Spill::Green,
+        }
+    }
+
     /// A blue screen with the usual softness and spill removal.
     pub fn blue(tolerance: f32) -> Self {
         Self {
