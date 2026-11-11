@@ -79,6 +79,10 @@ fn media_reference(project: &Project, clip: &Clip, rate: f64) -> Value {
             generator("Gradient", json!({ "from": from, "to": to }))
         }
         MediaSource::ColorBars => generator("SMPTEBars", json!({})),
+        MediaSource::Generator { pattern, colors } => generator(
+            "PicassoGenerator",
+            json!({ "name": pattern.label(), "colors": colors }),
+        ),
         MediaSource::Title(title) => generator("Text", json!({ "text": title.text })),
         MediaSource::Compound { timeline } => json!({
             "OTIO_SCHEMA": "MissingReference.1",
@@ -156,8 +160,8 @@ pub fn to_otio(project: &Project) -> String {
                     children.push(json!({
                         "OTIO_SCHEMA": "Transition.1",
                         "name": match t.kind {
-                            TransitionKind::CrossDissolve => "Cross Dissolve",
                             TransitionKind::DipToBlack => "Dip to Black",
+                            other => other.label(),
                         },
                         "transition_type": "SMPTE_Dissolve",
                         "in_offset": time(frames / 2, rate),
@@ -390,6 +394,29 @@ fn media_of(reference: &Value) -> OtioMedia {
                 ..crate::TitleText::default()
             })),
             "effectsclip" => Some(MediaSource::EffectsClip),
+            "picassogenerator" => p["name"]
+                .as_str()
+                .and_then(crate::GeneratorKind::from_name)
+                .map(|pattern| {
+                    let mut colors = pattern.default_colors();
+                    if let Some(list) = p["colors"].as_array() {
+                        for (slot, value) in colors.iter_mut().zip(list) {
+                            let parts: Vec<u8> = value
+                                .as_array()
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(Value::as_u64)
+                                        .map(|c| c.min(255) as u8)
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            if let [r, g, b] = parts[..] {
+                                *slot = [r, g, b];
+                            }
+                        }
+                    }
+                    MediaSource::Generator { pattern, colors }
+                }),
             _ => None,
         };
         if let Some(source) = source {
@@ -446,10 +473,10 @@ fn read_track(track: &Value, fps: f64, items: &mut usize, skipped: &mut usize) -
         }
         if is(item, "Transition") {
             let half = |key: &str| frames_of(&item[key], fps).unwrap_or(0);
-            let kind = match item["metadata"]["picasso"]["kind"].as_str() {
-                Some("DipToBlack") => TransitionKind::DipToBlack,
-                _ => TransitionKind::CrossDissolve,
-            };
+            let kind = item["metadata"]["picasso"]["kind"]
+                .as_str()
+                .and_then(TransitionKind::from_name)
+                .unwrap_or(TransitionKind::CrossDissolve);
             pending = Some(crate::Transition {
                 kind,
                 frames: half("in_offset") + half("out_offset"),

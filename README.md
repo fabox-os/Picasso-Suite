@@ -38,7 +38,7 @@ Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, on Windows,
 
 Picasso Suite is a video editor in the shape of an editing suite: bring media in, cut it, grade it, mix the sound and render it, with every step on a page of its own and the pages in the order Resolve has them. Menus follow a written spec ([`Menu-Spec.md`](Menu-Spec.md)), and the status of every entry is listed ([`Menu-Status.md`](Menu-Status.md)).
 
-**NOTE: Picasso Suite is before 1.0. 281 of its 310 menu entries work and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk.**
+**NOTE: Picasso Suite is before 1.0. 518 of 547 menu entries work (94.70%) and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk.**
 
 ## Features
 
@@ -48,7 +48,9 @@ Picasso Suite is a video editor in the shape of an editing suite: bring media in
 - **Hardware accelerated.** Decoding on the graphics card (D3D11 on Windows, VideoToolbox on macOS, VA-API or CUDA on Linux) with the processor as the fallback and a switch in System Preferences. Export on NVENC, Intel Quick Sync, AMD AMF, VideoToolbox or VA-API.
 - **Color, with the scopes.** Serial, parallel and layer nodes; lift, gamma, gain and offset wheels; custom curves (Y, R, G, B, intensity and soft clip); qualifier and power windows; LUTs; gallery stills; parade, waveform, vectorscope and histogram.
 - **Audio, finished in place.** Fairlight has a per-track EQ and compressor, meters, loudness (BS.1770), recording from the microphone, voice-over, Bounce Mix to Track and Bounce Selected Tracks, and audio scrubbing.
-- **Effects and presets.** RGB Mixer, Color Temperature, Directional Blur and Diffusion beside Gaussian Blur, Sharpen, Mosaic, Glow, Vignette, Film Grain and more, added from the menu. A clip's whole effect stack can be saved as a preset and applied in one click.
+- **Effects, in groups.** **Effects > Picasso FX** has 134 effects in twelve groups, added from the menu: *Key* (green, blue, red, magenta, cyan and yellow screens, HSL keys for six hues, 3D keyers, luma key, matte shrink, grow and soften), *Color*, *Blur* (box, radial, zoom, tilt-shift, lens, noise reduction), *Light* (glow, diffusion, light rays, bloom, halation, lens flare, aperture spikes, lens reflections), *Distort*, *Warp* (lens barrel and pincushion, ripple, waves, bows, square dents, corner pins), *Texture* (fast noise, texture pop, detail recovery, analog, film and JPEG damage), *Transform* (feathered crops, collages), *Sharpen*, *Restore* (despill, gamut limiter, contrast pop, fringe fixes, false colour, dehaze, deband, dead pixels, beauty), *Time* (echo, strobe, motion trails, smear, motion blur, deflicker, colour stabiliser, frame replacer, dirt removal) and *Stylize* (borders, edge detect, emboss, stroke, watercolor, relief, ink and cutout looks). A clip's whole effect stack can be saved as a preset and applied in one click.
+- **Transitions and generators.** **Effects > Video Transitions** has dissolves (cross, dip, additive, non-additive, blur, smooth cut), 50 wipes, irises and shapes, 12 motion transitions (slide out, barn door, split) and 29 more (zooms, flashes, glitch, burn away, pans and more). **Effects > Generators** adds 21 pictures made from a formula: gradients, full-field and EBU colour bars, the three ITU-R BT.2111 HDR bar patterns, grey and YCbCr ramps, noise, a noise gradient, grid, windows, a countdown and a timecode burn-in.
+- **Pictures that look right.** HDR video (HLG, PQ, BT.2020) is mapped to the SDR timeline, every YUV picture is read with its own colour matrix (BT.709, BT.601, BT.2020), and a clip played faster, slower or in reverse keeps its pitch.
 - **Any format FFmpeg reads.** H.264, H.265/HEVC, ProRes, DNxHR, AV1, VP9 and more, plus images and sound. FFmpeg comes with every package.
 - **Deliver.** H.264, H.265 and AV1 (8 or 10-bit), VP9, ProRes, DNxHR, lossless FFV1, WAV, MP3 and PNG sequences, with a render queue and Resolve's render presets.
 - **Interoperability.** Opens DaVinci Resolve `.drp` projects, `.drt` timelines, `.drb` bins and XML exports; exports Final Cut Pro 7 / Premiere XML, AAF (Avid Media Composer, Pro Tools), OpenTimelineIO and EDL, and imports the same, matching their clips to your media.
@@ -59,12 +61,12 @@ Picasso Suite is a video editor in the shape of an editing suite: bring media in
 ## Status
 
 <!-- status:start -->
-![Status: 90.65% of the menu entries work, 80.00% of the roadmap is done](docs/status.svg)
+![Status: 94.70% of the menu entries work, 77.78% of the roadmap is done](docs/status.svg)
 
 | | Done | Total | |
 |---|---|---|---|
-| Menu entries | 281 | 310 | 90.65% |
-| Roadmap items* | 76 | 95 | 80.00% |
+| Menu entries | 518 | 547 | 94.70% |
+| Roadmap items* | 98 | 126 | 77.78% |
 
 Green is made, grey is not. Menu entries: every entry of every menu ([`Menu-Status.md`](Menu-Status.md)); the rest are shown disabled. \* Roadmap items ([`ROADMAP.md`](ROADMAP.md)): the to-do items are bigger than the done ones, so this share looks better than the work left. Made by `python3 scripts/status.py`.
 <!-- status:end -->
@@ -114,14 +116,14 @@ FFmpeg is included in all of them.
 
 | OS | Package | Install |
 |---|---|---|
-| Windows | `picasso-suite-0.6.4-windows.zip` | Unzip the whole folder and run `picasso-suite.exe` |
-| macOS (Apple silicon and Intel) | `picasso-suite-0.6.4-macos-universal.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); needs macOS 15 or newer (0.6.4 and later; 0.6.2 and earlier ran on macOS 14 on Apple silicon) |
-| macOS (Apple silicon only) | `picasso-suite-0.6.4-macos-arm64.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); needs macOS 15 or newer |
-| Debian/Ubuntu (22.04 or newer) | `picasso-suite-0.6.4-amd64.deb` | `sudo apt install ./picasso-suite-0.6.4-amd64.deb` |
-| Fedora/openSUSE | `picasso-suite-0.6.4-x86_64.rpm` | `sudo dnf install ./picasso-suite-0.6.4-x86_64.rpm` (openSUSE: `sudo zypper install`) |
-| Any Linux | `picasso-suite-0.6.4.flatpak` | `flatpak install ./picasso-suite-0.6.4.flatpak` |
-| Any Linux (glibc 2.35 or newer), no install | `picasso-suite-0.6.4-x86_64.AppImage` | `chmod +x picasso-suite-0.6.4-x86_64.AppImage`, then run it |
-| Linux on ARM64 | `picasso-suite-0.6.4-arm64.deb`, `-aarch64.rpm`, `-aarch64.AppImage`, `-aarch64.flatpak` | as above |
+| Windows | `picasso-suite-0.7.0-windows.zip` | Unzip the whole folder and run `picasso-suite.exe` |
+| macOS (Apple silicon and Intel) | `picasso-suite-0.7.0-macos-universal.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); needs macOS 15 or newer (0.6.4 and later; 0.6.2 and earlier ran on macOS 14 on Apple silicon) |
+| macOS (Apple silicon only) | `picasso-suite-0.7.0-macos-arm64.zip` | Unzip, move to Applications, right-click → Open (the app is not signed); needs macOS 15 or newer |
+| Debian/Ubuntu (22.04 or newer) | `picasso-suite-0.7.0-amd64.deb` | `sudo apt install ./picasso-suite-0.7.0-amd64.deb` |
+| Fedora/openSUSE | `picasso-suite-0.7.0-x86_64.rpm` | `sudo dnf install ./picasso-suite-0.7.0-x86_64.rpm` (openSUSE: `sudo zypper install`) |
+| Any Linux | `picasso-suite-0.7.0.flatpak` | `flatpak install ./picasso-suite-0.7.0.flatpak` |
+| Any Linux (glibc 2.35 or newer), no install | `picasso-suite-0.7.0-x86_64.AppImage` | `chmod +x picasso-suite-0.7.0-x86_64.AppImage`, then run it |
+| Linux on ARM64 | `picasso-suite-0.7.0-arm64.deb`, `-aarch64.rpm`, `-aarch64.AppImage`, `-aarch64.flatpak` | as above |
 
 The ARM64 packages, the AppImage and the ARM64 Flatpak come with releases after 0.2.1; the universal macOS app with 0.3.0 and later.
 

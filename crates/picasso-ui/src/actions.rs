@@ -936,7 +936,7 @@ impl StudioApp {
             Act::AddTitle | Act::AddTextPlus => true,
             Act::GrabStill => self.current_clip().is_some(),
             Act::PlayStill => !project.stills.is_empty(),
-            Act::AddCrossDissolve | Act::AddDipToBlack => {
+            Act::AddCrossDissolve | Act::AddDipToBlack | Act::AddTransition(_) => {
                 self.nearest_cut(TrackKind::Video, false).is_some()
             }
             Act::AddCrossFade => self.nearest_cut(TrackKind::Audio, false).is_some(),
@@ -1183,6 +1183,7 @@ impl StudioApp {
                 self.add_transition(TrackKind::Video, TransitionKind::CrossDissolve)
             }
             Act::AddDipToBlack => self.add_transition(TrackKind::Video, TransitionKind::DipToBlack),
+            Act::AddTransition(kind) => self.add_transition(TrackKind::Video, kind),
             Act::AddCrossFade => {
                 self.add_transition(TrackKind::Audio, TransitionKind::CrossDissolve)
             }
@@ -1446,6 +1447,13 @@ impl StudioApp {
                 "Solid",
                 MediaSource::Solid {
                     rgb: self.pool.solid_color(),
+                },
+            ),
+            Act::AddGenerator(pattern) => self.add_generated(
+                pattern.label(),
+                MediaSource::Generator {
+                    pattern,
+                    colors: pattern.default_colors(),
                 },
             ),
             Act::GenerateBars => self.add_generated("Color Bars", MediaSource::ColorBars),

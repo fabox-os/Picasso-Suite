@@ -34,10 +34,134 @@ pub enum EffectKind {
     /// A soft glow: duplicates the picture, blurs it, and blends it back with the original
     /// (screen blend mode), creating a diffusion/halation look.
     Diffusion,
+    /// Takes a green screen out of the picture (the strength is how far from the screen's green
+    /// a colour is still taken out).
+    GreenScreen,
+    /// The same for a blue screen.
+    BlueScreen,
+    Exposure,
+    Posterize,
+    Vibrance,
+    Duotone,
+    LumaKey,
+    Flicker,
+    Twirl,
+    Bulge,
+    Pinch,
+    Kaleidoscope,
+    MirrorSplit,
+    Tile,
+    CameraShake,
+    Scanlines,
+    Halftone,
+    HexagonPixelate,
+    DotPixelate,
+    PencilSketch,
+    Abstraction,
+    Prism,
+    BoxBlur,
+    RadialBlur,
+    ZoomBlur,
+    TiltShift,
+    LensBlur,
+    NoiseReduction,
+    UnsharpMask,
+    FastNoise,
+    TexturePop,
+    DetailRecovery,
+    AnalogDamage,
+    FilmDamage,
+    JpegDamage,
+    LightRays,
+    Bloom,
+    Halation,
+    LensFlare,
+    ApertureDiffraction,
+    LensReflections,
+    LensBarrel,
+    LensPincushion,
+    Ripple,
+    Wave,
+    VerticalWave,
+    HorizontalBow,
+    VerticalBow,
+    SquareBulge,
+    SquarePinch,
+    CornerPinLeft,
+    CornerPinRight,
+    CornerPinTop,
+    CornerPinBottom,
+    FeatheredCrop,
+    FeatheredCropLeft,
+    FeatheredCropRight,
+    FeatheredCropTop,
+    FeatheredCropBottom,
+    Collage2x2,
+    Collage3x3,
+    Collage4x4,
+    SharpenEdges,
+    SoftenAndSharpen,
+    RedScreen,
+    MagentaScreen,
+    CyanScreen,
+    YellowScreen,
+    HslKeyRed,
+    HslKeyYellow,
+    HslKeyGreen,
+    HslKeyCyan,
+    HslKeyBlue,
+    HslKeyMagenta,
+    Keyer3dGreen,
+    Keyer3dBlue,
+    Keyer3dGreenAndBlue,
+    Keyer3dRed,
+    MatteShrink,
+    MatteGrow,
+    MatteSoften,
+    DespillGreen,
+    DespillBlue,
+    DespillRed,
+    GamutLimiterRec709,
+    GamutLimiterP3,
+    ContrastPop,
+    FringeFixRed,
+    FringeFixBlue,
+    Defringe,
+    FalseColorExposure,
+    FalseColorThermal,
+    FalseColorRainbow,
+    Dehaze,
+    Deband,
+    DeadPixelFixer,
+    Beauty,
+    BeautySkin,
+    ColoredBorder,
+    ColoredBorderRounded,
+    ChromaticAberration,
+    EdgeDetect,
+    EdgeDetectInverted,
+    Emboss,
+    Stroke,
+    StrokeInside,
+    Watercolor,
+    StylizeRelief,
+    StylizeInk,
+    StylizeCutout,
+    Echo,
+    Strobe,
+    MotionTrails,
+    Smear,
+    MotionBlur,
+    FrameReplacerPrevious,
+    FrameReplacerNext,
+    FrameReplacerMix,
+    Deflicker,
+    ColorStabilizer,
+    DirtRemoval,
 }
 
 impl EffectKind {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 134] = [
         Self::GaussianBlur,
         Self::Sharpen,
         Self::Mosaic,
@@ -51,7 +175,147 @@ impl EffectKind {
         Self::ColorTemperature,
         Self::DirectionalBlur,
         Self::Diffusion,
+        Self::GreenScreen,
+        Self::BlueScreen,
+        Self::Exposure,
+        Self::Posterize,
+        Self::Vibrance,
+        Self::Duotone,
+        Self::LumaKey,
+        Self::Flicker,
+        Self::Twirl,
+        Self::Bulge,
+        Self::Pinch,
+        Self::Kaleidoscope,
+        Self::MirrorSplit,
+        Self::Tile,
+        Self::CameraShake,
+        Self::Scanlines,
+        Self::Halftone,
+        Self::HexagonPixelate,
+        Self::DotPixelate,
+        Self::PencilSketch,
+        Self::Abstraction,
+        Self::Prism,
+        Self::BoxBlur,
+        Self::RadialBlur,
+        Self::ZoomBlur,
+        Self::TiltShift,
+        Self::LensBlur,
+        Self::NoiseReduction,
+        Self::UnsharpMask,
+        Self::FastNoise,
+        Self::TexturePop,
+        Self::DetailRecovery,
+        Self::AnalogDamage,
+        Self::FilmDamage,
+        Self::JpegDamage,
+        Self::LightRays,
+        Self::Bloom,
+        Self::Halation,
+        Self::LensFlare,
+        Self::ApertureDiffraction,
+        Self::LensReflections,
+        Self::LensBarrel,
+        Self::LensPincushion,
+        Self::Ripple,
+        Self::Wave,
+        Self::VerticalWave,
+        Self::HorizontalBow,
+        Self::VerticalBow,
+        Self::SquareBulge,
+        Self::SquarePinch,
+        Self::CornerPinLeft,
+        Self::CornerPinRight,
+        Self::CornerPinTop,
+        Self::CornerPinBottom,
+        Self::FeatheredCrop,
+        Self::FeatheredCropLeft,
+        Self::FeatheredCropRight,
+        Self::FeatheredCropTop,
+        Self::FeatheredCropBottom,
+        Self::Collage2x2,
+        Self::Collage3x3,
+        Self::Collage4x4,
+        Self::SharpenEdges,
+        Self::SoftenAndSharpen,
+        Self::RedScreen,
+        Self::MagentaScreen,
+        Self::CyanScreen,
+        Self::YellowScreen,
+        Self::HslKeyRed,
+        Self::HslKeyYellow,
+        Self::HslKeyGreen,
+        Self::HslKeyCyan,
+        Self::HslKeyBlue,
+        Self::HslKeyMagenta,
+        Self::Keyer3dGreen,
+        Self::Keyer3dBlue,
+        Self::Keyer3dGreenAndBlue,
+        Self::Keyer3dRed,
+        Self::MatteShrink,
+        Self::MatteGrow,
+        Self::MatteSoften,
+        Self::DespillGreen,
+        Self::DespillBlue,
+        Self::DespillRed,
+        Self::GamutLimiterRec709,
+        Self::GamutLimiterP3,
+        Self::ContrastPop,
+        Self::FringeFixRed,
+        Self::FringeFixBlue,
+        Self::Defringe,
+        Self::FalseColorExposure,
+        Self::FalseColorThermal,
+        Self::FalseColorRainbow,
+        Self::Dehaze,
+        Self::Deband,
+        Self::DeadPixelFixer,
+        Self::Beauty,
+        Self::BeautySkin,
+        Self::ColoredBorder,
+        Self::ColoredBorderRounded,
+        Self::ChromaticAberration,
+        Self::EdgeDetect,
+        Self::EdgeDetectInverted,
+        Self::Emboss,
+        Self::Stroke,
+        Self::StrokeInside,
+        Self::Watercolor,
+        Self::StylizeRelief,
+        Self::StylizeInk,
+        Self::StylizeCutout,
+        Self::Echo,
+        Self::Strobe,
+        Self::MotionTrails,
+        Self::Smear,
+        Self::MotionBlur,
+        Self::FrameReplacerPrevious,
+        Self::FrameReplacerNext,
+        Self::FrameReplacerMix,
+        Self::Deflicker,
+        Self::ColorStabilizer,
+        Self::DirtRemoval,
     ];
+
+    /// Whether the effect reads other frames of the clip, so the compositor has to draw it (it
+    /// does nothing in [`Effect::apply`], which has only one picture).
+    pub fn is_temporal(self) -> bool {
+        matches!(
+            self,
+            Self::Echo
+                | Self::Strobe
+                | Self::MotionTrails
+                | Self::Smear
+                | Self::MotionBlur
+                | Self::FrameReplacerPrevious
+                | Self::FrameReplacerNext
+                | Self::FrameReplacerMix
+                | Self::Deflicker
+                | Self::ColorStabilizer
+                | Self::DirtRemoval
+        )
+    }
 
     pub fn label(self) -> &'static str {
         match self {
@@ -68,6 +332,127 @@ impl EffectKind {
             Self::ColorTemperature => "Color Temperature",
             Self::DirectionalBlur => "Directional Blur",
             Self::Diffusion => "Diffusion",
+            Self::GreenScreen => "Green Screen",
+            Self::BlueScreen => "Blue Screen",
+            Self::Exposure => "Exposure",
+            Self::Posterize => "Posterize",
+            Self::Vibrance => "Vibrance",
+            Self::Duotone => "Duotone",
+            Self::LumaKey => "Luma Key",
+            Self::Flicker => "Flicker",
+            Self::Twirl => "Twirl",
+            Self::Bulge => "Bulge",
+            Self::Pinch => "Pinch",
+            Self::Kaleidoscope => "Kaleidoscope",
+            Self::MirrorSplit => "Mirror Split",
+            Self::Tile => "Tile",
+            Self::CameraShake => "Camera Shake",
+            Self::Scanlines => "Scanlines",
+            Self::Halftone => "Halftone",
+            Self::HexagonPixelate => "Hexagon Pixelate",
+            Self::DotPixelate => "Dot Pixelate",
+            Self::PencilSketch => "Pencil Sketch",
+            Self::Abstraction => "Abstraction",
+            Self::Prism => "Prism",
+            Self::BoxBlur => "Box Blur",
+            Self::RadialBlur => "Radial Blur",
+            Self::ZoomBlur => "Zoom Blur",
+            Self::TiltShift => "Tilt-Shift",
+            Self::LensBlur => "Lens Blur",
+            Self::NoiseReduction => "Noise Reduction",
+            Self::UnsharpMask => "Unsharp Mask",
+            Self::FastNoise => "Fast Noise",
+            Self::TexturePop => "Texture Pop",
+            Self::DetailRecovery => "Detail Recovery",
+            Self::AnalogDamage => "Analog Damage",
+            Self::FilmDamage => "Film Damage",
+            Self::JpegDamage => "JPEG Damage",
+            Self::LightRays => "Light Rays",
+            Self::Bloom => "Bloom",
+            Self::Halation => "Halation",
+            Self::LensFlare => "Lens Flare",
+            Self::ApertureDiffraction => "Aperture Diffraction",
+            Self::LensReflections => "Lens Reflections",
+            Self::LensBarrel => "Lens Barrel",
+            Self::LensPincushion => "Lens Pincushion",
+            Self::Ripple => "Ripple",
+            Self::Wave => "Wave",
+            Self::VerticalWave => "Vertical Wave",
+            Self::HorizontalBow => "Horizontal Bow",
+            Self::VerticalBow => "Vertical Bow",
+            Self::SquareBulge => "Square Bulge",
+            Self::SquarePinch => "Square Pinch",
+            Self::CornerPinLeft => "Corner Pin Left",
+            Self::CornerPinRight => "Corner Pin Right",
+            Self::CornerPinTop => "Corner Pin Top",
+            Self::CornerPinBottom => "Corner Pin Bottom",
+            Self::FeatheredCrop => "Feathered Crop",
+            Self::FeatheredCropLeft => "Feathered Crop Left",
+            Self::FeatheredCropRight => "Feathered Crop Right",
+            Self::FeatheredCropTop => "Feathered Crop Top",
+            Self::FeatheredCropBottom => "Feathered Crop Bottom",
+            Self::Collage2x2 => "Collage 2x2",
+            Self::Collage3x3 => "Collage 3x3",
+            Self::Collage4x4 => "Collage 4x4",
+            Self::SharpenEdges => "Sharpen Edges",
+            Self::SoftenAndSharpen => "Soften and Sharpen",
+            Self::RedScreen => "Red Screen",
+            Self::MagentaScreen => "Magenta Screen",
+            Self::CyanScreen => "Cyan Screen",
+            Self::YellowScreen => "Yellow Screen",
+            Self::HslKeyRed => "HSL Key Red",
+            Self::HslKeyYellow => "HSL Key Yellow",
+            Self::HslKeyGreen => "HSL Key Green",
+            Self::HslKeyCyan => "HSL Key Cyan",
+            Self::HslKeyBlue => "HSL Key Blue",
+            Self::HslKeyMagenta => "HSL Key Magenta",
+            Self::Keyer3dGreen => "3D Keyer Green",
+            Self::Keyer3dBlue => "3D Keyer Blue",
+            Self::Keyer3dGreenAndBlue => "3D Keyer Green and Blue",
+            Self::Keyer3dRed => "3D Keyer Red",
+            Self::MatteShrink => "Matte Shrink",
+            Self::MatteGrow => "Matte Grow",
+            Self::MatteSoften => "Matte Soften",
+            Self::DespillGreen => "Despill Green",
+            Self::DespillBlue => "Despill Blue",
+            Self::DespillRed => "Despill Red",
+            Self::GamutLimiterRec709 => "Gamut Limiter to Rec. 709",
+            Self::GamutLimiterP3 => "Gamut Limiter to DCI-P3",
+            Self::ContrastPop => "Contrast Pop",
+            Self::FringeFixRed => "Fringe Fix Red",
+            Self::FringeFixBlue => "Fringe Fix Blue",
+            Self::Defringe => "Defringe",
+            Self::FalseColorExposure => "False Color Exposure",
+            Self::FalseColorThermal => "False Color Thermal",
+            Self::FalseColorRainbow => "False Color Rainbow",
+            Self::Dehaze => "Dehaze",
+            Self::Deband => "Deband",
+            Self::DeadPixelFixer => "Dead Pixel Fixer",
+            Self::Beauty => "Beauty",
+            Self::BeautySkin => "Beauty Skin Only",
+            Self::ColoredBorder => "Colored Border",
+            Self::ColoredBorderRounded => "Colored Border Rounded",
+            Self::ChromaticAberration => "Chromatic Aberration",
+            Self::EdgeDetect => "Edge Detect",
+            Self::EdgeDetectInverted => "Edge Detect Inverted",
+            Self::Emboss => "Emboss",
+            Self::Stroke => "Stroke",
+            Self::StrokeInside => "Stroke Inside",
+            Self::Watercolor => "Watercolor",
+            Self::StylizeRelief => "Stylize Relief",
+            Self::StylizeInk => "Stylize Ink Outline",
+            Self::StylizeCutout => "Stylize Cutout",
+            Self::Echo => "Echo",
+            Self::Strobe => "Strobe",
+            Self::MotionTrails => "Motion Trails",
+            Self::Smear => "Smear",
+            Self::MotionBlur => "Motion Blur",
+            Self::FrameReplacerPrevious => "Frame Replacer Previous",
+            Self::FrameReplacerNext => "Frame Replacer Next",
+            Self::FrameReplacerMix => "Frame Replacer Mix",
+            Self::Deflicker => "Deflicker",
+            Self::ColorStabilizer => "Color Stabilizer",
+            Self::DirtRemoval => "Automatic Dirt Removal",
         }
     }
 
@@ -85,6 +470,126 @@ impl EffectKind {
             Self::ColorTemperature => 100.0,
             Self::DirectionalBlur => 50.0,
             Self::Diffusion => 50.0,
+            Self::GreenScreen | Self::BlueScreen => 30.0,
+            Self::Exposure => 33.0,
+            Self::Posterize => 70.0,
+            Self::Vibrance => 30.0,
+            Self::Duotone => 100.0,
+            Self::LumaKey => 20.0,
+            Self::Flicker => 30.0,
+            Self::Twirl => 50.0,
+            Self::Bulge => 50.0,
+            Self::Pinch => 50.0,
+            Self::Kaleidoscope => 40.0,
+            Self::MirrorSplit => 50.0,
+            Self::Tile => 50.0,
+            Self::CameraShake => 50.0,
+            Self::Scanlines => 50.0,
+            Self::Halftone => 100.0,
+            Self::HexagonPixelate => 40.0,
+            Self::DotPixelate => 40.0,
+            Self::PencilSketch => 100.0,
+            Self::Abstraction => 50.0,
+            Self::Prism => 50.0,
+            Self::BoxBlur => 15.0,
+            Self::RadialBlur => 50.0,
+            Self::ZoomBlur => 50.0,
+            Self::TiltShift => 50.0,
+            Self::LensBlur => 50.0,
+            Self::NoiseReduction => 40.0,
+            Self::UnsharpMask => 50.0,
+            Self::FastNoise => 50.0,
+            Self::TexturePop => 40.0,
+            Self::DetailRecovery => 40.0,
+            Self::AnalogDamage => 50.0,
+            Self::FilmDamage => 50.0,
+            Self::JpegDamage => 50.0,
+            Self::LightRays => 50.0,
+            Self::Bloom => 50.0,
+            Self::Halation => 50.0,
+            Self::LensFlare => 50.0,
+            Self::ApertureDiffraction => 50.0,
+            Self::LensReflections => 50.0,
+            Self::LensBarrel => 50.0,
+            Self::LensPincushion => 50.0,
+            Self::Ripple => 50.0,
+            Self::Wave => 50.0,
+            Self::VerticalWave => 50.0,
+            Self::HorizontalBow => 50.0,
+            Self::VerticalBow => 50.0,
+            Self::SquareBulge => 50.0,
+            Self::SquarePinch => 50.0,
+            Self::CornerPinLeft => 50.0,
+            Self::CornerPinRight => 50.0,
+            Self::CornerPinTop => 50.0,
+            Self::CornerPinBottom => 50.0,
+            Self::FeatheredCrop => 50.0,
+            Self::FeatheredCropLeft => 50.0,
+            Self::FeatheredCropRight => 50.0,
+            Self::FeatheredCropTop => 50.0,
+            Self::FeatheredCropBottom => 50.0,
+            Self::Collage2x2 => 50.0,
+            Self::Collage3x3 => 50.0,
+            Self::Collage4x4 => 50.0,
+            Self::SharpenEdges => 50.0,
+            Self::SoftenAndSharpen => 50.0,
+            Self::RedScreen => 30.0,
+            Self::MagentaScreen => 30.0,
+            Self::CyanScreen => 30.0,
+            Self::YellowScreen => 30.0,
+            Self::HslKeyRed => 50.0,
+            Self::HslKeyYellow => 50.0,
+            Self::HslKeyGreen => 50.0,
+            Self::HslKeyCyan => 50.0,
+            Self::HslKeyBlue => 50.0,
+            Self::HslKeyMagenta => 50.0,
+            Self::Keyer3dGreen => 50.0,
+            Self::Keyer3dBlue => 50.0,
+            Self::Keyer3dGreenAndBlue => 50.0,
+            Self::Keyer3dRed => 50.0,
+            Self::MatteShrink => 50.0,
+            Self::MatteGrow => 50.0,
+            Self::MatteSoften => 50.0,
+            Self::DespillGreen => 100.0,
+            Self::DespillBlue => 100.0,
+            Self::DespillRed => 100.0,
+            Self::GamutLimiterRec709 => 100.0,
+            Self::GamutLimiterP3 => 100.0,
+            Self::ContrastPop => 50.0,
+            Self::FringeFixRed => 50.0,
+            Self::FringeFixBlue => 50.0,
+            Self::Defringe => 50.0,
+            Self::FalseColorExposure => 100.0,
+            Self::FalseColorThermal => 100.0,
+            Self::FalseColorRainbow => 100.0,
+            Self::Dehaze => 50.0,
+            Self::Deband => 50.0,
+            Self::DeadPixelFixer => 50.0,
+            Self::Beauty => 50.0,
+            Self::BeautySkin => 50.0,
+            Self::ColoredBorder => 50.0,
+            Self::ColoredBorderRounded => 50.0,
+            Self::ChromaticAberration => 50.0,
+            Self::EdgeDetect => 100.0,
+            Self::EdgeDetectInverted => 100.0,
+            Self::Emboss => 100.0,
+            Self::Stroke => 50.0,
+            Self::StrokeInside => 50.0,
+            Self::Watercolor => 50.0,
+            Self::StylizeRelief => 100.0,
+            Self::StylizeInk => 100.0,
+            Self::StylizeCutout => 100.0,
+            Self::Echo => 50.0,
+            Self::Strobe => 50.0,
+            Self::MotionTrails => 50.0,
+            Self::Smear => 50.0,
+            Self::MotionBlur => 50.0,
+            Self::FrameReplacerPrevious => 50.0,
+            Self::FrameReplacerNext => 50.0,
+            Self::FrameReplacerMix => 50.0,
+            Self::Deflicker => 50.0,
+            Self::ColorStabilizer => 50.0,
+            Self::DirtRemoval => 50.0,
         }
     }
 }
@@ -169,6 +674,17 @@ impl Effect {
     /// Applies the effect to `rgba` (`w` x `h`, alpha kept). `frame` seeds the film grain, so
     /// it moves from frame to frame.
     pub fn apply(&self, rgba: &mut [u8], w: usize, h: usize, frame: u64) {
+        self.apply_at(rgba, w, h, frame, DEFAULT_RATE);
+    }
+
+    /// The same, for a clip that plays at `rate` frames a second: Flicker, Camera Shake, Ripple
+    /// and Wave follow time, not the frame number.
+    pub fn apply_at(&self, rgba: &mut [u8], w: usize, h: usize, frame: u64, rate: f32) {
+        let rate = if rate.is_finite() && rate > 0.0 {
+            rate
+        } else {
+            DEFAULT_RATE
+        };
         let Some(len) = w.checked_mul(h) else {
             return;
         };
@@ -247,6 +763,145 @@ impl Effect {
                     }
                 }
             }
+            EffectKind::Exposure
+            | EffectKind::Posterize
+            | EffectKind::Vibrance
+            | EffectKind::Duotone
+            | EffectKind::LumaKey
+            | EffectKind::Flicker
+            | EffectKind::Twirl
+            | EffectKind::Bulge
+            | EffectKind::Pinch
+            | EffectKind::Kaleidoscope
+            | EffectKind::MirrorSplit
+            | EffectKind::Tile
+            | EffectKind::CameraShake
+            | EffectKind::Scanlines
+            | EffectKind::Halftone
+            | EffectKind::HexagonPixelate
+            | EffectKind::DotPixelate
+            | EffectKind::PencilSketch
+            | EffectKind::Abstraction
+            | EffectKind::Prism => {
+                crate::look::apply(self.kind, a, rgba, w, h, frame, rate);
+            }
+            EffectKind::BoxBlur | EffectKind::RadialBlur | EffectKind::ZoomBlur | EffectKind::TiltShift | EffectKind::LensBlur | EffectKind::NoiseReduction | EffectKind::UnsharpMask => {
+                crate::blur::apply(self.kind, a, rgba, w, h);
+            }
+            EffectKind::FastNoise
+            | EffectKind::TexturePop
+            | EffectKind::DetailRecovery
+            | EffectKind::AnalogDamage
+            | EffectKind::FilmDamage
+            | EffectKind::JpegDamage => {
+                crate::texture::apply(self.kind, a, rgba, w, h, frame);
+            }
+            EffectKind::LightRays
+            | EffectKind::Bloom
+            | EffectKind::Halation
+            | EffectKind::LensFlare
+            | EffectKind::ApertureDiffraction
+            | EffectKind::LensReflections => {
+                crate::light::apply(self.kind, a, rgba, w, h);
+            }
+            EffectKind::LensBarrel
+            | EffectKind::LensPincushion
+            | EffectKind::Ripple
+            | EffectKind::Wave
+            | EffectKind::VerticalWave
+            | EffectKind::HorizontalBow
+            | EffectKind::VerticalBow
+            | EffectKind::SquareBulge
+            | EffectKind::SquarePinch
+            | EffectKind::CornerPinLeft
+            | EffectKind::CornerPinRight
+            | EffectKind::CornerPinTop
+            | EffectKind::CornerPinBottom => {
+                crate::warp::apply(self.kind, a, rgba, w, h, frame, rate);
+            }
+            EffectKind::FeatheredCrop
+            | EffectKind::FeatheredCropLeft
+            | EffectKind::FeatheredCropRight
+            | EffectKind::FeatheredCropTop
+            | EffectKind::FeatheredCropBottom
+            | EffectKind::Collage2x2
+            | EffectKind::Collage3x3
+            | EffectKind::Collage4x4 => {
+                crate::transform::apply(self.kind, a, rgba, w, h);
+            }
+            EffectKind::SharpenEdges | EffectKind::SoftenAndSharpen => {
+                crate::sharpen::apply(self.kind, a, rgba, w, h);
+            }
+            EffectKind::RedScreen
+            | EffectKind::MagentaScreen
+            | EffectKind::CyanScreen
+            | EffectKind::YellowScreen
+            | EffectKind::HslKeyRed
+            | EffectKind::HslKeyYellow
+            | EffectKind::HslKeyGreen
+            | EffectKind::HslKeyCyan
+            | EffectKind::HslKeyBlue
+            | EffectKind::HslKeyMagenta
+            | EffectKind::Keyer3dGreen
+            | EffectKind::Keyer3dBlue
+            | EffectKind::Keyer3dGreenAndBlue
+            | EffectKind::Keyer3dRed
+            | EffectKind::MatteShrink
+            | EffectKind::MatteGrow
+            | EffectKind::MatteSoften => {
+                crate::keys::apply(self.kind, a, rgba, w, h);
+            }
+            EffectKind::DespillGreen
+            | EffectKind::DespillBlue
+            | EffectKind::DespillRed
+            | EffectKind::GamutLimiterRec709
+            | EffectKind::GamutLimiterP3
+            | EffectKind::ContrastPop
+            | EffectKind::FringeFixRed
+            | EffectKind::FringeFixBlue
+            | EffectKind::Defringe
+            | EffectKind::FalseColorExposure
+            | EffectKind::FalseColorThermal
+            | EffectKind::FalseColorRainbow
+            | EffectKind::Dehaze
+            | EffectKind::Deband
+            | EffectKind::DeadPixelFixer
+            | EffectKind::Beauty
+            | EffectKind::BeautySkin => {
+                crate::restore::apply(self.kind, a, rgba, w, h, frame);
+            }
+            EffectKind::ColoredBorder
+            | EffectKind::ColoredBorderRounded
+            | EffectKind::ChromaticAberration
+            | EffectKind::EdgeDetect
+            | EffectKind::EdgeDetectInverted
+            | EffectKind::Emboss
+            | EffectKind::Stroke
+            | EffectKind::StrokeInside
+            | EffectKind::Watercolor
+            | EffectKind::StylizeRelief
+            | EffectKind::StylizeInk
+            | EffectKind::StylizeCutout => {
+                crate::paint::apply(self.kind, a, rgba, w, h);
+            }
+            // These read other frames of the clip; the compositor draws them (`picasso-render`).
+            EffectKind::Echo
+            | EffectKind::Strobe
+            | EffectKind::MotionTrails
+            | EffectKind::Smear
+            | EffectKind::MotionBlur
+            | EffectKind::FrameReplacerPrevious
+            | EffectKind::FrameReplacerNext
+            | EffectKind::FrameReplacerMix
+            | EffectKind::Deflicker
+            | EffectKind::ColorStabilizer
+            | EffectKind::DirtRemoval => {}
+            EffectKind::GreenScreen => {
+                crate::key::apply_chroma_key(rgba, &crate::key::ChromaKey::green(a));
+            }
+            EffectKind::BlueScreen => {
+                crate::key::apply_chroma_key(rgba, &crate::key::ChromaKey::blue(a));
+            }
             EffectKind::FilmGrain => {
                 let strength = a * 40.0;
                 for (i, px) in rgba.chunks_exact_mut(4).enumerate() {
@@ -289,9 +944,15 @@ impl Effect {
                     let g = f32::from(px[1]) / 255.0;
                     let b = f32::from(px[2]) / 255.0;
                     // Multiply the pixel by the blackbody color, then blend with original by `a`.
-                    px[0] = ((r * rgb[0] * a + r * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
-                    px[1] = ((g * rgb[1] * a + g * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
-                    px[2] = ((b * rgb[2] * a + b * (1.0 - a)) * 255.0).round().clamp(0.0, 255.0) as u8;
+                    px[0] = ((r * rgb[0] * a + r * (1.0 - a)) * 255.0)
+                        .round()
+                        .clamp(0.0, 255.0) as u8;
+                    px[1] = ((g * rgb[1] * a + g * (1.0 - a)) * 255.0)
+                        .round()
+                        .clamp(0.0, 255.0) as u8;
+                    px[2] = ((b * rgb[2] * a + b * (1.0 - a)) * 255.0)
+                        .round()
+                        .clamp(0.0, 255.0) as u8;
                 }
             }
             EffectKind::DirectionalBlur => {
@@ -451,7 +1112,7 @@ fn mosaic(rgba: &mut [u8], w: usize, h: usize, size: usize) {
 }
 
 /// A blur close to a Gaussian: three box blurs of `radius / 2` (rows, then columns).
-fn gaussian(rgba: &mut [u8], w: usize, h: usize, radius: usize) {
+pub(crate) fn gaussian(rgba: &mut [u8], w: usize, h: usize, radius: usize) {
     let r = (radius / 2).max(1).min(w.max(h));
     let mut buf: Vec<f32> = rgba.iter().map(|v| f32::from(*v)).collect();
     for _ in 0..3 {
@@ -463,37 +1124,118 @@ fn gaussian(rgba: &mut [u8], w: usize, h: usize, radius: usize) {
     }
 }
 
-/// One box blur of RGBA floats along rows (`along_rows`) or columns, edges held.
-fn box_pass(buf: &mut [f32], w: usize, h: usize, r: usize, along_rows: bool) {
-    let (lines, len) = if along_rows { (h, w) } else { (w, h) };
-    let at = |line: usize, i: usize| {
-        if along_rows {
-            (line * w + i) * 4
-        } else {
-            (i * w + line) * 4
-        }
-    };
-    let mut row = vec![0f32; len * 4];
+/// One box blur of RGBA floats along a line of `len` pixels, edges held.
+fn blur_line(line: &mut [f32], len: usize, r: usize) {
+    let src = line.to_vec();
     let window = (2 * r + 1) as f32;
-    for line in 0..lines {
+    let get = |i: i64, c: usize| src[(i.clamp(0, len as i64 - 1) as usize) * 4 + c];
+    for c in 0..4 {
+        let mut sum: f32 = (-(r as i64)..=r as i64).map(|i| get(i, c)).sum();
         for i in 0..len {
-            row[i * 4..i * 4 + 4].copy_from_slice(&buf[at(line, i)..at(line, i) + 4]);
+            line[i * 4 + c] = sum / window;
+            sum += get(i as i64 + r as i64 + 1, c) - get(i as i64 - r as i64, c);
         }
-        let get = |i: i64, c: usize| row[(i.clamp(0, len as i64 - 1) as usize) * 4 + c];
-        for c in 0..4 {
-            let mut sum: f32 = (-(r as i64)..=r as i64).map(|i| get(i, c)).sum();
-            for i in 0..len {
-                buf[at(line, i) + c] = sum / window;
-                sum += get(i as i64 + r as i64 + 1, c) - get(i as i64 - r as i64, c);
+    }
+}
+
+/// Threads to use for a picture of `pixels` pixels (1 where there are none, or it is small).
+fn threads_for(pixels: usize) -> usize {
+    if pixels < 65_536 {
+        return 1;
+    }
+    std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .min(16)
+}
+
+/// One box blur of RGBA floats along rows (`along_rows`) or columns, edges held, on every core.
+pub(crate) fn box_pass(buf: &mut [f32], w: usize, h: usize, r: usize, along_rows: bool) {
+    if w == 0 || h == 0 || buf.len() < w * h * 4 {
+        return;
+    }
+    let threads = threads_for(w * h);
+    if along_rows {
+        let per = h.div_ceil(threads).max(1);
+        let run = |band: &mut [f32]| {
+            for line in band.chunks_exact_mut(w * 4) {
+                blur_line(line, w, r);
+            }
+        };
+        if threads == 1 {
+            run(&mut buf[..w * h * 4]);
+            return;
+        }
+        std::thread::scope(|scope| {
+            for band in buf[..w * h * 4].chunks_mut(per * w * 4) {
+                let run = &run;
+                scope.spawn(move || run(band));
+            }
+        });
+        return;
+    }
+    // Columns: each thread blurs a range of them into a buffer of its own; they are put back
+    // afterwards.
+    let per = w.div_ceil(threads).max(1);
+    let shared: &[f32] = &*buf;
+    let blur_columns = |first: usize, last: usize| -> Vec<f32> {
+        let mut out = vec![0f32; (last - first) * h * 4];
+        let mut line = vec![0f32; h * 4];
+        for (k, x) in (first..last).enumerate() {
+            for y in 0..h {
+                line[y * 4..y * 4 + 4].copy_from_slice(&shared[(y * w + x) * 4..(y * w + x) * 4 + 4]);
+            }
+            blur_line(&mut line, h, r);
+            out[k * h * 4..(k + 1) * h * 4].copy_from_slice(&line);
+        }
+        out
+    };
+    let ranges: Vec<(usize, usize)> = (0..w).step_by(per).map(|f| (f, (f + per).min(w))).collect();
+    let results: Vec<Vec<f32>> = if threads == 1 {
+        ranges.iter().map(|&(f, l)| blur_columns(f, l)).collect()
+    } else {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = ranges
+                .iter()
+                .map(|&(f, l)| {
+                    let blur_columns = &blur_columns;
+                    scope.spawn(move || blur_columns(f, l))
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap_or_default()).collect()
+        })
+    };
+    for ((first, last), out) in ranges.iter().zip(results) {
+        if out.len() != (last - first) * h * 4 {
+            continue;
+        }
+        for (k, x) in (*first..*last).enumerate() {
+            for y in 0..h {
+                buf[(y * w + x) * 4..(y * w + x) * 4 + 4]
+                    .copy_from_slice(&out[(k * h + y) * 4..(k * h + y) * 4 + 4]);
             }
         }
     }
 }
 
+/// Frames a second the time-based effects count in when they are not told the clip's rate.
+pub const DEFAULT_RATE: f32 = 24.0;
+
 /// Applies `effects` in order.
 pub fn apply_effects(effects: &[Effect], rgba: &mut [u8], w: usize, h: usize, frame: u64) {
+    apply_effects_at(effects, rgba, w, h, frame, DEFAULT_RATE);
+}
+
+/// Applies `effects` in order to a clip that plays at `rate` frames a second.
+pub fn apply_effects_at(
+    effects: &[Effect],
+    rgba: &mut [u8],
+    w: usize,
+    h: usize,
+    frame: u64,
+    rate: f32,
+) {
     for e in effects {
-        e.apply(rgba, w, h, frame);
+        e.apply_at(rgba, w, h, frame, rate);
     }
 }
 
@@ -621,7 +1363,11 @@ mod tests {
     fn rgb_mixer_amount_zero_is_noop() {
         let mut p = vec![200u8, 100, 50, 255, 30, 200, 80, 255];
         let before = p.clone();
-        let e = Effect { amount: 0.0, kind: EffectKind::RgbMixer, ..Effect::new(EffectKind::RgbMixer) };
+        let e = Effect {
+            amount: 0.0,
+            kind: EffectKind::RgbMixer,
+            ..Effect::new(EffectKind::RgbMixer)
+        };
         e.apply(&mut p, 2, 1, 0);
         assert_eq!(p, before, "amount=0 leaves pixels unchanged");
     }
@@ -646,8 +1392,18 @@ mod tests {
         let mut e = Effect::new(EffectKind::ColorTemperature);
         e.params[0] = -100.0; // cool (10000K)
         e.apply(&mut cool, 32, 32, 0);
-        assert!(warm[0] > cool[0], "warm has more red: {} vs {}", warm[0], cool[0]);
-        assert!(warm[2] < cool[2], "warm has less blue: {} vs {}", warm[2], cool[2]);
+        assert!(
+            warm[0] > cool[0],
+            "warm has more red: {} vs {}",
+            warm[0],
+            cool[0]
+        );
+        assert!(
+            warm[2] < cool[2],
+            "warm has less blue: {} vs {}",
+            warm[2],
+            cool[2]
+        );
     }
 
     #[test]
@@ -736,7 +1492,11 @@ mod tests {
     fn directional_blur_amount_zero_is_noop() {
         let mut p = halves();
         let before = p.clone();
-        let e = Effect { amount: 0.0, kind: EffectKind::DirectionalBlur, ..Effect::new(EffectKind::DirectionalBlur) };
+        let e = Effect {
+            amount: 0.0,
+            kind: EffectKind::DirectionalBlur,
+            ..Effect::new(EffectKind::DirectionalBlur)
+        };
         e.apply(&mut p, 32, 32, 0);
         assert_eq!(p, before, "amount=0 leaves pixels unchanged");
     }
@@ -745,8 +1505,12 @@ mod tests {
     fn diffusion_glow_is_brightened() {
         // A dark pixel should get brighter from diffusion (blurred duplicate + screen blend).
         let mut p = vec![50u8; 4 * 32 * 32];
-        Effect { amount: 100.0, kind: EffectKind::Diffusion, ..Effect::new(EffectKind::Diffusion) }
-            .apply(&mut p, 32, 32, 0);
+        Effect {
+            amount: 100.0,
+            kind: EffectKind::Diffusion,
+            ..Effect::new(EffectKind::Diffusion)
+        }
+        .apply(&mut p, 32, 32, 0);
         assert!(p[0] > 50, "diffusion brightens dark pixels");
     }
 
@@ -763,7 +1527,11 @@ mod tests {
     fn diffusion_amount_zero_is_noop() {
         let mut p = halves();
         let before = p.clone();
-        let e = Effect { amount: 0.0, kind: EffectKind::Diffusion, ..Effect::new(EffectKind::Diffusion) };
+        let e = Effect {
+            amount: 0.0,
+            kind: EffectKind::Diffusion,
+            ..Effect::new(EffectKind::Diffusion)
+        };
         e.apply(&mut p, 32, 32, 0);
         assert_eq!(p, before, "amount=0 leaves pixels unchanged");
     }

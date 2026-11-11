@@ -37,3 +37,6 @@ wasm-bindgen-futures = "0.4"  # MIT OR Apache-2.0
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+image.workspace = true

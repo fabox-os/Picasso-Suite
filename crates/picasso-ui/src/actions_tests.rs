@@ -456,6 +456,39 @@ fn a_title_from_the_effects_menu() {
 }
 
 #[test]
+fn every_effect_can_be_added_to_a_clip_and_taken_off() {
+    let mut app = app();
+    let a = app.project().tracks[0].clips[0].id;
+    app.select_only(a);
+    for kind in picasso_core::EffectKind::ALL {
+        act(&mut app, Act::AddEffect(kind));
+        let e = app.project().clip(a).unwrap().1.effects[0];
+        assert_eq!(e.kind, kind);
+        assert_eq!(e.amount, kind.default_amount(), "{kind:?}");
+        app.run(Command::RemoveEffect { clip: a, index: 0 });
+        assert!(app.project().clip(a).unwrap().1.effects.is_empty());
+    }
+}
+
+#[test]
+fn every_extra_transition_and_wipe_can_be_added_from_the_menu_and_taken_off() {
+    let mut app = app();
+    let second = app.project().tracks[0].clips[1].clone();
+    app.go_to(second.start + 3);
+    for kind in picasso_core::TransitionKind::extra()
+        .iter()
+        .chain(picasso_core::TransitionKind::wipes())
+    {
+        assert!(app.act_enabled(Act::AddTransition(*kind)), "{kind:?}");
+        act(&mut app, Act::AddTransition(*kind));
+        let t = app.project().clip(second.id).unwrap().1.transition.unwrap();
+        assert_eq!(t.kind, *kind);
+        act(&mut app, Act::RemoveTransition);
+        assert!(app.project().clip(second.id).unwrap().1.transition.is_none());
+    }
+}
+
+#[test]
 fn transitions_from_the_menus() {
     let mut app = app();
     let second = app.project().tracks[0].clips[1].clone();
@@ -798,6 +831,27 @@ fn select_forward_and_enable_and_reset_all_grades() {
             .all(|c| c.grade.saturation == 0.5),
         "one undo for all three"
     );
+}
+
+#[test]
+fn every_generator_can_be_added_to_the_pool_and_drawn() {
+    let mut app = app();
+    for kind in picasso_core::GeneratorKind::ALL {
+        let before = app.project().media.len();
+        assert!(app.act_enabled(Act::AddGenerator(kind)), "{kind:?}");
+        act(&mut app, Act::AddGenerator(kind));
+        assert_eq!(app.project().media.len(), before + 1, "{kind:?}");
+        let item = app.project().media.last().expect("the new item");
+        assert_eq!(item.name, kind.label());
+        assert!(matches!(
+            item.source,
+            picasso_core::MediaSource::Generator { pattern, .. } if pattern == kind
+        ));
+        assert_eq!(picasso_core::media_kind(&item.source), "Generator");
+        let cache = picasso_render::MediaCache::new();
+        let frame = picasso_render::render_thumbnail(app.project(), item, &cache, 64, 36);
+        assert!(frame.is_ok(), "{kind:?}");
+    }
 }
 
 #[test]

@@ -9,6 +9,7 @@ mod mix;
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod recorder;
+pub mod stretch;
 mod wav;
 
 pub use loudness::{KWeighting, Loudness, TruePeak, LOUDNESS_BLOCK, TARGET_LUFS};

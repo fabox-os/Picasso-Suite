@@ -8,9 +8,16 @@
 mod cache;
 mod compose;
 mod frames;
+mod generators;
+#[cfg(test)]
+mod sheets;
+mod smooth_cut;
+mod temporal;
 mod source;
 mod text;
 mod transform;
+pub mod transitions;
+mod wipes;
 
 pub use cache::{Decoded, FrameSource, MediaCache, VideoFrame};
 pub use compose::{

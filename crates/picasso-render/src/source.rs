@@ -23,12 +23,20 @@ pub(crate) fn draw(
     cache: &MediaCache,
     (w, h): (usize, usize),
     time_us: i64,
+    fps: u64,
     out: &mut [u8],
 ) -> bool {
     match &item.source {
         MediaSource::Solid { rgb } => fill(out, [rgb[0], rgb[1], rgb[2], 255]),
         MediaSource::Gradient { from, to } => gradient(out, w, *from, *to),
         MediaSource::ColorBars => bars(out, w, h),
+        MediaSource::Generator { pattern, colors } => crate::generators::draw(
+            *pattern,
+            colors,
+            (w, h),
+            crate::generators::Moment { time_us, fps },
+            out,
+        ),
         MediaSource::Image { .. } => match cache.get(item.id) {
             Some(image) => fit_image(out, w, h, image),
             None => {
@@ -235,6 +243,7 @@ mod tests {
             &MediaCache::new(),
             (4, 3),
             0,
+             25,
             &mut out,
         );
         assert!(out.chunks_exact(4).all(|p| p == [1, 2, 3, 255]));
@@ -251,6 +260,7 @@ mod tests {
             &MediaCache::new(),
             (5, 2),
             0,
+             25,
             &mut out,
         );
         assert_eq!(px(&out, 5, 0, 0), [0, 0, 0, 255]);
@@ -267,6 +277,7 @@ mod tests {
             &MediaCache::new(),
             (w, h),
             0,
+             25,
             &mut out,
         );
         let top: Vec<[u8; 4]> = (0..7).map(|b| px(&out, w, b * 10 + 5, 2)).collect();
@@ -286,6 +297,7 @@ mod tests {
             &MediaCache::new(),
             (48, 48),
             0,
+             25,
             &mut out,
         );
         assert_eq!(px(&out, 48, 0, 0), [200, 0, 200, 255]);
@@ -312,6 +324,7 @@ mod tests {
             &cache,
             (8, 8),
             0,
+             25,
             &mut out,
         );
         assert_eq!(px(&out, 8, 0, 0)[3], 0, "above the picture is transparent");
@@ -339,6 +352,7 @@ mod tests {
             &cache,
             (8, 8),
             0,
+             25,
             &mut out,
         );
     }
