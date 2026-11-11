@@ -1,6 +1,6 @@
 # Roadmap
 
-Status at 0.6.4.
+Status at 0.7.0.
 
 ## Done
 
@@ -81,6 +81,22 @@ Status at 0.6.4.
 - [x] Development: the tests that make a video or a tone with ffmpeg each write a file of their own, so the whole suite no longer fails at random when they run at the same time
 - [x] Linux: the program no longer closes when the X server cannot list the monitors (`RandrBadCrtc` on Intel graphics made winit panic, even at the start; it logs a warning and carries on), from a copy of winit 0.30.13 in `third_party/winit`
 - [x] Effects: Green Screen and Blue Screen keys (**Picasso FX > Key**: chroma plane distance, soft edge, spill removal; the strength is the tolerance)
+- [x] Effects: Box, Radial, Zoom, Tilt-Shift and Lens Blur, Noise Reduction and Unsharp Mask; Transitions: Blur Dissolve
+- [x] Effects: 20 more (Exposure, Posterize, Vibrance, Duotone, Flicker, Luma Key, Twirl, Bulge, Pinch, Kaleidoscope, Mirror Split, Tile, Camera Shake, Scanlines, Halftone, Hexagon and Dot Pixelate, Pencil Sketch, Abstraction, Prism), each driven by its strength
+- [x] Effects that read other frames: Echo, Strobe, Motion Trails, Smear, Motion Blur, Deflicker, Color Stabilizer, Frame Replacer, Automatic Dirt Removal
+- [x] Colour matrix: every YUV picture is read with its own matrix (BT.709, BT.601, BT.2020) and range
+- [x] Effects know the project's frame rate (Flicker, Camera Shake, Ripple, Wave); a reversed clip keeps its pitch
+- [x] Repair and finishing effects: Despill, Gamut Limiter, Contrast Pop, Fringe Fix and Defringe, False Color, Dehaze, Deband, Dead Pixel Fixer, Beauty; and stylise effects: Colored Border, Chromatic Aberration, Edge Detect, Emboss, Stroke, Watercolor, Stylize
+- [x] Keys: Red, Magenta, Cyan and Yellow Screen, HSL Key for six hues, 3D Keyer in four colour sets, Matte Shrink, Grow and Soften
+- [x] Sharpen effects: Sharpen Edges and Soften and Sharpen (with Sharpen and Unsharp Mask, four ways to sharpen)
+- [x] Transform effects: Feathered Crop (four edges and each side) and Collage 2x2, 3x3, 4x4
+- [x] Warp effects: Lens Barrel and Pincushion, Ripple, Wave, Vertical Wave, Horizontal and Vertical Bow, Square Bulge and Pinch, Corner Pin from four sides
+- [x] Light effects: Light Rays, Bloom, Halation, Lens Flare, Aperture Diffraction, Lens Reflections (one strength each; light also shows over clear areas)
+- [x] Texture effects: Fast Noise, Texture Pop, Detail Recovery, Analog Damage, Film Damage, JPEG Damage (one strength each, repeatable per frame)
+- [x] Generators: 21 (four-colour, vertical, diagonal and radial gradients; full-field and EBU bars, grey ramp and scale, 100 mV steps, YCbCr ramp, three BT.2111 HDR bar patterns; noise, colour noise, noise gradient, grid, windows, countdown, timecode burn-in)
+- [x] Transitions: 50 wipes, irises and shapes (Wipe, Push, Band, Center, Clock, Radial, Spiral, Venetian Blind, X; eighteen irises with their direction variants; boxes, heart, stars with 4, 5 and 6 points, triangles), one arrival field each, drawn on every core
+- [x] Motion transitions: Slide Out in four directions, Barn Door (vertical and horizontal, opening and reversed) and Split (horizontal and vertical, apart and reversed)
+- [x] Dissolves: Additive Dissolve (the pictures add up in the middle), Non-Additive Dissolve (the brighter wins) and Smooth Cut (a morph along the motion between the two pictures, found by block matching, 32 ms for a 1080p frame)
 - [x] Transitions: 29 more (**More Transitions**: flashes, zooms, rotations, glitch, shake, circles, flip, slices, warps, tunnel, burn, slides, pans, fall, film strip, wipe, paint, swing), drawn on the processor on every core
 - [x] Audio: clips played faster or slower keep their pitch (WSOLA time stretch, forward clips from 0.1x to 16x)
 - [x] Playback: HDR video (HLG, PQ, BT.2020) is mapped to the SDR timeline when decoded
@@ -91,11 +107,15 @@ Status at 0.6.4.
 
 - [ ] Interface density: finish the pages measured on the 1080p screenshots (`docs/reference/resolve-1080p`). Done: page bar, labelled top toolbars, Cut, Edit, Fusion, Fairlight, Photo, Color, Media, Deliver. Every page is at Resolve's 1080p size; next, check the same pages at 4K and at small windows
 - [ ] Deliver: IMF Generic and Pro Tools presets (listed, greyed out) need an MXF writer and AAF with embedded or rendered sound
+- [ ] Effects: Color Palette (a strip of the picture's main colours), Dust Buster and Patch Replacer (they need a region you place), and the time effects seeing the effects before them in the stack
 - [ ] Tracking: use `picasso-track` in the interface: a Track button for Match Move and window tracking, and Stabilization in the Inspector
-- [ ] Transitions: settings for the 29 more transitions (zoom amount, strength, direction, colour); a transition has only a kind and a length now
-- [ ] Effects: custom screen colour, edge softness and spill amount for the keys, a luma key and an HSL key
-- [ ] Audio: keep the pitch of a speed ramp and of reversed clips
-- [ ] Playback: the colour matrix of BT.2020 pictures (only the transfer curve and the primaries are corrected)
+- [ ] Transitions: motion blur, border and reverse on Slide Out, Split and Barn Door, and the Wipe Reverse option
+- [ ] Keys with a colour picked from the picture (Custom Key Color, HSL Key by hue, 3D Keyer colours), the matte and status views, and spill removal for other colours
+- [ ] Match Move and Surface Tracker (the tracking maths is in; they need tracking controls and a track stored with the clip), collage settings (columns, rows, spacing, corner radius, fit)
+- [ ] Warper (a grid of points moved by hand) and a free Corner Pin with four draggable corners (needs controls in the viewer)
+- [ ] Generators: settings (sizes, line widths, noise scale, countdown start, angle of the linear gradient) and keyframes
+- [ ] Transitions: settings for the 29 more transitions and the 50 wipes (zoom amount, strength, direction, colour, border, feather, number of bands); a transition has only a kind and a length now
+- [ ] Effects: settings beyond the strength for the keys and the 119 effects (screen colour, softness, spill, radius, centre, dot size, colours, Tilt-Shift's band, Lens Blur's highlights), an HSL key and a 3D keyer
 - [ ] Color: splitter/combiner nodes, viewer split/wipe, window tracking, magic mask, polygon and B-spline masks, Paint and particle tools
 - [ ] Editing: Trim Editor window, JKL in dynamic trim, timeline in a new window, auto align by waveform for clips at another speed, reversed or frozen
 - [ ] Multicam: sync by timecode or waveform, live angle previews, switching sound
