@@ -38,7 +38,7 @@ Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, on Windows,
 
 Picasso Suite is a video editor in the shape of an editing suite: bring media in, cut it, grade it, mix the sound and render it, with every step on a page of its own and the pages in the order Resolve has them. Menus follow a written spec ([`Menu-Spec.md`](Menu-Spec.md)), and the status of every entry is listed ([`Menu-Status.md`](Menu-Status.md)).
 
-**NOTE: Picasso Suite is before 1.0. 518 of its 547 menu entries work and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk.**
+**NOTE: Picasso Suite is before 1.0. 518 of 547 menu entries work (94.70%) and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk.**
 
 ## Features
 
