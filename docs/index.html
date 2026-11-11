@@ -242,6 +242,7 @@ footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-heig
     <a class="link" href="#features">Features</a>
     <a class="link" href="#pages">Pages</a>
     <a class="link" href="#formats">Formats</a>
+    <a class="link" href="#performance">Performance</a>
     <a class="link" href="#status">Status</a>
     <a class="link" href="https://github.com/fabox-os/Picasso-Suite">GitHub</a>
     <a class="icon-link" href="https://discord.gg/zuMqg3nVnX" aria-label="Join the Picasso Suite Discord" title="Discord"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a>
@@ -423,7 +424,30 @@ footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-heig
   </div>
 </section>
 
-<section id="status" class="alt">
+<section id="performance" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Performance</div>
+    <h2>Light and quick on its feet.</h2>
+    <p class="sub">The viewer's picture is put together on a thread of its own, and the graphics card is used only where it is faster than the processor.</p>
+    <div class="grid">
+      <article class="card" style="--c: var(--blue)">
+        <h3>~30 MB program</h3>
+        <p>About 30 MB on Linux with FFmpeg's libraries beside it; the packages, FFmpeg included, are 36 to 76 MB. An empty project takes about 160 MB of memory.</p>
+      </article>
+      <article class="card" style="--c: var(--yellow)">
+        <h3>Scrubbing that keeps up</h3>
+        <p>A picture still being decoded is dropped as soon as the playhead moves on. Dragging across 4K video with a key frame every 2 seconds, the exact picture arrives about 200 ms after letting go.</p>
+      </article>
+      <article class="card" style="--c: var(--red)">
+        <h3>The card, only where it helps</h3>
+        <p>The first pictures of a file are timed on the graphics card; if they take too long, the processor is tried and the faster way is kept for that file. A switch in System Preferences turns it off.</p>
+      </article>
+    </div>
+    <p class="gallery-note">Size and memory measured on Linux with version 0.6.3, an empty project, on a Radeon RX 7800 XT; they differ by system.</p>
+  </div>
+</section>
+
+<section id="status">
   <div class="wrap">
     <div class="eyebrow">Honest status</div>
     <h2>How much works.</h2>
