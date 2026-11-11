@@ -97,6 +97,7 @@ pub(crate) mod native {
 
     use crate::app::{Status, StudioApp};
     use crate::platform;
+    use tracing::warn;
 
     /// How far an item of the queue is.
     #[derive(Clone, Debug, PartialEq)]
@@ -232,6 +233,18 @@ pub(crate) mod native {
             .spawn();
     }
 
+    /// Runs `f` under `std::panic::catch_unwind` so a panic in the render worker never
+    /// propagates and kills the queue thread. Returns `Err` with a fixed message if `f`
+    /// panicked. Takes a plain closure so it can be tested without FFmpeg.
+    fn catch_render_panic(
+        f: impl FnOnce() -> Result<(), ExportError>,
+    ) -> Result<(), ExportError> {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+            Ok(result) => result,
+            Err(_) => Err(ExportError::Render("the render stopped unexpectedly".into())),
+        }
+    }
+
     /// The thread that renders the queue: takes the first waiting item, renders it, and goes on
     /// until nothing waits.
     fn run_worker(queue: &Mutex<Vec<Item>>, running: &AtomicBool, ctx: &Context) {
@@ -265,14 +278,23 @@ pub(crate) mod native {
             };
             let started = Instant::now();
             run_script(&script, false, &settings.path);
-            let result = render(&project, &cache, &settings, &mut |d, t| {
-                done.store(d, Ordering::Relaxed);
-                total.store(t, Ordering::Relaxed);
-                ctx.request_repaint();
-                !cancel.load(Ordering::Relaxed)
+            let result = catch_render_panic(|| {
+                render(&project, &cache, &settings, &mut |d, t| {
+                    done.store(d, Ordering::Relaxed);
+                    total.store(t, Ordering::Relaxed);
+                    ctx.request_repaint();
+                    !cancel.load(Ordering::Relaxed)
+                })
             });
             if result.is_ok() {
                 run_script(&script, true, &settings.path);
+            } else if !settings.preset.is_folder() {
+                // Same cleanup render() does for its own errors; needed here because a panicked
+                // render never reaches its own cleanup.
+                let _ = std::fs::remove_file(&settings.path);
+            }
+            if result.is_err() {
+                warn!("render job {} stopped unexpectedly", id);
             }
             if let Some(item) = lock(queue).iter_mut().find(|i| i.id == id) {
                 item.state = match result {
@@ -681,6 +703,45 @@ pub(crate) mod native {
             lock(&self.deliver.queue).iter().any(|i| {
                 i.settings.path == path && !matches!(i.state, State::Failed(_) | State::Cancelled)
             })
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// Without the guard, a panic inside the closure propagates out of `catch_unwind` and
+        /// would kill the worker thread.
+        #[test]
+        fn an_unguarded_panic_propagates_out_of_catch_unwind() {
+            let unguarded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                panic!("render panicked");
+            }));
+            assert!(
+                unguarded.is_err(),
+                "an unguarded panic must propagate as Err"
+            );
+        }
+
+        /// With the guard, a panic inside the closure is caught and returned as
+        /// `ExportError::Render("the render stopped unexpectedly")` instead of unwinding.
+        #[test]
+        fn catch_render_panic_catches_a_panic_and_returns_the_unexpected_message() {
+            let result = catch_render_panic(|| panic!("render panicked"));
+            assert!(
+                matches!(result, Err(ExportError::Render(ref text)) if text == "the render stopped unexpectedly"),
+                "expected Err(Render(\"the render stopped unexpectedly\")), got {result:?}"
+            );
+        }
+
+        /// The guard passes through both Ok and non-panic Err results unchanged.
+        #[test]
+        fn catch_render_panic_passes_through_normal_results() {
+            assert!(catch_render_panic(|| Ok(())).is_ok());
+            assert!(matches!(
+                catch_render_panic(|| Err(ExportError::Cancelled)),
+                Err(ExportError::Cancelled)
+            ));
         }
     }
 }
