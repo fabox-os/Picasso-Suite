@@ -479,7 +479,7 @@ impl VideoDecoder {
                 && output.height == out_h
         });
         if !same {
-            self.scaler = Some(Scaler::get(
+            let mut scaler = Scaler::get(
                 decoded.format(),
                 decoded.width(),
                 decoded.height(),
@@ -487,7 +487,15 @@ impl VideoDecoder {
                 out_w,
                 out_h,
                 Flags::FAST_BILINEAR,
-            )?);
+            )?;
+            // Read the YUV with the matrix the picture was made with (see `hw`).
+            hw::set_scaler_colorspace(
+                &mut scaler,
+                decoded.color_space(),
+                decoded.color_range() == ff::util::color::Range::JPEG,
+                decoded.height(),
+            );
+            self.scaler = Some(scaler);
             self.rgba = ff::frame::Video::empty();
         }
         let mapping = hdr_mapping(decoded);
@@ -866,6 +874,64 @@ mod tests {
         );
         let _ = std::fs::remove_file(plain);
         let _ = std::fs::remove_file(hlg);
+        Ok(())
+    }
+
+    /// A saturated colour clip made with the matrix `matrix` ("bt709", "bt601" is written as
+    /// "smpte170m", "bt2020nc"), tagged with the same.
+    fn colour_clip(name: &str, rgb: &str, matrix: &str) -> Option<std::path::PathBuf> {
+        let path = std::env::temp_dir().join(name);
+        let tag = match matrix {
+            "smpte170m" => "smpte170m",
+            "bt2020nc" => "bt2020nc",
+            _ => "bt709",
+        };
+        let ok = std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+            .arg(format!("color=c={rgb}:duration=1:size=64x64:rate=24"))
+            .args(["-vf"])
+            .arg(format!(
+                "scale=out_color_matrix={matrix}:out_range=tv,format=yuv420p"
+            ))
+            .args(["-colorspace", tag, "-color_range", "tv"])
+            .arg(&path)
+            .status()
+            .is_ok_and(|s| s.success());
+        ok.then_some(path)
+    }
+
+    /// The picture of the middle of the first frame of `path`.
+    fn middle_pixel(path: &std::path::Path) -> Result<[u8; 3], String> {
+        let f = VideoDecoder::open(path)
+            .map_err(|e| e.to_string())?
+            .frame_at(0)
+            .map_err(|e| e.to_string())?;
+        let mid = (f.width as usize / 2 + f.height as usize / 2 * f.width as usize) * 4;
+        Ok([f.rgba[mid], f.rgba[mid + 1], f.rgba[mid + 2]])
+    }
+
+    #[test]
+    fn pictures_are_read_with_the_matrix_they_were_made_with() -> Result<(), String> {
+        // Saturated colours show a wrong matrix at once: red read with another matrix is off in
+        // green and blue by tens of levels.
+        for (matrix, name) in [
+            ("bt709", "picasso_decode_red_709.mp4"),
+            ("smpte170m", "picasso_decode_red_601.mp4"),
+            ("bt2020nc", "picasso_decode_red_2020.mp4"),
+        ] {
+            let Some(path) = colour_clip(name, "0xff0000", matrix) else {
+                return Ok(());
+            };
+            let [r, g, b] = middle_pixel(&path)?;
+            let _ = std::fs::remove_file(&path);
+            // (BT.2020 pictures are also mapped to the SDR primaries, which moves the colour a
+            // little; the others are exact.)
+            let slack = if matrix == "bt2020nc" { 60 } else { 12 };
+            assert!(
+                r > 230 && i32::from(g) <= slack && i32::from(b) <= slack,
+                "{matrix}: red came out as {r}, {g}, {b}"
+            );
+        }
         Ok(())
     }
 

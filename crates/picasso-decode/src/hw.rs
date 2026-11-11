@@ -101,7 +101,8 @@ fn open_device_named(kind: ffi::AVHWDeviceType, name: Option<&str>) -> Result<Bu
     let name = match name.map(std::ffi::CString::new) {
         None => None,
         Some(Ok(c)) => Some(c),
-        Some(Err(_)) => return Err(ffi::AVERROR(ffi::EINVAL)),
+        // a name with a NUL in it: AVERROR(EINVAL), which is -22 everywhere FFmpeg runs
+        Some(Err(_)) => return Err(-22),
     };
     let mut device: *mut ffi::AVBufferRef = ptr::null_mut();
     // SAFETY: FFmpeg fills `device` on success and leaves it null otherwise; `name` outlives the
@@ -119,6 +120,68 @@ fn open_device_named(kind: ffi::AVHWDeviceType, name: Option<&str>) -> Result<Bu
         Ok(BufferRef(device))
     } else {
         Err(made)
+    }
+}
+
+/// Tells a scaler which YUV matrix (BT.709, BT.601, BT.2020...) and range the pictures it reads
+/// use. swscale reads every YUV picture as BT.601 unless told, and a BT.709 picture read that way
+/// comes out with its reds and greens off by tens of levels. `space` is the picture's tag; when it
+/// is not set a picture 720 lines high or more is taken as BT.709, a smaller one as BT.601, as
+/// players do. Only changes the way the source is read; the RGB output stays full range.
+pub fn set_scaler_colorspace(
+    scaler: &mut ff::software::scaling::Context,
+    space: ff::util::color::Space,
+    full_range: bool,
+    height: u32,
+) {
+    use ff::util::color::Space;
+    // SWS_CS_* of swscale.h.
+    let matrix = match space {
+        Space::BT709 => 1,
+        Space::FCC => 4,
+        Space::BT470BG | Space::SMPTE170M => 5,
+        Space::SMPTE240M => 7,
+        Space::BT2020NCL | Space::BT2020CL => 9,
+        _ if height >= 720 => 1,
+        _ => 5,
+    };
+    let mut inv_table: *mut i32 = ptr::null_mut();
+    let mut table: *mut i32 = ptr::null_mut();
+    let (mut src_range, mut dst_range) = (0i32, 0i32);
+    let (mut brightness, mut contrast, mut saturation) = (0i32, 0i32, 0i32);
+    // SAFETY: `scaler` is a live swscale context; the getter fills the out values from it, and
+    // the setter is given the same context, the table swscale itself returns for `matrix`, and
+    // the values the getter returned. A negative return from either leaves the scaler as it was.
+    unsafe {
+        let ctx = scaler.as_mut_ptr();
+        if ffi::sws_getColorspaceDetails(
+            ctx,
+            &mut inv_table,
+            &mut src_range,
+            &mut table,
+            &mut dst_range,
+            &mut brightness,
+            &mut contrast,
+            &mut saturation,
+        ) < 0
+            || table.is_null()
+        {
+            return;
+        }
+        let coefficients = ffi::sws_getCoefficients(matrix);
+        if coefficients.is_null() {
+            return;
+        }
+        ffi::sws_setColorspaceDetails(
+            ctx,
+            coefficients,
+            i32::from(full_range),
+            table,
+            dst_range,
+            brightness,
+            contrast,
+            saturation,
+        );
     }
 }
 

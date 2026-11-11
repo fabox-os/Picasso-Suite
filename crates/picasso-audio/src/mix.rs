@@ -29,7 +29,8 @@ pub struct ClipSound {
     /// Samples of the file played per sample of the timeline (2.0 is twice as fast).
     pub speed: f32,
     /// Keep the pitch when the speed is not 1.0 (the sound is time-stretched). Off: the sound is
-    /// resampled like tape, so a faster clip sounds higher. Reversed clips always play like tape.
+    /// resampled like tape, so a faster clip sounds higher. A reversed clip is stretched on the
+    /// sound read backwards.
     pub preserve_pitch: bool,
     /// The clip's gain times its track's gain, as a factor.
     pub gain: f32,
@@ -422,7 +423,9 @@ impl Mixer {
             // Where in the file the first sample of this part comes from.
             let at = clip.source_in as f64 + (first - clip.start) as f64 * f64::from(clip.speed);
             let (base, frac) = (at.floor() as u64, (at - at.floor()) as f32);
-            if clip.reverse {
+            let stretch =
+                clip.preserve_pitch && clip.speed != 1.0 && STRETCH_SPEEDS.contains(&clip.speed);
+            if clip.reverse && !stretch {
                 // Read the stretch of the file the part spans, then walk it from its end.
                 let samples = n / 2;
                 let speed = f64::from(clip.speed);
@@ -445,11 +448,11 @@ impl Mixer {
                         *v = a * (1.0 - w) + b * w;
                     }
                 }
-            } else if clip.preserve_pitch
-                && clip.speed != 1.0
-                && STRETCH_SPEEDS.contains(&clip.speed)
-            {
-                // Time-stretched: the pitch stays while the clip runs faster or slower.
+            } else if stretch {
+                // Time-stretched: the pitch stays while the clip runs faster or slower. A
+                // reversed clip is stretched on the sound read backwards: sample `j` of that
+                // sound is the file's sample `top - j`, so going forward in it is going back in
+                // the file.
                 let key = (
                     clip.media,
                     clip.track,
@@ -462,9 +465,12 @@ impl Mixer {
                     .entry(key)
                     .or_insert_with(|| (TimeStretch::new(), 0));
                 entry.1 = self.block;
-                let (origin, speed) = (clip.source_in as f64, f64::from(clip.speed));
+                let speed = f64::from(clip.speed);
+                let reversed = clip.reverse;
+                let origin = if reversed { 0.0 } else { clip.source_in as f64 };
+                let top = (clip.source_in as f64 + clip.len as f64 * speed).round() as i64 - 1;
                 let mut got_all = true;
-                let mut read = |first: i64, buf: &mut [f32]| {
+                let mut fetch = |first: i64, buf: &mut [f32]| {
                     // Before the start of the file there is silence.
                     let skip = if first < 0 {
                         (first.unsigned_abs() as usize).min(buf.len() / 2)
@@ -478,6 +484,21 @@ impl Mixer {
                         1.0,
                         &mut buf[skip * 2..],
                     );
+                };
+                let mut backwards = Vec::new();
+                let mut read = |first: i64, buf: &mut [f32]| {
+                    if !reversed {
+                        fetch(first, buf);
+                        return;
+                    }
+                    let frames = buf.len() / 2;
+                    backwards.clear();
+                    backwards.resize(buf.len(), 0.0);
+                    fetch(top - first - (frames as i64 - 1), &mut backwards);
+                    for (i, frame) in buf.chunks_exact_mut(2).enumerate() {
+                        let from = (frames - 1 - i) * 2;
+                        frame.copy_from_slice(&backwards[from..from + 2]);
+                    }
                 };
                 entry.0.render(
                     (first - clip.start) as i64,
@@ -987,6 +1008,100 @@ mod tests {
         };
         assert!((hertz(&play(true)) - 440.0).abs() < 15.0);
         assert!((hertz(&play(false)) - 660.0).abs() < 15.0);
+    }
+
+    #[test]
+    fn a_reversed_faster_clip_keeps_its_pitch_unless_asked_to_play_like_tape() {
+        let mut clip = ClipSound::plain(MediaId(1), "", 0, 96_000, 10_000);
+        clip.speed = 1.5;
+        clip.reverse = true;
+        let play = |preserve: bool| {
+            let mut c = clip.clone();
+            c.preserve_pitch = preserve;
+            let plan = AudioPlan {
+                clips: vec![c],
+                ..Default::default()
+            };
+            let mut mixer = Mixer::new();
+            let mut all = Vec::new();
+            for b in 0..10 {
+                let mut out = vec![0.0; 4800 * 2];
+                mixer.mix(&plan, &Tone, 20_000 + b * 4800, &mut out);
+                all.extend(out);
+            }
+            all
+        };
+        assert!(
+            (hertz(&play(true)) - 440.0).abs() < 15.0,
+            "{}",
+            hertz(&play(true))
+        );
+        assert!((hertz(&play(false)) - 660.0).abs() < 15.0);
+        // Slower too, and never silent or with the wrong level.
+        let mut slow = clip.clone();
+        slow.speed = 0.75;
+        slow.preserve_pitch = true;
+        let plan = AudioPlan {
+            clips: vec![slow],
+            ..Default::default()
+        };
+        let mut mixer = Mixer::new();
+        let mut all = Vec::new();
+        for b in 0..10 {
+            let mut out = vec![0.0; 4800 * 2];
+            mixer.mix(&plan, &Tone, 20_000 + b * 4800, &mut out);
+            all.extend(out);
+        }
+        assert!((hertz(&all) - 440.0).abs() < 15.0, "{}", hertz(&all));
+        let peak = all.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!((0.8..=1.2).contains(&peak), "peak {peak}");
+    }
+
+    #[test]
+    fn a_reversed_stretched_clip_plays_the_file_backwards() {
+        /// A ramp that rises with the file: sample n is n / 200000.
+        struct Ramp;
+        impl SampleSource for Ramp {
+            fn add_samples(
+                &self,
+                _: MediaId,
+                _: &str,
+                from: u64,
+                gain: f32,
+                out: &mut [f32],
+            ) -> bool {
+                for (i, frame) in out.chunks_exact_mut(2).enumerate() {
+                    let v = (from + i as u64) as f32 / 200_000.0;
+                    frame[0] += v * gain;
+                    frame[1] += v * gain;
+                }
+                true
+            }
+        }
+        let mut clip = ClipSound::plain(MediaId(1), "", 0, 48_000, 10_000);
+        clip.speed = 2.0;
+        clip.reverse = true;
+        clip.preserve_pitch = true;
+        let plan = AudioPlan {
+            clips: vec![clip],
+            ..Default::default()
+        };
+        let mut mixer = Mixer::new();
+        let mut all = Vec::new();
+        for b in 0..10 {
+            let mut out = vec![0.0; 4800 * 2];
+            mixer.mix(&plan, &Ramp, b * 4800, &mut out);
+            all.extend(out);
+        }
+        // Played backwards the ramp falls: the start is higher than the end.
+        let left: Vec<f32> = all.chunks_exact(2).map(|f| f[0]).collect();
+        let mean = |r: std::ops::Range<usize>| left[r.clone()].iter().sum::<f32>() / r.len() as f32;
+        assert!(
+            mean(4000..8000) > mean(40000..44000) + 0.1,
+            "{} vs {}",
+            mean(4000..8000),
+            mean(40000..44000)
+        );
     }
 
     #[test]
