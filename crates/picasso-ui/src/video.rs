@@ -238,7 +238,10 @@ mod native {
             );
             if state.workers.insert(media) {
                 let worker = shared.clone();
-                std::thread::spawn(move || run_worker(&worker, media));
+                std::thread::spawn(move || {
+                    let worker_for_run = worker.clone();
+                    run_with_panic_guard(&worker, media, move || run_worker(&worker_for_run, media))
+                });
             }
             shared.changed.notify_all();
             if !wait {
@@ -480,6 +483,28 @@ mod native {
     fn fail(shared: &Shared, media: MediaId) {
         shared.lock().broken.insert(media);
         shared.announce();
+    }
+
+    /// Runs `f` under `std::panic::catch_unwind` so a panic in a decoding thread never
+    /// propagates and kills the program. Returns `Err` with the panic payload when `f`
+    /// panicked. Takes a plain closure so it can be tested without FFmpeg.
+    fn catch_panic<F: FnOnce() -> R, R>(
+        f: F,
+    ) -> Result<R, Box<dyn std::any::Any + Send + 'static>> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
+    }
+
+    /// Runs `f` (normally `run_worker`) with panic catching. If `f` panics, the media is
+    /// marked broken (the viewer shows it offline immediately), removed from `workers` so a
+    /// new worker can be started for it, the change is announced, and one warning line is
+    /// written to the session log. Always returns normally so the spawned thread exits
+    /// cleanly and other media keep working.
+    fn run_with_panic_guard<F: FnOnce()>(shared: &Shared, media: MediaId, f: F) {
+        if let Err(err) = catch_panic(f) {
+            fail(shared, media);
+            shared.lock().workers.remove(&media);
+            tracing::warn!("decode worker for media {media:?} panicked: {err:?}");
+        }
     }
 
     #[cfg(test)]
@@ -727,6 +752,45 @@ mod native {
             }
             let _ = std::fs::remove_file(&big);
             let _ = std::fs::remove_file(&small);
+        }
+
+        /// A decode worker that panics is treated like a decode failure: the media is marked
+        /// broken, removed from `workers`, and the guard returns normally. No FFmpeg needed.
+        #[test]
+        fn panicking_decode_worker_is_marked_broken_and_removed_from_workers() {
+            let ctx = egui::Context::default();
+            let shared = Arc::new(Shared {
+                state: Mutex::default(),
+                changed: Condvar::new(),
+                generation: AtomicU64::new(0),
+                keep: KEEP,
+                one_shot: false,
+                ctx,
+            });
+            let media = MediaId(0);
+            shared.lock().workers.insert(media);
+
+            // Without the guard, a panic in the closure propagates: catch_unwind sees it as Err.
+            let unguarded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                panic!("decode worker panicked");
+            }));
+            assert!(
+                unguarded.is_err(),
+                "an unguarded panic propagates as Err from catch_unwind"
+            );
+
+            // With the guard, the panic is caught and the media is handled like a decode
+            // failure: marked broken, removed from workers, guard returns normally.
+            run_with_panic_guard(&shared, media, || panic!("decode worker panicked"));
+
+            assert!(
+                shared.lock().broken.contains(&media),
+                "media should be marked broken"
+            );
+            assert!(
+                !shared.lock().workers.contains(&media),
+                "media should be removed from workers"
+            );
         }
     }
 }
