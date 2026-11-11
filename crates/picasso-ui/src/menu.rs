@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use egui::{Key, KeyboardShortcut, Modifiers};
-use picasso_core::EffectKind;
+use picasso_core::{EffectKind, TransitionKind};
 
 /// Everything a menu entry or a key can do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -207,6 +207,7 @@ pub(crate) enum Act {
     SpeedRamp,
     AddTextPlus,
     AddEffect(picasso_core::EffectKind),
+    AddTransition(picasso_core::TransitionKind),
     TrackEq,
     TrackDynamics,
     Preferences,
@@ -531,7 +532,11 @@ const CLIP: &[Entry] = &[
     item("Link Clips", &["Ctrl+L"], Act::LinkClips),
     item("Unlink Audio and Video", &[], Act::UnlinkClips),
     SEP,
-    item("Enable / Disable Audio Scrubbing", &[], Act::ToggleAudioScrubbing),
+    item(
+        "Enable / Disable Audio Scrubbing",
+        &[],
+        Act::ToggleAudioScrubbing,
+    ),
     sub(
         "Auto Align Clips",
         &[
@@ -680,6 +685,112 @@ const EFFECTS: &[Entry] = &[
         &[
             item("Cross Dissolve", &[], Act::AddCrossDissolve),
             item("Dip to Color", &[], Act::AddDipToBlack),
+            sub(
+                "More Transitions",
+                &[
+                    item(
+                        "Brightness Flash",
+                        &[],
+                        Act::AddTransition(TransitionKind::BrightnessFlash),
+                    ),
+                    item("Zoom In", &[], Act::AddTransition(TransitionKind::ZoomIn)),
+                    item(
+                        "Zoom In and Out",
+                        &[],
+                        Act::AddTransition(TransitionKind::ZoomInOut),
+                    ),
+                    item(
+                        "Crash Zoom",
+                        &[],
+                        Act::AddTransition(TransitionKind::CrashZoom),
+                    ),
+                    item("Rotate", &[], Act::AddTransition(TransitionKind::Rotate)),
+                    item(
+                        "Rotate 90",
+                        &[],
+                        Act::AddTransition(TransitionKind::Rotate90),
+                    ),
+                    item(
+                        "Noise Dissolve",
+                        &[],
+                        Act::AddTransition(TransitionKind::NoiseDissolve),
+                    ),
+                    item("Glitch", &[], Act::AddTransition(TransitionKind::Glitch)),
+                    item(
+                        "Camera Shake",
+                        &[],
+                        Act::AddTransition(TransitionKind::CameraShakeTransition),
+                    ),
+                    item("Circles", &[], Act::AddTransition(TransitionKind::Circles)),
+                    item("Flip 3D", &[], Act::AddTransition(TransitionKind::Flip3d)),
+                    item(
+                        "Slice Push",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlicePush),
+                    ),
+                    item("Warp", &[], Act::AddTransition(TransitionKind::Warp)),
+                    item(
+                        "Drop Warp",
+                        &[],
+                        Act::AddTransition(TransitionKind::DropWarp),
+                    ),
+                    item(
+                        "Tunnel of Light",
+                        &[],
+                        Act::AddTransition(TransitionKind::TunnelOfLight),
+                    ),
+                    item(
+                        "Burn Away",
+                        &[],
+                        Act::AddTransition(TransitionKind::BurnAway),
+                    ),
+                    item(
+                        "Slide Left",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlideLeft),
+                    ),
+                    item(
+                        "Slide Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlideRight),
+                    ),
+                    item("Slide Up", &[], Act::AddTransition(TransitionKind::SlideUp)),
+                    item(
+                        "Slide Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::SlideDown),
+                    ),
+                    item("Pan Left", &[], Act::AddTransition(TransitionKind::PanLeft)),
+                    item(
+                        "Pan Right",
+                        &[],
+                        Act::AddTransition(TransitionKind::PanRight),
+                    ),
+                    item("Pan Up", &[], Act::AddTransition(TransitionKind::PanUp)),
+                    item("Pan Down", &[], Act::AddTransition(TransitionKind::PanDown)),
+                    item(
+                        "Fall and Bounce",
+                        &[],
+                        Act::AddTransition(TransitionKind::FallAndBounce),
+                    ),
+                    item(
+                        "Film Strip",
+                        &[],
+                        Act::AddTransition(TransitionKind::FilmStrip),
+                    ),
+                    item(
+                        "Foreground Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::ForegroundWipe),
+                    ),
+                    item("Paint On", &[], Act::AddTransition(TransitionKind::PaintOn)),
+                    item(
+                        "Round and Down",
+                        &[],
+                        Act::AddTransition(TransitionKind::RoundAndDown),
+                    ),
+                ],
+            ),
         ],
     ),
     sub(
@@ -1628,4 +1739,3 @@ mod tests {
         assert!(status_markdown().contains("| Restore Project Archive... | - | planned |"));
     }
 }
-

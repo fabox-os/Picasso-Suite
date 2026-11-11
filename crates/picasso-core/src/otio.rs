@@ -156,8 +156,8 @@ pub fn to_otio(project: &Project) -> String {
                     children.push(json!({
                         "OTIO_SCHEMA": "Transition.1",
                         "name": match t.kind {
-                            TransitionKind::CrossDissolve => "Cross Dissolve",
                             TransitionKind::DipToBlack => "Dip to Black",
+                            other => other.label(),
                         },
                         "transition_type": "SMPTE_Dissolve",
                         "in_offset": time(frames / 2, rate),
@@ -446,10 +446,10 @@ fn read_track(track: &Value, fps: f64, items: &mut usize, skipped: &mut usize) -
         }
         if is(item, "Transition") {
             let half = |key: &str| frames_of(&item[key], fps).unwrap_or(0);
-            let kind = match item["metadata"]["picasso"]["kind"].as_str() {
-                Some("DipToBlack") => TransitionKind::DipToBlack,
-                _ => TransitionKind::CrossDissolve,
-            };
+            let kind = item["metadata"]["picasso"]["kind"]
+                .as_str()
+                .and_then(TransitionKind::from_name)
+                .unwrap_or(TransitionKind::CrossDissolve);
             pending = Some(crate::Transition {
                 kind,
                 frames: half("in_offset") + half("out_offset"),

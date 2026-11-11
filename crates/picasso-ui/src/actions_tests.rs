@@ -456,6 +456,21 @@ fn a_title_from_the_effects_menu() {
 }
 
 #[test]
+fn every_extra_transition_can_be_added_from_the_menu_and_taken_off() {
+    let mut app = app();
+    let second = app.project().tracks[0].clips[1].clone();
+    app.go_to(second.start + 3);
+    for kind in picasso_core::TransitionKind::extra() {
+        assert!(app.act_enabled(Act::AddTransition(*kind)), "{kind:?}");
+        act(&mut app, Act::AddTransition(*kind));
+        let t = app.project().clip(second.id).unwrap().1.transition.unwrap();
+        assert_eq!(t.kind, *kind);
+        act(&mut app, Act::RemoveTransition);
+        assert!(app.project().clip(second.id).unwrap().1.transition.is_none());
+    }
+}
+
+#[test]
 fn transitions_from_the_menus() {
     let mut app = app();
     let second = app.project().tracks[0].clips[1].clone();

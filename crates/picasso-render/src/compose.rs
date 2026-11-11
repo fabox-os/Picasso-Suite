@@ -154,7 +154,7 @@ fn compose_tracks(
             } else {
                 layer.fill(0);
             }
-            mix_transition(&first, &mut layer, kind, t);
+            mix_transition(&first, &mut layer, kind, t, (w, h));
             let (lo, ro) = (left.opacity_at(at), right.opacity_at(at));
             let opacity = lo + (ro - lo) * t;
             transform::blend(&mut out, &layer, opacity, right.blend);
@@ -287,7 +287,13 @@ fn draw_clip(
 }
 
 /// Makes `second` the picture `t` (0 to 1) of the way through a transition from `first`.
-fn mix_transition(first: &[u8], second: &mut [u8], kind: picasso_core::TransitionKind, t: f32) {
+fn mix_transition(
+    first: &[u8],
+    second: &mut [u8],
+    kind: picasso_core::TransitionKind,
+    t: f32,
+    (w, h): (usize, usize),
+) {
     use picasso_core::TransitionKind;
     match kind {
         TransitionKind::CrossDissolve => {
@@ -311,6 +317,8 @@ fn mix_transition(first: &[u8], second: &mut [u8], kind: picasso_core::Transitio
                 }
             }
         }
+        // The more transitions are drawn pixel by pixel.
+        other => crate::transitions::mix_into(other, first, second, w, h, t),
     }
 }
 
@@ -825,6 +833,56 @@ mod tests {
         .apply(&mut p)
         .unwrap();
         assert!(p.tracks[0].clips[2].transition.is_none());
+    }
+
+    #[test]
+    fn the_extra_transitions_play_between_two_clips_and_leave_the_ends_alone() {
+        for kind in picasso_core::TransitionKind::extra() {
+            let (mut p, m) = project_with([200, 0, 0]);
+            let v1 = p.tracks[0].id;
+            let Outcome::Media(blue) = (Command::AddMedia {
+                name: "b".into(),
+                source: MediaSource::Solid { rgb: [0, 0, 200] },
+                length: None,
+                default_duration: 10,
+            })
+            .apply(&mut p)
+            .unwrap() else {
+                panic!()
+            };
+            for (media, start) in [(m, 0), (blue, 10)] {
+                Command::AddClip {
+                    track: v1,
+                    media,
+                    start,
+                    duration: Some(10),
+                    with_sound: false,
+                }
+                .apply(&mut p)
+                .unwrap();
+            }
+            let second = p.tracks[0].clips[1].id;
+            Command::SetTransition {
+                clip: second,
+                transition: Some(picasso_core::Transition {
+                    kind: *kind,
+                    frames: 8,
+                }),
+            }
+            .apply(&mut p)
+            .unwrap();
+            let cache = MediaCache::new();
+            let frame = |f| render_frame(&p, &cache, f, 64, 36).unwrap().rgba;
+            assert_eq!(&frame(5)[..4], [200, 0, 0, 255], "{kind:?} before");
+            assert_eq!(&frame(15)[..4], [0, 0, 200, 255], "{kind:?} after");
+            // Every frame of it is a whole, opaque picture (what each does to a picture with
+            // something in it is checked in `transitions`).
+            for f in 6..14 {
+                let rgba = frame(f);
+                assert_eq!(rgba.len(), 64 * 36 * 4);
+                assert!(rgba.chunks_exact(4).all(|px| px[3] == 255), "{kind:?} frame {f}");
+            }
+        }
     }
 
     #[test]

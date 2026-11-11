@@ -563,13 +563,127 @@ pub const CLIP_COLORS: [(&str, [u8; 3]); 16] = [
 ];
 
 /// How one clip turns into the next.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TransitionKind {
     /// The pictures mix (and the sounds cross-fade).
     #[default]
     CrossDissolve,
     /// The first picture fades to black, then the second fades in.
     DipToBlack,
+    // The more transitions. Each is the first picture at its start and the second at its end.
+    BrightnessFlash,
+    ZoomIn,
+    ZoomInOut,
+    CrashZoom,
+    Rotate,
+    Rotate90,
+    NoiseDissolve,
+    Glitch,
+    CameraShakeTransition,
+    Circles,
+    Flip3d,
+    SlicePush,
+    Warp,
+    DropWarp,
+    TunnelOfLight,
+    BurnAway,
+    SlideLeft,
+    SlideRight,
+    SlideUp,
+    SlideDown,
+    PanLeft,
+    PanRight,
+    PanUp,
+    PanDown,
+    FallAndBounce,
+    FilmStrip,
+    ForegroundWipe,
+    PaintOn,
+    RoundAndDown,
+}
+
+impl TransitionKind {
+    /// Every kind: the two dissolves, then the more transitions.
+    pub const ALL: [Self; 31] = [
+        Self::CrossDissolve,
+        Self::DipToBlack,
+        Self::BrightnessFlash,
+        Self::ZoomIn,
+        Self::ZoomInOut,
+        Self::CrashZoom,
+        Self::Rotate,
+        Self::Rotate90,
+        Self::NoiseDissolve,
+        Self::Glitch,
+        Self::CameraShakeTransition,
+        Self::Circles,
+        Self::Flip3d,
+        Self::SlicePush,
+        Self::Warp,
+        Self::DropWarp,
+        Self::TunnelOfLight,
+        Self::BurnAway,
+        Self::SlideLeft,
+        Self::SlideRight,
+        Self::SlideUp,
+        Self::SlideDown,
+        Self::PanLeft,
+        Self::PanRight,
+        Self::PanUp,
+        Self::PanDown,
+        Self::FallAndBounce,
+        Self::FilmStrip,
+        Self::ForegroundWipe,
+        Self::PaintOn,
+        Self::RoundAndDown,
+    ];
+
+    /// The more transitions only, in the order of the More Transitions menu.
+    pub fn extra() -> &'static [Self] {
+        &Self::ALL[2..]
+    }
+
+    /// The name people know it by.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::CrossDissolve => "Cross Dissolve",
+            Self::DipToBlack => "Dip to Color",
+            Self::BrightnessFlash => "Brightness Flash",
+            Self::ZoomIn => "Zoom In",
+            Self::ZoomInOut => "Zoom In and Out",
+            Self::CrashZoom => "Crash Zoom",
+            Self::Rotate => "Rotate",
+            Self::Rotate90 => "Rotate 90",
+            Self::NoiseDissolve => "Noise Dissolve",
+            Self::Glitch => "Glitch",
+            Self::CameraShakeTransition => "Camera Shake",
+            Self::Circles => "Circles",
+            Self::Flip3d => "Flip 3D",
+            Self::SlicePush => "Slice Push",
+            Self::Warp => "Warp",
+            Self::DropWarp => "Drop Warp",
+            Self::TunnelOfLight => "Tunnel of Light",
+            Self::BurnAway => "Burn Away",
+            Self::SlideLeft => "Slide Left",
+            Self::SlideRight => "Slide Right",
+            Self::SlideUp => "Slide Up",
+            Self::SlideDown => "Slide Down",
+            Self::PanLeft => "Pan Left",
+            Self::PanRight => "Pan Right",
+            Self::PanUp => "Pan Up",
+            Self::PanDown => "Pan Down",
+            Self::FallAndBounce => "Fall and Bounce",
+            Self::FilmStrip => "Film Strip",
+            Self::ForegroundWipe => "Foreground Wipe",
+            Self::PaintOn => "Paint On",
+            Self::RoundAndDown => "Round and Down",
+        }
+    }
+
+    /// The kind with this variant name (as `{:?}` writes it), for files that carry it.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| format!("{k:?}") == name)
+    }
 }
 
 /// A transition at the start of a clip: `frames` long, half before the cut and half after.

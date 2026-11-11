@@ -157,15 +157,14 @@ fn transition_item(
     let end = cut + (frames - frames / 2);
     let (name, id, category, media) = match (video, kind) {
         (false, _) => ("Cross Fade (+3dB)", "KGAudioTransCrossFade3dB", "", "audio"),
-        (true, TransitionKind::CrossDissolve) => {
-            ("Cross Dissolve", "Cross Dissolve", "Dissolve", "video")
-        }
         (true, TransitionKind::DipToBlack) => (
             "Dip to Color Dissolve",
             "Dip to Color Dissolve",
             "Dissolve",
             "video",
         ),
+        // Other editors do not know the more transitions: they get a dissolve of the same length.
+        (true, _) => ("Cross Dissolve", "Cross Dissolve", "Dissolve", "video"),
     };
     format!(
         "<transitionitem>{}<start>{start}</start><end>{end}</end><alignment>center</alignment><effect><name>{name}</name><effectid>{id}</effectid><effectcategory>{category}</effectcategory><effecttype>transition</effecttype><mediatype>{media}</mediatype></effect></transitionitem>",

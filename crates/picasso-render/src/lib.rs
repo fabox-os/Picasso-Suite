@@ -11,6 +11,7 @@ mod frames;
 mod source;
 mod text;
 mod transform;
+pub mod transitions;
 
 pub use cache::{Decoded, FrameSource, MediaCache, VideoFrame};
 pub use compose::{
