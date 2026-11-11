@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+Picasso Suite's next version adds green and blue screen keying, 29 more video transitions, clips that keep their pitch when their speed changes, HDR video shown with the right colours, and a search for the right graphics card for the video encoders. The project file format is the same as in 0.6.4; a project that uses the new effects or transitions opens in 0.6.4 with them missing.
+
+### ✨ New
+- ✅ **Green Screen and Blue Screen effects:** **Picasso FX > Key** (and the effect list in the Inspector) takes a green or blue screen out of a clip so the tracks below show through. The colour of the screen is measured on the chroma plane, so a shaded or brighter part of the screen is keyed as well; skin tones and greys stay; the spill of the screen on the subject is pulled back; the clip's own transparency is kept. The strength is the tolerance (30 to start). Not yet: a custom screen colour, edge softness and spill amount (an effect has one strength).
+- ✅ **29 more video transitions:** **Effects > Video Transitions > More Transitions**: Brightness Flash, Zoom In, Zoom In and Out, Crash Zoom, Rotate, Rotate 90, Noise Dissolve, Glitch, Camera Shake, Circles, Flip 3D, Slice Push, Warp, Drop Warp, Tunnel of Light, Burn Away, Slide and Pan in four directions each, Fall and Bounce, Film Strip, Foreground Wipe, Paint On and Round and Down. Each is the outgoing picture at its start and the incoming one at its end (checked for all 29), drawn pixel by pixel on the processor on every core (6 to 37 ms for a 1080p frame on a 32-core computer). Saved in the project and in OpenTimelineIO by name; Final Cut XML and AAF files get a dissolve of the same length. The sound at the cut still cross-fades.
+- ✅ **Clips keep their pitch when their speed changes:** a clip played faster or slower (0.1x to 16x, forward) is time-stretched (WSOLA) instead of resampled like tape, so a 1.5x clip stays at the same note. Reversed clips and speeds outside that range still play like tape.
+- ✅ **HDR video:** pictures tagged HLG, PQ (HDR10) or BT.2020 are mapped to the SDR BT.709 timeline when they are decoded (highlights rolled off smoothly, BT.2020 colours converted), so phone HDR footage no longer looks flat and grey. Untagged video is untouched.
+- ✅ **Motion tracking maths (`picasso-track`):** a point tracker, a planar tracker, homography fitting with RANSAC and a frame-to-frame stabilisation analysis, with 23 tests. Nothing in the interface uses it yet.
+
+### 🐛 Fixed
+- ✅ **Graphics card encoders on a computer with two cards:** VA-API opened only the default card, which is not always the one that can encode (a processor's graphics beside a separate card). The check now tries the default card and then every `/dev/dri/renderD*`, each without and with the low-power mode, remembers the way that works for each encoder, and the export uses it. Decoding on the card also falls back to any card that opens. Checked by tests and on a computer with one card; a second card has not been tried.
+
+### ⚠️ Known limitations
+- ❌ **HDR:** the colour matrix of a BT.2020 picture is still converted with the converter's default; only the transfer curve and the primaries are corrected.
+- ❌ **Transitions:** the 29 transitions use fixed settings (zoom amount, glitch strength and so on); a transition has a kind and a length only. On a computer with few cores the heaviest (Pan, Glitch, Burn Away) are several times slower than the figures above.
+- ❌ **Keying** has fixed softness and spill; a custom screen colour needs new controls.
+- ❌ **Pitch** is kept for forward clips only; a speed ramp is not stretched.
+- ❌ **All of the above** are checked by tests, not by hand on real footage in the program.
+
 ## 0.6.4
 
 Picasso Suite 0.6.4 adds four effects (RGB Mixer, Color Temperature, Directional Blur and Diffusion), effect presets, and a check that refuses a damaged project file and points at the newest autosave. The project file format is the same as in 0.6.3; a project that uses the new effects does not open in 0.6.3 or older. Contributed by GANESH NIKAM, with review fixes.

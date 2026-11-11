@@ -840,6 +840,21 @@ const EFFECTS: &[Entry] = &[
         "Picasso FX",
         &[
             sub(
+                "Key",
+                &[
+                    item(
+                        "Green Screen",
+                        &[],
+                        Act::AddEffect(EffectKind::GreenScreen),
+                    ),
+                    item(
+                        "Blue Screen",
+                        &[],
+                        Act::AddEffect(EffectKind::BlueScreen),
+                    ),
+                ],
+            ),
+            sub(
                 "Color",
                 &[
                     item("Sepia", &[], Act::AddEffect(EffectKind::Sepia)),

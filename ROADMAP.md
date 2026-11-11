@@ -80,11 +80,22 @@ Status at 0.6.4.
 - [x] Fixes: the Edit page's Inspector scrolls with the wheel (it shared an id with another list; a test now checks that no page draws two widgets with one id); its Effects button opens the Inspector instead of jumping to Fusion; menus open on the Media and Deliver pages; exports no longer read back one frame short
 - [x] Development: the tests that make a video or a tone with ffmpeg each write a file of their own, so the whole suite no longer fails at random when they run at the same time
 - [x] Linux: the program no longer closes when the X server cannot list the monitors (`RandrBadCrtc` on Intel graphics made winit panic, even at the start; it logs a warning and carries on), from a copy of winit 0.30.13 in `third_party/winit`
+- [x] Effects: Green Screen and Blue Screen keys (**Picasso FX > Key**: chroma plane distance, soft edge, spill removal; the strength is the tolerance)
+- [x] Transitions: 29 more (**More Transitions**: flashes, zooms, rotations, glitch, shake, circles, flip, slices, warps, tunnel, burn, slides, pans, fall, film strip, wipe, paint, swing), drawn on the processor on every core
+- [x] Audio: clips played faster or slower keep their pitch (WSOLA time stretch, forward clips from 0.1x to 16x)
+- [x] Playback: HDR video (HLG, PQ, BT.2020) is mapped to the SDR timeline when decoded
+- [x] Hardware: VA-API encoders and decoding try every graphics card and the low-power mode, not only the default card
+- [x] Tracking: `picasso-track` (point tracker, planar tracker, homographies, stabilisation analysis), the maths only
 
 ## To do
 
 - [ ] Interface density: finish the pages measured on the 1080p screenshots (`docs/reference/resolve-1080p`). Done: page bar, labelled top toolbars, Cut, Edit, Fusion, Fairlight, Photo, Color, Media, Deliver. Every page is at Resolve's 1080p size; next, check the same pages at 4K and at small windows
 - [ ] Deliver: IMF Generic and Pro Tools presets (listed, greyed out) need an MXF writer and AAF with embedded or rendered sound
+- [ ] Tracking: use `picasso-track` in the interface: a Track button for Match Move and window tracking, and Stabilization in the Inspector
+- [ ] Transitions: settings for the 29 more transitions (zoom amount, strength, direction, colour); a transition has only a kind and a length now
+- [ ] Effects: custom screen colour, edge softness and spill amount for the keys, a luma key and an HSL key
+- [ ] Audio: keep the pitch of a speed ramp and of reversed clips
+- [ ] Playback: the colour matrix of BT.2020 pictures (only the transfer curve and the primaries are corrected)
 - [ ] Color: splitter/combiner nodes, viewer split/wipe, window tracking, magic mask, polygon and B-spline masks, Paint and particle tools
 - [ ] Editing: Trim Editor window, JKL in dynamic trim, timeline in a new window, auto align by waveform for clips at another speed, reversed or frozen
 - [ ] Multicam: sync by timecode or waveform, live angle previews, switching sound
