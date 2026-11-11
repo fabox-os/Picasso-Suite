@@ -253,7 +253,10 @@ pub fn probe(path: &Path) -> Result<MediaInfo, DecodeError> {
     let variable_frame_rate = {
         let (avg, base) = (rational(video.avg_frame_rate()), rational(video.rate()));
         avg.0 > 0 && base.0 > 0 && {
-            let (a, b) = (f64::from(avg.0) / f64::from(avg.1), f64::from(base.0) / f64::from(base.1));
+            let (a, b) = (
+                f64::from(avg.0) / f64::from(avg.1),
+                f64::from(base.0) / f64::from(base.1),
+            );
             (a - b).abs() / b > 0.03
         }
     };
@@ -312,12 +315,16 @@ static FASTER: std::sync::Mutex<Option<std::collections::HashMap<PathBuf, bool>>
     std::sync::Mutex::new(None);
 
 fn faster_way(path: &Path) -> Option<bool> {
-    let known = FASTER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let known = FASTER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     known.as_ref()?.get(path).copied()
 }
 
 fn learn_faster_way(path: &Path, card: bool) {
-    let mut known = FASTER.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut known = FASTER
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     known
         .get_or_insert_with(Default::default)
         .insert(path.to_path_buf(), card);
@@ -483,6 +490,7 @@ impl VideoDecoder {
             )?);
             self.rgba = ff::frame::Video::empty();
         }
+        let mapping = hdr_mapping(decoded);
         let scaler = self.scaler.as_mut().ok_or(DecodeError::NoFrame)?;
         let rgba = &mut self.rgba;
         scaler.run(decoded, rgba)?;
@@ -500,12 +508,29 @@ impl VideoDecoder {
             }
             out
         };
+        let mut out = out;
+        // HDR (HLG / PQ) and BT.2020 pictures are shown on the SDR BT.709 timeline.
+        picasso_color::map_rgba8_to_sdr(&mut out, mapping);
         Ok(Frame {
             width: rgba.width(),
             height: rgba.height(),
             pts_us,
             rgba: out,
         })
+    }
+}
+
+/// How the colours of a decoded picture are mapped to SDR BT.709, from its tags: HLG and PQ by
+/// transfer characteristic (their primaries are BT.2020, as every HDR camera writes them), an SDR
+/// picture tagged with BT.2020 primaries by gamut only.
+fn hdr_mapping(frame: &ff::frame::Video) -> picasso_color::HdrMapping {
+    use ff::util::color::{Primaries, TransferCharacteristic};
+    use picasso_color::HdrMapping;
+    match frame.color_transfer_characteristic() {
+        TransferCharacteristic::ARIB_STD_B67 => HdrMapping::Hlg,
+        TransferCharacteristic::SMPTE2084 => HdrMapping::Pq,
+        _ if frame.color_primaries() == Primaries::BT2020 => HdrMapping::WideGamut,
+        _ => HdrMapping::None,
     }
 }
 
@@ -581,7 +606,8 @@ impl VideoDecoder {
                     "{}: decoding on the {} (the card took {} ms a picture)",
                     self.path.display(),
                     if card { "graphics card" } else { "processor" },
-                    card_ms.map_or_else(|| format!("at most {CARD_FAST_MS}"), |m| format!("{m:.1}")),
+                    card_ms
+                        .map_or_else(|| format!("at most {CARD_FAST_MS}"), |m| format!("{m:.1}")),
                 );
                 learn_faster_way(&self.path, card);
                 if card != self.on_card {
@@ -789,6 +815,57 @@ mod tests {
         let info = probe(&path).map_err(|e| e.to_string())?;
         assert_eq!(info.timecode.as_deref(), Some("01:00:00:00"));
         let _ = std::fs::remove_file(path);
+        Ok(())
+    }
+
+    /// A grey test clip, tagged HLG / BT.2020 when `hlg` is set.
+    fn grey_clip(name: &str, hlg: bool) -> Option<std::path::PathBuf> {
+        let path = std::env::temp_dir().join(name);
+        let mut cmd = std::process::Command::new("ffmpeg");
+        cmd.args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+            .arg("color=c=0x808080:duration=1:size=64x64:rate=24")
+            .args(["-pix_fmt", "yuv420p"]);
+        if hlg {
+            // the frames carry the tags; the encoder writes them into the file from there
+            cmd.args([
+                "-vf",
+                "setparams=color_trc=arib-std-b67:color_primaries=bt2020",
+            ])
+            .args(["-colorspace", "bt2020nc"]);
+        }
+        let ok = cmd.arg(&path).status().is_ok_and(|s| s.success());
+        ok.then_some(path)
+    }
+
+    #[test]
+    fn hlg_pictures_are_mapped_to_sdr_and_untagged_ones_are_not() -> Result<(), String> {
+        let (Some(plain), Some(hlg)) = (
+            grey_clip("picasso_decode_grey_plain.mp4", false),
+            grey_clip("picasso_decode_grey_hlg.mp4", true),
+        ) else {
+            return Ok(());
+        };
+        let a = VideoDecoder::open(&plain)
+            .map_err(|e| e.to_string())?
+            .frame_at(0)
+            .map_err(|e| e.to_string())?;
+        let b = VideoDecoder::open(&hlg)
+            .map_err(|e| e.to_string())?
+            .frame_at(0)
+            .map_err(|e| e.to_string())?;
+        let mid = (a.width as usize / 2 + a.height as usize / 2 * a.width as usize) * 4;
+        // the same grey signal, shown differently once it is read as HLG
+        assert!(
+            (i32::from(a.rgba[mid]) - 128).abs() < 8,
+            "plain grey changed: {}",
+            a.rgba[mid]
+        );
+        assert!(
+            (i32::from(a.rgba[mid]) - i32::from(b.rgba[mid])).abs() > 10,
+            "HLG picture not mapped"
+        );
+        let _ = std::fs::remove_file(plain);
+        let _ = std::fs::remove_file(hlg);
         Ok(())
     }
 

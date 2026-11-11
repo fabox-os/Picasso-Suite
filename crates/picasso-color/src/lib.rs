@@ -10,6 +10,7 @@
 pub mod curves;
 pub mod fx;
 pub mod grade;
+pub mod hdr;
 pub mod lut;
 pub mod mask;
 pub mod scopes;
@@ -17,6 +18,7 @@ pub mod scopes;
 pub use curves::Curves;
 pub use fx::{apply_effects, Effect, EffectKind, MAX_EFFECTS};
 pub use grade::{ColorGrade, NodeMode};
+pub use hdr::{map_rgba8_to_sdr, map_to_sdr, HdrMapping};
 pub use lut::{Lut, LutError, LutKind};
 pub use mask::{PowerWindow, Qualifier, WindowShape, MAX_WINDOWS};
 pub use scopes::{curve_histogram, CurveInput, Histogram, Parade, Vectorscope, Waveform};

@@ -2100,6 +2100,7 @@ name = "picasso-decode"
 version = "0.6.4"
 dependencies = [
  "ffmpeg-next",
+ "picasso-color",
  "thiserror 2.0.21",
  "tracing",
 ]
@@ -2163,6 +2164,10 @@ dependencies = [
  "winit",
  "winresource",
 ]
+
+[[package]]
+name = "picasso-track"
+version = "0.6.3"
 
 [[package]]
 name = "picasso-ui"

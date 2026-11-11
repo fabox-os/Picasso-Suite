@@ -1,0 +1,12 @@
+[package]
+name = "picasso-track"
+description = "Motion tracking maths: point tracker, planar tracker, homographies and frame-to-frame stabilisation (pure Rust, no I/O)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
