@@ -1,31 +1,60 @@
+<div align="center">
+
+<img src="docs/logo.webp" alt="Picasso Suite" width="200">
+
 # Picasso Suite
 
-A cross-platform video editor written in Rust, laid out like DaVinci Resolve: Media, Photo, Cut,
-Edit, Fusion, Color, Fairlight and Deliver pages. Windows, Linux and macOS.
+</div>
 
-- **Edit:** media pool and bins, multi-track timeline, linked picture and sound, blade, trim,
-  ripple, roll, slip and slide, Dynamic Trim, compound clips, multicam, speed changes and ramps,
-  keyframes, transitions, titles, Paste Mix to Current Track, undo/redo.
-- **Color:** serial, parallel and layer nodes; lift, gamma, gain and offset wheels; custom curves
-  (Y, R, G, B, intensity and soft clip); qualifier and power windows; LUTs; gallery stills;
-  parade, waveform, vectorscope and histogram scopes.
-- **Fairlight:** per-track EQ and compressor, meters, loudness (BS.1770), recording from the
-  microphone, voice-over, Bounce Mix to Track and Bounce Selected Tracks, audio scrubbing.
-- **Any format FFmpeg reads:** H.264, H.265/HEVC, ProRes, DNxHR, AV1, VP9 and more, images and
-  sound, decoded on the graphics card where it can. FFmpeg comes with every package.
-- **Deliver:** H.264, H.265 and AV1 (8 or 10-bit, on the processor or an NVIDIA, Intel, AMD,
-  Apple or VA-API encoder), VP9, ProRes, DNxHR, lossless FFV1, WAV, MP3 and PNG sequences, a
-  render queue and Resolve's render presets.
-- **DaVinci Resolve files:** opens `.drp` projects, `.drt` timelines, `.drb` bins and XML exports
-  (name, frame rate, picture size and media).
-- **Other editors:** exports timelines as Final Cut Pro 7 / Premiere XML, AAF (Avid Media
-  Composer, Pro Tools), OpenTimelineIO and EDL; imports the same XML, AAF, OpenTimelineIO and
-  EDL timelines, matching their clips to the media.
-- **Keyboard Customization:** any command's keys can be changed.
-- **Updates:** Help > Check for Updates installs the latest release.
-- **Bug reports:** Help > Export Log File saves the session's log (kept in memory, nothing
-  written while you work); `picasso-suite --graphics-check` reports what the graphics card draws
-  and whether it decodes video.
+---
+
+<div align="center">
+
+**A cross-platform video editor written in Rust, laid out like DaVinci Resolve.**
+
+Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, on Windows, Linux and macOS, with timelines that travel to and from other editors.
+
+[![CI](https://github.com/fabox-os/Picasso-Suite/actions/workflows/ci.yml/badge.svg)](https://github.com/fabox-os/Picasso-Suite/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/fabox-os/Picasso-Suite?color=f5750c)](https://github.com/fabox-os/Picasso-Suite/releases/latest)
+[![license](https://img.shields.io/badge/license-GPL--3.0--or--later-0069e0)](LICENSE)
+[![rust](https://img.shields.io/badge/rust-1.95%2B-eb2100)](https://www.rust-lang.org)
+[![chat](https://img.shields.io/badge/chat-Discord-5865f2?logo=discord&logoColor=white)](https://discord.gg/zuMqg3nVnX)
+
+[Website](https://fabox-os.github.io/Picasso-Suite/) •
+[Discord](https://discord.gg/zuMqg3nVnX) •
+[Download](#install) •
+[Features](#features) •
+[Screenshots](#screenshots) •
+[Build from source](#build-from-source) •
+[Layout](#layout) •
+[Changelog](CHANGELOG.md) •
+[Roadmap](ROADMAP.md)
+
+<img src="docs/screenshots/0.2.0/color.webp" alt="The Color page of Picasso Suite: nodes, wheels, curves and scopes" width="100%">
+
+</div>
+
+---
+
+Picasso Suite is a video editor in the shape of an editing suite: bring media in, cut it, grade it, mix the sound and render it, with every step on a page of its own and the pages in the order Resolve has them. Menus follow a written spec ([`Menu-Spec.md`](Menu-Spec.md)), and the status of every entry is listed ([`Menu-Status.md`](Menu-Status.md)).
+
+**NOTE: Picasso Suite is before 1.0. 281 of its 310 menu entries work and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk.**
+
+## Features
+
+- **Eight pages, one window.** Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver, in Resolve's order and proportions. The panels on every page are resized by dragging the dividers between them (a double click resets), layouts can be saved, and any command's keys can be changed in Keyboard Customization.
+- **Professional timeline workflow.** Media pool and bins, a multi-track timeline, linked picture and sound, blade, trim, ripple, roll, slip and slide, Dynamic Trim, compound clips, multicam, speed changes and ramps, keyframes, transitions, titles, Paste Mix to Current Track, and undo/redo.
+- **Smooth playback and scrubbing.** The viewer's picture is put together on a thread of its own, scrubbing long-GOP camera video is fast, and Optimised Media makes small copies of heavy footage for smooth playback.
+- **Hardware accelerated.** Decoding on the graphics card (D3D11 on Windows, VideoToolbox on macOS, VA-API or CUDA on Linux) with the processor as the fallback and a switch in System Preferences. Export on NVENC, Intel Quick Sync, AMD AMF, VideoToolbox or VA-API.
+- **Color, with the scopes.** Serial, parallel and layer nodes; lift, gamma, gain and offset wheels; custom curves (Y, R, G, B, intensity and soft clip); qualifier and power windows; LUTs; gallery stills; parade, waveform, vectorscope and histogram.
+- **Audio, finished in place.** Fairlight has a per-track EQ and compressor, meters, loudness (BS.1770), recording from the microphone, voice-over, Bounce Mix to Track and Bounce Selected Tracks, and audio scrubbing.
+- **Effects and presets.** RGB Mixer, Color Temperature, Directional Blur and Diffusion beside Gaussian Blur, Sharpen, Mosaic, Glow, Vignette, Film Grain and more, added from the menu. A clip's whole effect stack can be saved as a preset and applied in one click.
+- **Any format FFmpeg reads.** H.264, H.265/HEVC, ProRes, DNxHR, AV1, VP9 and more, plus images and sound. FFmpeg comes with every package.
+- **Deliver.** H.264, H.265 and AV1 (8 or 10-bit), VP9, ProRes, DNxHR, lossless FFV1, WAV, MP3 and PNG sequences, with a render queue and Resolve's render presets.
+- **Interoperability.** Opens DaVinci Resolve `.drp` projects, `.drt` timelines, `.drb` bins and XML exports; exports Final Cut Pro 7 / Premiere XML, AAF (Avid Media Composer, Pro Tools), OpenTimelineIO and EDL, and imports the same, matching their clips to your media.
+- **Careful with your work.** A damaged project file is refused with the newest autosave named to recover from, and the code never panics: no `unwrap`, `expect` or `panic!`, and every change to a project is a command.
+- **Updates and bug reports.** Help > Check for Updates installs the latest release. Help > Export Log File saves the session's log (kept in memory, nothing written while you work), and `picasso-suite --graphics-check` reports what the graphics card draws and whether it decodes video.
+- **Everywhere.** Windows, macOS (Apple silicon and Intel) and Linux (x86_64 and ARM64) as a zip, `.deb`, `.rpm`, AppImage or Flatpak.
 
 ## Status
 

@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Picasso Suite — an open-source video editor in Rust</title>
+<meta name="description" content="Picasso Suite is a cross-platform video editor written in Rust, laid out like DaVinci Resolve: Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages. Windows, Linux and macOS. Free and open source.">
+<meta property="og:title" content="Picasso Suite — an open-source video editor in Rust">
+<meta property="og:description" content="Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, in pure Rust. Windows, Linux and macOS.">
+<meta property="og:image" content="https://fabox-os.github.io/Picasso-Suite/logo.webp">
+<link rel="icon" type="image/png" href="icon.png">
+<style>
+:root {
+  /* The colours of the logo. */
+  --blue: #2f8be6;
+  --blue-deep: #0069e0;
+  --yellow: #ffb90d;
+  --red: #eb2100;
+  --orange: #f5750c;
+  --teal: #12a3b3;
+  --magenta: #d6246e;
+  --purple: #8a5cc2;
+  --cream: #e8dec6;
+
+  --bg: #0e0e10;
+  --bg-2: #151518;
+  --panel: #1a1a1e;
+  --line: #2a2a30;
+  --text: #ececf0;
+  --dim: #a2a2ad;
+  --faint: #6f6f7a;
+  --on-accent: #120c04;
+  --spectrum: linear-gradient(90deg, var(--blue), var(--teal) 22%, var(--yellow) 50%, var(--orange) 72%, var(--red));
+  --radius: 14px;
+  --max: 1120px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; }
+img { max-width: 100%; height: auto; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.wrap { width: min(var(--max), 100% - 32px); margin-inline: auto; }
+:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; border-radius: 6px; }
+
+/* Navigation */
+nav {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(14, 14, 16, .85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+nav .wrap { display: flex; align-items: center; gap: 22px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; margin-right: auto; }
+.brand img { width: 30px; height: 30px; border-radius: 8px; }
+nav a.link { color: var(--dim); text-decoration: none; font-size: 14px; }
+nav a.link:hover { color: var(--text); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 18px; border-radius: 9px;
+  font: 600 15px/1.2 inherit; text-decoration: none;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  transition: transform .15s, border-color .15s, background .15s;
+}
+.btn:hover { transform: translateY(-1px); border-color: #3a3a42; background: #202026; }
+.btn.primary { background: var(--yellow); border-color: var(--yellow); color: var(--on-accent); }
+.btn.primary:hover { background: #ffc83a; border-color: #ffc83a; }
+nav .btn { padding: 7px 14px; font-size: 14px; }
+.icon-link { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 9px; color: var(--dim); transition: color .15s, background .15s; }
+.icon-link:hover { color: #fff; background: #5865f2; }
+.btn.discord svg { color: #7983f5; }
+.btn.discord:hover { border-color: #5865f2; }
+
+/* Hero */
+.hero {
+  position: relative; overflow: hidden;
+  padding: 72px 0 56px; text-align: center;
+  background:
+    radial-gradient(ellipse 60% 55% at 22% 0%, rgba(47, 139, 230, .22), transparent 70%),
+    radial-gradient(ellipse 55% 50% at 80% 0%, rgba(235, 33, 0, .16), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 52% 6%, rgba(255, 185, 13, .14), transparent 70%);
+}
+.hero .logo { width: 132px; height: 132px; border-radius: 30px; box-shadow: 0 18px 60px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .06); }
+.badge {
+  display: inline-flex; gap: 10px; align-items: center; margin: 26px 0 22px;
+  padding: 5px 14px; border-radius: 999px; font-size: 13px; color: var(--dim);
+  border: 1px solid var(--line); background: rgba(26, 26, 30, .7);
+}
+.badge b { color: var(--on-accent); background: var(--yellow); border-radius: 999px; padding: 1px 9px; font-size: 11px; letter-spacing: .06em; }
+h1 {
+  margin: 0; font-size: clamp(42px, 8vw, 84px); line-height: 1.04; letter-spacing: -.03em; font-weight: 800;
+}
+h1 .spectrum { background: var(--spectrum); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lead { max-width: 720px; margin: 22px auto 0; color: var(--dim); font-size: 18px; }
+.lead strong { color: var(--text); }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 30px; }
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 22px; margin: 26px 0 0; padding: 0; list-style: none; color: var(--faint); font-size: 13px; }
+.chips li::before { content: "·"; margin-right: 22px; color: var(--line); }
+.chips li:first-child::before { content: none; margin: 0; }
+
+.shot {
+  margin: 46px auto 0; max-width: 1000px;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid #34343c; background: #000;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .6), 0 0 120px rgba(47, 139, 230, .12);
+}
+.shot .bar { height: 3px; background: var(--spectrum); }
+.shot img { display: block; width: 100%; }
+.shot-note { margin: 12px 0 0; font-size: 13px; color: var(--faint); }
+
+/* Sections */
+section { padding: 84px 0; }
+section.alt { background: var(--bg-2); border-block: 1px solid var(--line); }
+.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--yellow); }
+h2 { margin: 8px 0 14px; font-size: clamp(30px, 4.5vw, 44px); line-height: 1.12; letter-spacing: -.02em; }
+.sub { max-width: 760px; color: var(--dim); font-size: 17px; margin: 0 0 40px; }
+
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(3, 1fr); }
+.card {
+  position: relative; padding: 24px 22px 22px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden;
+}
+.card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--c, var(--blue)); }
+.card .tag { font-size: 11px; font-weight: 700; letter-spacing: .14em; color: var(--c, var(--blue)); }
+.card h3 { margin: 6px 0 8px; font-size: 19px; line-height: 1.25; }
+.card p { margin: 0; color: var(--dim); font-size: 15px; }
+
+/* Pages gallery */
+.pages { display: grid; gap: 22px; grid-template-columns: repeat(2, 1fr); }
+figure { margin: 0; }
+figure a { display: block; border-radius: 10px; overflow: hidden; border: 1px solid #34343c; background: #000; }
+figure img { display: block; width: 100%; transition: transform .35s; }
+figure a:hover img { transform: scale(1.02); }
+figcaption { margin-top: 10px; font-size: 14px; color: var(--dim); }
+figcaption b { color: var(--text); }
+.gallery-note { margin: 28px 0 0; font-size: 13px; color: var(--faint); }
+
+/* Formats */
+.split { display: grid; gap: 40px; grid-template-columns: 1fr 1fr; align-items: start; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 22px; padding: 0; list-style: none; }
+.pills li { padding: 5px 12px; border-radius: 999px; font-size: 13px; background: var(--panel); border: 1px solid var(--line); color: var(--dim); }
+.pills li.hot { border-color: color-mix(in srgb, var(--c) 55%, transparent); color: var(--text); }
+h3.small { margin: 0 0 12px; font-size: 15px; letter-spacing: .02em; }
+
+/* Status */
+.meters { display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+.meter { padding: 22px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.meter .num { font-size: 40px; font-weight: 800; letter-spacing: -.02em; }
+.meter .of { color: var(--dim); font-size: 14px; }
+.track { height: 10px; margin-top: 14px; background: #26262c; border-radius: 99px; overflow: hidden; }
+.track i { display: block; height: 100%; background: var(--spectrum); border-radius: 99px; }
+.status-text { margin: 28px 0 0; color: var(--dim); max-width: 760px; }
+.status-text a { color: var(--text); }
+
+/* Download */
+.center { text-align: center; }
+.center .sub { margin-inline: auto; }
+.os { display: grid; gap: 16px; grid-template-columns: repeat(4, 1fr); }
+.os .card { display: flex; flex-direction: column; padding-top: 26px; }
+.os .card h3 { display: flex; align-items: center; gap: 12px; font-size: 21px; margin: 0 0 12px; }
+.os .card h3 svg { color: var(--c); flex: none; }
+.os .card p { flex: 1 1 auto; margin: 0 0 18px; }
+.os .card p.also { flex: none; margin: 12px 0 0; font-size: 13px; color: var(--faint); }
+.os .card p.also a { color: var(--dim); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row .btn { flex: 1 1 0; justify-content: center; font-size: 14px; padding: 10px 12px; text-align: center; }
+pre {
+  margin: 14px 0 0; padding: 12px 14px; overflow-x: auto;
+  background: #0a0a0c; border: 1px solid var(--line); border-radius: 9px;
+  font-size: 12.5px; line-height: 1.6; color: #d7d7df;
+}
+pre .p { color: var(--yellow); user-select: none; }
+.os pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.small-print { margin: 12px 0 0; font-size: 13px; color: var(--faint); }
+.small-print a { color: var(--dim); }
+.warn {
+  display: flex; gap: 14px; align-items: flex-start;
+  max-width: 900px; margin: 28px auto 0; padding: 16px 20px; border-radius: 12px;
+  font-size: 15px; color: #e6d9b5;
+  background: rgba(255, 185, 13, .07); border: 1px solid rgba(255, 185, 13, .3);
+}
+.warn svg { flex: none; margin-top: 2px; color: var(--yellow); }
+
+/* Layout table */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+td { padding: 9px 12px; border-top: 1px solid var(--line); vertical-align: top; color: var(--dim); }
+td:first-child { color: var(--text); white-space: nowrap; }
+tr:first-child td { border-top: 0; }
+.tablebox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+
+/* Open source */
+.oss { text-align: center; }
+.oss .sub { margin-inline: auto; }
+.oss .actions { margin-top: 8px; }
+
+footer { padding: 36px 0 52px; border-top: 1px solid var(--line); background: #0b0b0d; color: var(--faint); font-size: 14px; position: relative; }
+footer::before { content: ""; position: absolute; inset: -1px 0 auto 0; height: 3px; background: var(--spectrum); }
+footer .foot { display: flex; flex-wrap: wrap; gap: 18px 40px; justify-content: space-between; align-items: flex-start; }
+footer .brand { color: var(--text); margin: 0; }
+footer .tag-line { margin: 12px 0 0; color: var(--faint); }
+footer .links { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-top: 4px; }
+footer a { text-decoration: none; color: var(--dim); }
+footer a:hover { color: var(--text); }
+footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-height: 1.6; color: #5f5f6a; }
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr 1fr; }
+  .os { grid-template-columns: 1fr 1fr; }
+  .split { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  nav a.link { display: none; }
+  .hero { padding-top: 48px; }
+  section { padding: 60px 0; }
+  .grid, .os, .pages, .meters { grid-template-columns: 1fr; }
+  .chips li::before { display: none; }
+  .btn { width: 100%; justify-content: center; }
+  nav .btn { width: auto; }
+  .actions { flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="icon.png" alt="" width="30" height="30">Picasso Suite</a>
+    <a class="link" href="#features">Features</a>
+    <a class="link" href="#pages">Pages</a>
+    <a class="link" href="#formats">Formats</a>
+    <a class="link" href="#status">Status</a>
+    <a class="link" href="https://github.com/fabox-os/Picasso-Suite">GitHub</a>
+    <a class="icon-link" href="https://discord.gg/zuMqg3nVnX" aria-label="Join the Picasso Suite Discord" title="Discord"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg></a>
+    <a class="btn primary" href="#download">Download</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <img class="logo" src="logo.webp" alt="Picasso Suite logo: a cubist face beside a painter's palette and brush" width="132" height="132">
+    <div class="badge"><b>v<span data-version>0.6.4</span></b> Open source · GPL-3.0-or-later</div>
+    <h1>Cut. Color. Mix.<br><span class="spectrum">Deliver.</span></h1>
+    <p class="lead"><strong>Picasso Suite</strong> is a cross-platform video editor written in Rust, laid out like DaVinci Resolve: Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, on Windows, Linux and macOS. FFmpeg comes with every package.</p>
+    <div class="actions">
+      <a class="btn primary" href="#download">⬇ Download Picasso Suite</a>
+      <a class="btn" href="https://github.com/fabox-os/Picasso-Suite">★ View on GitHub</a>
+      <a class="btn discord" href="https://discord.gg/zuMqg3nVnX"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg> Join the Discord</a>
+    </div>
+    <ul class="chips">
+      <li>Windows, macOS &amp; Linux</li>
+      <li>Pure Rust</li>
+      <li>Reads what FFmpeg reads</li>
+      <li>Free &amp; open source</li>
+    </ul>
+    <div class="shot">
+      <div class="bar"></div>
+      <img src="screenshots/0.2.0/color.webp" width="2000" height="1125" alt="The Color page: node graph, lift, gamma, gain and offset wheels, curves with a live histogram and RGB parade scopes">
+    </div>
+    <p class="shot-note">The Color page: nodes, wheels, curves and scopes. Screenshot from version 0.2.0.</p>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="eyebrow">Features</div>
+    <h2>Eight pages, one window.</h2>
+    <p class="sub">Picasso Suite does the work of an editing suite the way Resolve lays it out: bring media in, cut it, grade it, mix the sound and render it, without leaving the program.</p>
+    <div class="grid">
+      <article class="card" style="--c: var(--blue)">
+        <div class="tag">EDIT</div>
+        <h3>Timeline editing</h3>
+        <p>Media pool and bins, a multi-track timeline, linked picture and sound, blade, trim, ripple, roll, slip and slide, Dynamic Trim, compound clips, multicam, speed changes and ramps, keyframes, transitions, titles and undo/redo.</p>
+      </article>
+      <article class="card" style="--c: var(--red)">
+        <div class="tag">COLOR</div>
+        <h3>Nodes, wheels and scopes</h3>
+        <p>Serial, parallel and layer nodes; lift, gamma, gain and offset wheels; custom curves (Y, R, G, B, intensity and soft clip); qualifier and power windows; LUTs; gallery stills; parade, waveform, vectorscope and histogram.</p>
+      </article>
+      <article class="card" style="--c: var(--teal)">
+        <div class="tag">FAIRLIGHT</div>
+        <h3>Audio mixing</h3>
+        <p>Per-track EQ and compressor, meters, loudness (BS.1770), recording from the microphone, voice-over, Bounce Mix to Track and Bounce Selected Tracks, and audio scrubbing.</p>
+      </article>
+      <article class="card" style="--c: var(--yellow)">
+        <div class="tag">FORMATS</div>
+        <h3>Any format FFmpeg reads</h3>
+        <p>H.264, H.265/HEVC, ProRes, DNxHR, AV1, VP9 and more, plus images and sound, decoded on the graphics card where it can. FFmpeg is included in every package.</p>
+      </article>
+      <article class="card" style="--c: var(--orange)">
+        <div class="tag">DELIVER</div>
+        <h3>Render and queue</h3>
+        <p>H.264, H.265 and AV1 (8 or 10-bit, on the processor or an NVIDIA, Intel, AMD, Apple or VA-API encoder), VP9, ProRes, DNxHR, lossless FFV1, WAV, MP3 and PNG sequences, with a render queue and Resolve's render presets.</p>
+      </article>
+      <article class="card" style="--c: var(--magenta)">
+        <div class="tag">RESOLVE</div>
+        <h3>DaVinci Resolve files</h3>
+        <p>Opens <code>.drp</code> projects, <code>.drt</code> timelines, <code>.drb</code> bins and XML exports, taking the name, frame rate, picture size and media.</p>
+      </article>
+      <article class="card" style="--c: var(--purple)">
+        <div class="tag">INTERCHANGE</div>
+        <h3>Other editors</h3>
+        <p>Exports timelines as Final Cut Pro 7 / Premiere XML, AAF (Avid Media Composer, Pro Tools), OpenTimelineIO and EDL, and imports the same, matching their clips to your media.</p>
+      </article>
+      <article class="card" style="--c: var(--blue-deep)">
+        <div class="tag">YOURS</div>
+        <h3>Keyboard Customization</h3>
+        <p>Any command's keys can be changed, and a key that is already taken is moved after asking. Your choices are saved in the preferences.</p>
+      </article>
+      <article class="card" style="--c: var(--cream)">
+        <div class="tag">CARE</div>
+        <h3>Updates and bug reports</h3>
+        <p><em>Help &gt; Check for Updates</em> installs the latest release. <em>Help &gt; Export Log File</em> saves the session's log, kept in memory and never written while you work, and <code>picasso-suite --graphics-check</code> reports what your graphics card draws.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="pages" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">See it</div>
+    <h2>Every page, as in Resolve.</h2>
+    <p class="sub">Dark panels, a page bar along the bottom and the same eight pages in the same order.</p>
+    <div class="pages">
+      <figure>
+        <a href="screenshots/0.2.0/project-manager.webp"><img loading="lazy" src="screenshots/0.2.0/project-manager.webp" width="2000" height="1125" alt="The Project Manager"></a>
+        <figcaption><b>Project Manager</b> — your local projects, with New Project, Open, Import and Export.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/media.webp"><img loading="lazy" src="screenshots/0.2.0/media.webp" width="2000" height="1125" alt="The Media page"></a>
+        <figcaption><b>Media</b> — browse your drives, preview a clip with its audio meters and read its codec, size and frame rate before adding it to the pool.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/photo.webp"><img loading="lazy" src="screenshots/0.2.0/photo.webp" width="2000" height="1125" alt="The Photo page"></a>
+        <figcaption><b>Photo</b> — the photo album, viewer, rating bar and inspector.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/cut.webp"><img loading="lazy" src="screenshots/0.2.0/cut.webp" width="2000" height="1125" alt="The Cut page"></a>
+        <figcaption><b>Cut</b> — the media pool and viewer over two timelines: the whole edit on top, a close-up around the playhead below.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/edit.webp"><img loading="lazy" src="screenshots/0.2.0/edit.webp" width="2000" height="1125" alt="The Edit page"></a>
+        <figcaption><b>Edit</b> — source and timeline viewers, the toolbar, and video and audio tracks with thumbnails and waveforms.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/fusion.webp"><img loading="lazy" src="screenshots/0.2.0/fusion.webp" width="2000" height="1125" alt="The Fusion page"></a>
+        <figcaption><b>Fusion</b> — the clip's MediaIn and MediaOut nodes, the viewer, the frame ruler and the inspector.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/color.webp"><img loading="lazy" src="screenshots/0.2.0/color.webp" width="2000" height="1125" alt="The Color page"></a>
+        <figcaption><b>Color</b> — clip thumbnails, the node graph, color wheels, curves with a live histogram and RGB parade scopes.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/fairlight.webp"><img loading="lazy" src="screenshots/0.2.0/fairlight.webp" width="2000" height="1125" alt="The Fairlight page"></a>
+        <figcaption><b>Fairlight</b> — audio tracks with waveforms, track and bus meters, loudness and the mixer.</figcaption>
+      </figure>
+      <figure>
+        <a href="screenshots/0.2.0/deliver.webp"><img loading="lazy" src="screenshots/0.2.0/deliver.webp" width="2000" height="1125" alt="The Deliver page"></a>
+        <figcaption><b>Deliver</b> — Custom Export render settings, the render queue, clip thumbnails and the timeline.</figcaption>
+      </figure>
+    </div>
+    <p class="gallery-note">These pictures are from version 0.2.0; the interface has grown since.</p>
+  </div>
+</section>
+
+<section id="formats">
+  <div class="wrap split">
+    <div>
+      <div class="eyebrow">In and out</div>
+      <h2>Reads almost anything. Writes what you need.</h2>
+      <p class="sub" style="margin-bottom:0">Decoding is on the graphics card where it can be (D3D11 on Windows, VideoToolbox on macOS, VA-API or CUDA on Linux), with a switch in System Preferences, and a clip the card cannot decode falls back to the processor.</p>
+    </div>
+    <div>
+      <h3 class="small">Reads</h3>
+      <ul class="pills">
+        <li class="hot" style="--c: var(--blue)">H.264</li>
+        <li class="hot" style="--c: var(--blue)">H.265 / HEVC</li>
+        <li class="hot" style="--c: var(--blue)">ProRes</li>
+        <li class="hot" style="--c: var(--blue)">DNxHR</li>
+        <li class="hot" style="--c: var(--blue)">AV1</li>
+        <li class="hot" style="--c: var(--blue)">VP9</li>
+        <li>and anything else FFmpeg reads</li>
+        <li class="hot" style="--c: var(--magenta)">.drp</li>
+        <li class="hot" style="--c: var(--magenta)">.drt</li>
+        <li class="hot" style="--c: var(--magenta)">.drb</li>
+        <li>FCP7 / Premiere XML</li>
+        <li>AAF</li>
+        <li>OpenTimelineIO</li>
+        <li>EDL</li>
+      </ul>
+      <h3 class="small">Writes</h3>
+      <ul class="pills">
+        <li class="hot" style="--c: var(--yellow)">H.264</li>
+        <li class="hot" style="--c: var(--yellow)">H.265</li>
+        <li class="hot" style="--c: var(--yellow)">AV1 (8 / 10-bit)</li>
+        <li class="hot" style="--c: var(--yellow)">VP9</li>
+        <li class="hot" style="--c: var(--yellow)">ProRes</li>
+        <li class="hot" style="--c: var(--yellow)">DNxHR</li>
+        <li class="hot" style="--c: var(--yellow)">FFV1</li>
+        <li>WAV</li>
+        <li>MP3</li>
+        <li>PNG sequence</li>
+        <li>NVENC · Quick Sync · AMF · VideoToolbox · VA-API</li>
+        <li>FCP7 / Premiere XML</li>
+        <li>AAF</li>
+        <li>OpenTimelineIO</li>
+        <li>EDL</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="status" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Honest status</div>
+    <h2>How much works.</h2>
+    <p class="sub">Every entry of every menu is counted, and the ones that are not made yet are shown disabled. The numbers come from the repository and change with each release.</p>
+    <div class="meters">
+      <div class="meter">
+        <div class="num">90.65%</div>
+        <div class="of">of the menu entries work (281 of 310)</div>
+        <div class="track"><i style="width:90.65%"></i></div>
+      </div>
+      <div class="meter">
+        <div class="num">80.00%</div>
+        <div class="of">of the roadmap is done (76 of 95 items)</div>
+        <div class="track"><i style="width:80%"></i></div>
+      </div>
+    </div>
+    <p class="status-text">The to-do items on the roadmap are bigger than the done ones, so the share looks better than the work left. See <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/Menu-Status.md">Menu-Status.md</a> for each menu entry and the <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/ROADMAP.md">roadmap</a> for what is next. Every release's <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/CHANGELOG.md">changelog</a> lists what was tested and what was not.</p>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <div class="center">
+      <div class="eyebrow">Download</div>
+      <h2>Get Picasso Suite <span data-version-text>0.6.4</span>.</h2>
+      <p class="sub">Prebuilt packages with FFmpeg bundled. Free and open source under the GPL.</p>
+    </div>
+    <div class="os">
+      <article class="card" style="--c: var(--blue)">
+        <h3><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M3 5.2 10.5 4v7H3V5.2Zm8.7-1.4L21 2.4V11h-9.3V3.8ZM3 12.5h7.5v7L3 18.3v-5.8Zm8.7 0H21v8.9l-9.3-1.3v-7.6Z"/></svg>Windows</h3>
+        <p>Windows 10 or newer. Unzip the whole folder and run <code>picasso-suite.exe</code>.</p>
+        <div class="row"><a class="btn primary" data-asset="windows.zip" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">Windows (.zip)</a></div>
+<pre><span class="p">&gt;</span> picasso-suite.exe</pre>
+      </article>
+      <article class="card" style="--c: var(--yellow)">
+        <h3><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M16.4 12.6c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.15-2.8.85-3.5.85-.73 0-1.85-.83-3.05-.8-1.57.02-3.02.92-3.83 2.32-1.63 2.83-.42 7.03 1.17 9.33.78 1.12 1.7 2.38 2.9 2.33 1.17-.05 1.6-.75 3.02-.75 1.4 0 1.8.75 3.03.72 1.25-.02 2.05-1.13 2.8-2.27.9-1.3 1.27-2.57 1.28-2.63-.03-.02-2.45-.94-2.48-3.75ZM14.1 5.8c.64-.78 1.08-1.86.96-2.94-.93.04-2.05.62-2.72 1.4-.6.69-1.12 1.8-.98 2.86 1.03.08 2.1-.53 2.74-1.32Z"/></svg>macOS</h3>
+        <p>A universal app for Apple silicon and Intel; needs macOS 15 or newer. It is not signed: right-click → Open the first time.</p>
+        <div class="row">
+          <a class="btn primary" data-asset="macos-universal.zip" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">Universal (.zip)</a>
+          <a class="btn" data-asset="macos-arm64.zip" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">Apple silicon</a>
+        </div>
+<pre><span class="p">$</span> mv "Picasso Suite.app" /Applications</pre>
+      </article>
+      <article class="card" style="--c: var(--red)">
+        <h3><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m7 9 3 2.5L7 14M12 14h5M8 20.5h8"/></svg>Linux</h3>
+        <p>An AppImage needs no installation (glibc 2.35 or newer). Also a <code>.deb</code>, an <code>.rpm</code> and a Flatpak.</p>
+        <div class="row">
+          <a class="btn primary" data-asset="x86_64.AppImage" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">x86_64</a>
+          <a class="btn" data-asset="aarch64.AppImage" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">aarch64</a>
+        </div>
+<pre><span class="p">$</span> chmod +x picasso-suite-*.AppImage
+<span class="p">$</span> ./picasso-suite-*.AppImage</pre>
+        <p class="also">Also: <a data-asset="amd64.deb" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">.deb</a> · <a data-asset="x86_64.rpm" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">.rpm</a> · <a data-asset=".flatpak" href="https://github.com/fabox-os/Picasso-Suite/releases/latest">Flatpak</a></p>
+      </article>
+      <article class="card" style="--c: var(--teal)">
+        <h3><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg>From source</h3>
+        <p>Rust 1.95 or newer, FFmpeg 7.1 (the shared build) and LLVM 19 for the FFmpeg bindings. The README covers every platform.</p>
+        <div class="row"><a class="btn" href="https://github.com/fabox-os/Picasso-Suite#build-from-source">Build instructions →</a></div>
+<pre><span class="p">$</span> cargo run --release -p picasso-suite</pre>
+      </article>
+    </div>
+    <div class="warn"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v5M12 17.6v.1"/></svg><span>Picasso Suite is still before 1.0: 90.65% of its menu entries work and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk. On a Wayland desktop the window opens through XWayland, so files dragged from the file manager may not arrive.</span></div>
+    <p class="small-print center">Packages for Linux on ARM64 (<code>.deb</code>, <code>.rpm</code>, AppImage, Flatpak) are on the <a href="https://github.com/fabox-os/Picasso-Suite/releases/latest">release page</a>. If the window stays black or slow, run <code>picasso-suite --graphics-check</code> and send in the report it saves.</p>
+  </div>
+</section>
+
+<section id="layout" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Under the hood</div>
+    <h2>Small crates, one job each.</h2>
+    <p class="sub">The code never panics (no <code>unwrap</code>, <code>expect</code> or <code>panic!</code>) and every change to a project is a command, which is what gives the editor its undo history.</p>
+    <div class="tablebox">
+      <table>
+        <tr><td><code>picasso-core</code></td><td>the project model, every edit as a command, undo history, project files</td></tr>
+        <tr><td><code>picasso-color</code></td><td>grading maths (wheels, curves, qualifier, windows, LUTs) and the scopes</td></tr>
+        <tr><td><code>picasso-decode</code></td><td>FFmpeg: probe, video frames, audio, waveforms</td></tr>
+        <tr><td><code>picasso-audio</code></td><td>the mix, background audio decoding and the sound card output</td></tr>
+        <tr><td><code>picasso-media</code></td><td>facts about imported media and the <code>.picasso</code> project file (SQLite)</td></tr>
+        <tr><td><code>picasso-export</code></td><td>rendering to files through FFmpeg</td></tr>
+        <tr><td><code>picasso-render</code></td><td>the compositor that makes a frame</td></tr>
+        <tr><td><code>picasso-drp</code></td><td>reads DaVinci Resolve files</td></tr>
+        <tr><td><code>picasso-ui</code></td><td>the interface: pages, timeline, wheels, scopes, menus, icons</td></tr>
+        <tr><td><code>apps/studio</code></td><td>the desktop program (and the WebAssembly entry point)</td></tr>
+        <tr><td><code>apps/bridge</code></td><td><code>picasso-bridge</code>, Resolve files from the command line</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="oss">
+  <div class="wrap">
+    <div class="eyebrow">Open source</div>
+    <h2>Built in the open.</h2>
+    <p class="sub">Issues and pull requests are welcome. The menus follow a written spec, the status of every entry is listed, and a graphics report from your computer helps more than you would think: only a few graphics cards have been tried.</p>
+    <div class="actions">
+      <a class="btn primary" href="https://github.com/fabox-os/Picasso-Suite">★ Star on GitHub</a>
+      <a class="btn" href="https://github.com/fabox-os/Picasso-Suite#layout">Read the layout</a>
+      <a class="btn" href="https://github.com/fabox-os/Picasso-Suite/issues">Report an issue</a>
+      <a class="btn discord" href="https://discord.gg/zuMqg3nVnX"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg> Discord</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div>
+        <a class="brand" href="#top"><img src="icon.png" alt="" width="30" height="30">Picasso Suite</a>
+        <p class="tag-line">Free and open source software, GPL-3.0-or-later.</p>
+      </div>
+      <div class="links">
+        <a href="https://github.com/fabox-os/Picasso-Suite">GitHub</a>
+        <a href="https://github.com/fabox-os/Picasso-Suite/releases">Releases</a>
+        <a href="https://discord.gg/zuMqg3nVnX">Discord</a>
+        <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/ROADMAP.md">Roadmap</a>
+        <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/LICENSE">Licence</a>
+      </div>
+    </div>
+    <p class="legal">Picasso Suite is an independent project and is not affiliated with Blackmagic Design. DaVinci Resolve is a trademark of Blackmagic Design, used only to describe the layout Picasso Suite follows. FFmpeg, included in the packages, is under the GPL; the bundled Noto Sans fonts are under the SIL Open Font License 1.1.</p>
+  </div>
+</footer>
+
+<script>
+// Point the download buttons at the newest release; the links above work without this.
+(function () {
+  fetch("https://api.github.com/repos/fabox-os/Picasso-Suite/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (rel) {
+      var version = String(rel.tag_name || "").replace(/^v/, "");
+      if (!version) return;
+      document.querySelectorAll("[data-version]").forEach(function (e) { e.textContent = version; });
+      document.querySelectorAll("[data-version-text]").forEach(function (e) { e.textContent = version; });
+      var assets = rel.assets || [];
+      document.querySelectorAll("a[data-asset]").forEach(function (a) {
+        var want = a.getAttribute("data-asset");
+        var hit = assets.filter(function (x) { return x.name.slice(-want.length) === want; })[0];
+        if (hit) a.href = hit.browser_download_url;
+      });
+    })
+    .catch(function () {});
+})();
+</script>
+</body>
+</html>
