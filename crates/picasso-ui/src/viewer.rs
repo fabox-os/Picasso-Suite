@@ -1,7 +1,7 @@
 //! The viewer: the picture at the playhead.
 
 use egui::{pos2, vec2, Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui};
-use picasso_core::Project;
+use picasso_core::{MediaId, Project, TrackKind};
 
 use crate::actions::Overlays;
 use std::sync::Arc;
@@ -59,6 +59,9 @@ pub(crate) struct Viewer {
     snapshot: Option<(u64, Arc<Project>)>,
     /// Whether the picture on screen was put together from optimised copies, for the badge.
     optimised: bool,
+    /// Whether the current video is being decoded on the processor instead of the graphics card
+    /// (a hardware read error, or the speed trial choosing the processor), for the CPU badge.
+    fell_back: bool,
 }
 
 impl Viewer {
@@ -75,6 +78,7 @@ impl Viewer {
     ) {
         self.receive(ctx, frames);
         self.optimised = cache.uses_copies();
+        self.fell_back = media_shown(project, key.frame).is_some_and(|m| cache.fell_back(m));
         if self.key.as_ref() == Some(&key) {
             return;
         }
@@ -174,20 +178,53 @@ impl Viewer {
             );
         }
         draw_overlays(&painter, rect, overlays);
-        if self.optimised {
-            // Says so, so a softer picture is never mistaken for the file's own.
+        let labels = badge_labels(self.optimised, self.fell_back);
+        if !labels.is_empty() {
             let at = rect.left_top() + vec2(10.0, 10.0);
-            let text = painter.layout_no_wrap(
-                "OPTIMISED".to_string(),
-                egui::FontId::proportional(11.0),
-                Color32::from_rgb(235, 235, 235),
-            );
-            let box_rect = egui::Rect::from_min_size(at, text.size()).expand2(vec2(6.0, 3.0));
-            painter.rect_filled(box_rect, 3.0, Color32::from_black_alpha(150));
-            painter.galley(at + vec2(6.0, 3.0), text, Color32::WHITE);
+            let mut x = at.x;
+            for label in labels {
+                let text = painter.layout_no_wrap(
+                    label.to_string(),
+                    egui::FontId::proportional(11.0),
+                    Color32::from_rgb(235, 235, 235),
+                );
+                let text_width = text.size().x;
+                let box_rect = egui::Rect::from_min_size(egui::pos2(x, at.y), text.size())
+                    .expand2(vec2(6.0, 3.0));
+                painter.rect_filled(box_rect, 3.0, Color32::from_black_alpha(150));
+                painter.galley(egui::pos2(x + 6.0, at.y + 3.0), text, Color32::WHITE);
+                x += text_width + 18.0;
+            }
         }
         rect
     }
+}
+
+/// Returns the badge labels to draw, in order: optimised first, then CPU if the video fell
+/// back from the graphics card to the processor.
+fn badge_labels(optimised: bool, fell_back: bool) -> Vec<&'static str> {
+    let mut labels = Vec::new();
+    if optimised {
+        labels.push("OPTIMISED");
+    }
+    if fell_back {
+        labels.push("CPU");
+    }
+    labels
+}
+
+/// The media of the topmost picture clip at `frame`: the file the viewer shows.
+fn media_shown(project: &Project, frame: u64) -> Option<MediaId> {
+    project
+        .tracks
+        .iter()
+        .rev()
+        .filter(|t| t.kind == TrackKind::Video && !t.muted && t.picture)
+        .find_map(|t| {
+            Project::clip_at(t, frame)
+                .filter(|c| c.enabled)
+                .map(|c| c.media)
+        })
 }
 
 /// A rendered picture as the viewer's texture takes it.
@@ -458,5 +495,14 @@ mod tests {
         p.width = 16_000;
         p.height = 1;
         assert_eq!(preview_size(&p), (960, 1));
+    }
+
+    /// The badge labels cover all four combinations of optimised and CPU-fell-back.
+    #[test]
+    fn badge_labels_cover_all_four_combinations() {
+        assert_eq!(badge_labels(false, false), Vec::<&str>::new());
+        assert_eq!(badge_labels(true, false), vec!["OPTIMISED"]);
+        assert_eq!(badge_labels(false, true), vec!["CPU"]);
+        assert_eq!(badge_labels(true, true), vec!["OPTIMISED", "CPU"]);
     }
 }
