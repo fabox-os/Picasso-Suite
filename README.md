@@ -20,6 +20,8 @@ Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, on Windows,
 [![rust](https://img.shields.io/badge/rust-1.95%2B-eb2100)](https://www.rust-lang.org)
 [![chat](https://img.shields.io/badge/chat-Discord-5865f2?logo=discord&logoColor=white)](https://discord.gg/zuMqg3nVnX)
 
+[![As seen on Open Source Alternatives](https://www.opensourcealternatives.to/badge-osa.svg)](https://www.opensourcealternatives.to)
+
 [Website](https://fabox-os.github.io/Picasso-Suite/) •
 [Discord](https://discord.gg/zuMqg3nVnX) •
 [Download](#install) •
