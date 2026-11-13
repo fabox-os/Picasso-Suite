@@ -2088,6 +2088,7 @@ name = "picasso-core"
 version = "0.7.0"
 dependencies = [
  "picasso-color",
+ "picasso-track",
  "quick-xml",
  "serde",
  "serde_json",
@@ -2184,6 +2185,7 @@ dependencies = [
  "picasso-export",
  "picasso-media",
  "picasso-render",
+ "picasso-track",
  "pollster 0.4.0",
  "rfd",
  "serde",

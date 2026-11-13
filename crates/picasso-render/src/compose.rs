@@ -207,7 +207,12 @@ fn compose_tracks(
             let placed = clip.transform_at(at);
             if !placed.is_identity() {
                 moved.resize(w * h * 4, 0);
-                transform::apply(&layer, &mut moved, (w, h), &placed);
+                let stab = clip
+                    .stabilization
+                    .enabled
+                    .then(|| clip.stabilization.matrix_at(at as i64).map(|t| &t.matrix))
+                    .flatten();
+                transform::apply(&layer, &mut moved, (w, h), &placed, stab);
                 layer.copy_from_slice(&moved);
             }
             // It replaces the composite below rather than painting over it, so a transform moves
@@ -295,7 +300,12 @@ fn draw_clip(
     let placed = clip.transform_at(at);
     if !placed.is_identity() {
         moved.resize(w * h * 4, 0);
-        transform::apply(layer, moved, (w, h), &placed);
+        let stab = clip
+            .stabilization
+            .enabled
+            .then(|| clip.stabilization.matrix_at(at as i64).map(|t| &t.matrix))
+            .flatten();
+        transform::apply(layer, moved, (w, h), &placed, stab);
         layer.copy_from_slice(moved);
     }
     exact

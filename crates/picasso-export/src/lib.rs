@@ -872,6 +872,44 @@ mod tests {
         let _ = std::fs::remove_file(&s.path);
     }
 
+    /// A stabilized clip exports through the same render path: `render()` applies
+    /// `clip.stabilization.matrix_at(frame)` inside `draw_clip()`, so a clip with analyzed
+    /// transforms still writes every frame without erroring.
+    #[test]
+    fn stabilized_export_writes_every_frame() {
+        let Some(mut p) = project(false) else { return };
+        let Some(clip) = p.clip_mut(p.tracks[0].clips[0].id) else { return };
+        clip.stabilization.enabled = true;
+        clip.stabilization.analyzed_transforms = vec![
+            picasso_core::FrameTransform {
+                frame_number: 0,
+                matrix: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            },
+            picasso_core::FrameTransform {
+                frame_number: 1,
+                matrix: [[1.0, 0.0, 1.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            },
+        ];
+        let s = Settings {
+            preset: Preset::H264Web,
+            path: std::env::temp_dir().join(format!(
+                "picasso_export_stabilized_{}.mp4",
+                std::process::id()
+            )),
+            start: 0,
+            end: 24,
+            options: Options::default(),
+        };
+        render(&p, &MediaCache::new(), &s, &mut |_, _| true).unwrap();
+        let Some(lines) = probe(&s.path) else { return };
+        let frame_count = lines
+            .iter()
+            .find(|l| l.starts_with("h264,video,"))
+            .and_then(|l| l.split(',').nth(4).and_then(|n| n.parse::<u64>().ok()));
+        assert_eq!(frame_count, Some(24), "all pictures read back: {lines:?}");
+        let _ = std::fs::remove_file(&s.path);
+    }
+
     /// One `codec,profile,type,pixel format` line per stream (ffprobe's order).
     fn streams(path: &Path) -> Option<String> {
         let out = std::process::Command::new("ffprobe")
