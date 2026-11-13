@@ -79,6 +79,9 @@ mod native {
         workers: HashSet<MediaId>,
         /// Videos that could not be opened or decoded; they show the offline picture.
         broken: HashSet<MediaId>,
+        /// Videos whose last successful decode was on the processor instead of the graphics
+        /// card (a hardware read error, or the speed trial choosing the processor).
+        fell_back: HashMap<MediaId, bool>,
         /// The file each media was most recently asked for (the original or its optimised copy),
         /// so a switch between them can drop the now-stale cached frames and reopen the decoder.
         last_path: HashMap<MediaId, String>,
@@ -280,6 +283,15 @@ mod native {
         fn generation(&self) -> u64 {
             self.shared.generation.load(Ordering::Relaxed)
         }
+
+        fn fell_back(&self, media: MediaId) -> bool {
+            self.shared
+                .lock()
+                .fell_back
+                .get(&media)
+                .copied()
+                .unwrap_or(false)
+        }
     }
 
     /// The thread of one video: waits for a request, decodes it, then a few pictures ahead.
@@ -410,6 +422,7 @@ mod native {
                     preview: &mut preview,
                 },
             );
+            let fell_back = d.fell_back();
             if matches!(decoded, Err(DecodeError::Cancelled)) {
                 // The newer request is waiting at the top of the loop.
                 dropped += 1;
@@ -463,6 +476,7 @@ mod native {
                     });
                     last = Some((pts_us, reduce, image.clone()));
                     let mut state = shared.lock();
+                    state.fell_back.insert(media, fell_back);
                     let queue = state.frames.entry(media).or_default();
                     queue.push_back((time_us, reduce, image));
                     while queue.len() > shared.keep {
@@ -791,6 +805,27 @@ mod native {
                 !shared.lock().workers.contains(&media),
                 "media should be removed from workers"
             );
+        }
+
+        /// The pool tells the caller which media is read on the processor: the flag it keeps
+        /// for that media is what it says. No FFmpeg needed.
+        #[test]
+        fn a_video_pool_says_which_media_fell_back_to_the_processor() {
+            let ctx = egui::Context::default();
+            let shared = Arc::new(Shared {
+                state: Mutex::default(),
+                changed: Condvar::new(),
+                generation: AtomicU64::new(0),
+                keep: KEEP,
+                one_shot: false,
+                ctx,
+            });
+            let media = MediaId(0);
+            shared.lock().fell_back.insert(media, true);
+            let pool = VideoPool { shared };
+            // Through the trait the cache asks, and not only for the media that did.
+            assert!(FrameSource::fell_back(&pool, media));
+            assert!(!FrameSource::fell_back(&pool, MediaId(1)));
         }
     }
 }
