@@ -205,9 +205,14 @@ fn compose_tracks(
                 project.fps.as_f64() as f32,
             );
             let placed = clip.transform_at(at);
-            if !placed.is_identity() {
+            let stab = clip
+                .stabilization
+                .enabled
+                .then(|| clip.stabilization.matrix_at(at as i64).map(|t| &t.matrix))
+                .flatten();
+            if !placed.is_identity() || stab.is_some() {
                 moved.resize(w * h * 4, 0);
-                transform::apply(&layer, &mut moved, (w, h), &placed);
+                transform::apply(&layer, &mut moved, (w, h), &placed, stab);
                 layer.copy_from_slice(&moved);
             }
             // It replaces the composite below rather than painting over it, so a transform moves
@@ -293,9 +298,14 @@ fn draw_clip(
     clip.apply_nodes(layer, w, h);
     apply_clip_effects(project, clip, item, cache, at, (w, h), layer);
     let placed = clip.transform_at(at);
-    if !placed.is_identity() {
+    let stab = clip
+        .stabilization
+        .enabled
+        .then(|| clip.stabilization.matrix_at(at as i64).map(|t| &t.matrix))
+        .flatten();
+    if !placed.is_identity() || stab.is_some() {
         moved.resize(w * h * 4, 0);
-        transform::apply(layer, moved, (w, h), &placed);
+        transform::apply(layer, moved, (w, h), &placed, stab);
         layer.copy_from_slice(moved);
     }
     exact
@@ -640,6 +650,30 @@ mod tests {
             px(&render_frame(&p, &cache, 15, 2, 2).unwrap(), 0, 0),
             [0, 0, 0, 255]
         );
+    }
+
+    #[test]
+    fn stabilization_moves_an_untransformed_clip() {
+        let (mut p, m) = project_with([10, 200, 30]);
+        let clip = place(&mut p, 0, m, 0);
+        Command::SetStabilization {
+            clip,
+            stabilization: picasso_core::StabilizationSettings {
+                enabled: true,
+                crop_mode: picasso_core::StabilizationCropMode::NoCrop,
+                analyzed_transforms: vec![picasso_core::FrameTransform {
+                    frame_number: 0,
+                    matrix: [[1.0, 0.0, 0.5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                }],
+                ..Default::default()
+            },
+        }
+        .apply(&mut p)
+        .unwrap();
+        let f = render_frame(&p, &MediaCache::new(), 0, 4, 2).unwrap();
+        // The picture moved half its width to the right: the left half is empty.
+        assert_eq!(px(&f, 0, 0), [0, 0, 0, 255]);
+        assert_eq!(px(&f, 3, 0), [10, 200, 30, 255]);
     }
 
     #[test]

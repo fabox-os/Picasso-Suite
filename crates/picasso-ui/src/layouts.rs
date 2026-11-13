@@ -234,8 +234,7 @@ mod tests {
     #[test]
     fn names_that_make_the_same_file_name_keep_their_own_files() {
         let dir = scratch("clash");
-        let mut wide = Panels::default();
-        wide.cut_pool = 800;
+        let mut wide = Panels { cut_pool: 800, ..Default::default() };
         save_in(&dir, "My Layout", &Panels::default()).unwrap();
         save_in(&dir, "my-layout", &wide).unwrap();
         assert_eq!(names_in(&dir), ["My Layout", "my-layout"]);
@@ -251,8 +250,7 @@ mod tests {
     #[test]
     fn a_file_renamed_by_hand_still_loads() {
         let dir = scratch("renamed");
-        let mut panels = Panels::default();
-        panels.cut_upper = 400;
+        let mut panels = Panels { cut_upper: 400, ..Default::default() };
         save_in(&dir, "Editing", &panels).unwrap();
         std::fs::rename(dir.join("Editing.txt"), dir.join("work.txt")).unwrap();
         assert_eq!(names_in(&dir), ["Editing"]);

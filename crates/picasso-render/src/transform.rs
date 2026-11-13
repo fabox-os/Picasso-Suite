@@ -4,7 +4,19 @@ use picasso_core::{BlendMode, Transform};
 
 /// Draws `layer` (`w * h` RGBA) into `out` (the same size) with `t` applied. Where the moved
 /// picture does not reach, `out` is transparent.
-pub(crate) fn apply(layer: &[u8], out: &mut [u8], (w, h): (usize, usize), t: &Transform) {
+///
+/// When `stab` is `Some`, it is a stabilization matrix (frame 0 -> current frame, normalized
+/// picture coordinates). Each output pixel is mapped through `t` into the current frame and then
+/// back through `stab`'s inverse to frame 0, so the footage is shown with the camera movement
+/// removed. Crop bounds are applied to the stabilized position, so auto-zoom can cut off the
+/// edges the stabilization reveals.
+pub(crate) fn apply(
+    layer: &[u8],
+    out: &mut [u8],
+    (w, h): (usize, usize),
+    t: &Transform,
+    stab: Option<&[[f32; 3]; 3]>,
+) {
     out.fill(0);
     if w == 0 || h == 0 || layer.len() < w * h * 4 || out.len() < w * h * 4 {
         return;
@@ -14,16 +26,26 @@ pub(crate) fn apply(layer: &[u8], out: &mut [u8], (w, h): (usize, usize), t: &Tr
     let (sin, cos) = angle.sin_cos();
     let (left, right) = (t.crop_left * wf, (1.0 - t.crop_right) * wf);
     let (top, bottom) = (t.crop_top * hf, (1.0 - t.crop_bottom) * hf);
+    let stab_inv = stab.and_then(homography_inverse);
     for y in 0..h {
         for x in 0..w {
             // The output pixel, relative to where the picture's middle now is, in pixels.
             let dx = (x as f32 + 0.5) - wf * (0.5 + t.x);
             let dy = (y as f32 + 0.5) - hf * (0.5 + t.y);
-            // Undo the turn (clockwise on screen) and the scale to find the source pixel.
+            // Undo the turn (clockwise on screen) and the scale to find the source pixel in the
+            // current (unstabilized) frame.
             let rx = dx * cos + dy * sin;
             let ry = -dx * sin + dy * cos;
-            let sx = rx / t.scale_x + wf * 0.5;
-            let sy = ry / t.scale_y + hf * 0.5;
+            let mut sx = rx / t.scale_x + wf * 0.5;
+            let mut sy = ry / t.scale_y + hf * 0.5;
+            // Remove the camera movement: map the current-frame point back to frame 0.
+            if let Some(inv) = stab_inv {
+                let nx = (sx - wf * 0.5) / wf;
+                let ny = (sy - hf * 0.5) / hf;
+                let (nx2, ny2) = homography_map(&inv, nx, ny);
+                sx = (nx2 + 0.5) * wf;
+                sy = (ny2 + 0.5) * hf;
+            }
             if sx < left || sx >= right || sy < top || sy >= bottom {
                 continue;
             }
@@ -31,6 +53,42 @@ pub(crate) fn apply(layer: &[u8], out: &mut [u8], (w, h): (usize, usize), t: &Tr
             sample(layer, (w, h), sx - 0.5, sy - 0.5, &mut out[dst..dst + 4]);
         }
     }
+}
+
+/// Inverts a 3x3 homography matrix, or `None` when it is singular.
+fn homography_inverse(m: &[[f32; 3]; 3]) -> Option<[[f32; 3]; 3]> {
+    let a = &m[0];
+    let b = &m[1];
+    let c = &m[2];
+    let det = a[0] * (b[1] * c[2] - b[2] * c[1])
+        - a[1] * (b[0] * c[2] - b[2] * c[0])
+        + a[2] * (b[0] * c[1] - b[1] * c[0]);
+    if !det.is_finite() || det.abs() < 1e-12 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    let mut r = [[0.0; 3]; 3];
+    r[0][0] = (b[1] * c[2] - b[2] * c[1]) * inv;
+    r[0][1] = (a[2] * c[1] - a[1] * c[2]) * inv;
+    r[0][2] = (a[1] * b[2] - a[2] * b[1]) * inv;
+    r[1][0] = (b[2] * c[0] - b[0] * c[2]) * inv;
+    r[1][1] = (a[0] * c[2] - a[2] * c[0]) * inv;
+    r[1][2] = (a[2] * b[0] - a[0] * b[2]) * inv;
+    r[2][0] = (b[0] * c[1] - b[1] * c[0]) * inv;
+    r[2][1] = (a[1] * c[0] - a[0] * c[1]) * inv;
+    r[2][2] = (a[0] * b[1] - a[1] * b[0]) * inv;
+    Some(r)
+}
+
+/// Maps a normalized point through a 3x3 homography.
+fn homography_map(m: &[[f32; 3]; 3], x: f32, y: f32) -> (f32, f32) {
+    let w = m[2][0] * x + m[2][1] * y + m[2][2];
+    if w.abs() < 1e-6 {
+        return (x * 1e12, y * 1e12);
+    }
+    let nx = (m[0][0] * x + m[0][1] * y + m[0][2]) / w;
+    let ny = (m[1][0] * x + m[1][1] * y + m[1][2]) / w;
+    (nx, ny)
 }
 
 /// Bilinear sample of `layer` at (x, y), in pixel-centre coordinates; the edges repeat.
@@ -155,7 +213,7 @@ mod tests {
 
     fn run(t: Transform) -> Vec<u8> {
         let mut out = vec![9; 8 * 8 * 4];
-        apply(&halves(), &mut out, (8, 8), &t);
+        apply(&halves(), &mut out, (8, 8), &t, None);
         out
     }
 

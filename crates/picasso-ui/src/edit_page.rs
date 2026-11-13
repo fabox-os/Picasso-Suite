@@ -14,7 +14,10 @@ use egui::{
     pos2, vec2, Align2, Color32, Context, Painter, Pos2, Rect, RichText, Sense, Shape, Stroke, Ui,
     UiBuilder,
 };
-use picasso_core::{BlendMode, ColorGrade, Command, Effect, Transform, MAX_SPEED, MIN_SPEED};
+use picasso_core::{
+    BlendMode, ColorGrade, Command, Effect, MediaSource, StabilizationCropMode,
+    StabilizationMethod, Transform, MAX_SPEED, MIN_SPEED,
+};
 
 use crate::app::StudioApp;
 use crate::capture::fit;
@@ -1155,6 +1158,12 @@ impl StudioApp {
         self.speed_controls(ui, id, speed);
         self.sound_controls(ui, ctx, id);
         self.transform_controls(ui, ctx, id, &mut transform);
+        ui.push_id(("stabilization_controls", id.0), |ui| {
+            self.stabilization_controls(ui, ctx, id);
+        });
+        ui.push_id(("match_move_controls", id.0), |ui| {
+            self.match_move_controls(ui, ctx, id);
+        });
         self.effect_controls(ui, ctx, id);
         heading(ui, "Color");
         ui.horizontal(|ui| {
@@ -1536,6 +1545,144 @@ impl StudioApp {
     }
 
     /// Position, scale, rotation and crop of the clip's picture.
+    fn stabilization_controls(
+        &mut self,
+        ui: &mut Ui,
+        ctx: &Context,
+        id: picasso_core::ClipId,
+    ) {
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let path = self
+            .project()
+            .media(clip.media)
+            .and_then(|m| match &m.source {
+                MediaSource::Video { path } | MediaSource::Image { path } => Some(path.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let mut s = clip.stabilization.clone();
+        let original = s.clone();
+
+        heading(ui, "Stabilization");
+        ui.checkbox(&mut s.enabled, "Stabilize");
+        if s.enabled {
+            egui::ComboBox::from_label("Method")
+                .selected_text(s.method.label())
+                .show_ui(ui, |ui| {
+                    for m in StabilizationMethod::ALL {
+                        ui.selectable_value(&mut s.method, m, m.label());
+                    }
+                });
+            ui.add(egui::Slider::new(&mut s.smoothness, 0.0..=20.0).text("Smoothness"));
+            egui::ComboBox::from_label("Crop mode")
+                .selected_text(s.crop_mode.label())
+                .show_ui(ui, |ui| {
+                    for m in StabilizationCropMode::ALL {
+                        ui.selectable_value(&mut s.crop_mode, m, m.label());
+                    }
+                });
+            if s.crop_mode == StabilizationCropMode::AutoZoom {
+                ui.add(
+                    egui::Slider::new(&mut s.crop_percent, 0.0..=50.0).text("Auto-zoom crop %"),
+                );
+            }
+            let analysing = self.stab_rx.is_some();
+            if ui
+                .add_enabled(!analysing, egui::Button::new("Analyze"))
+                .clicked()
+            {
+                self.start_stabilization_analysis(ctx, id, path, clip.duration, s.method);
+            }
+        }
+        if s != original {
+            self.run(Command::SetStabilization {
+                clip: id,
+                stabilization: s,
+            });
+        }
+    }
+
+    /// Match Move: track a point through the clip on a background thread and drive the clip'"'"'s
+    /// transform from the tracked data.
+    fn match_move_controls(
+        &mut self,
+        ui: &mut Ui,
+        ctx: &Context,
+        id: picasso_core::ClipId,
+    ) {
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let path = self
+            .project()
+            .media(clip.media)
+            .and_then(|m| match &m.source {
+                MediaSource::Video { path } | MediaSource::Image { path } => Some(path.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        let duration = clip.duration;
+        let existing_td = clip
+            .tracking_data
+            .iter()
+            .find(|td| td.tracker_type == picasso_core::TrackerType::Point)
+            .cloned()
+            .unwrap_or_default();
+        let mut td = clip
+            .tracking_data
+            .iter()
+            .find(|td| td.tracker_type == picasso_core::TrackerType::Point)
+            .cloned()
+            .unwrap_or_else(|| picasso_core::TrackData {
+                track_id: id.0,
+                tracker_type: picasso_core::TrackerType::Point,
+                points: vec![picasso_core::TrackPoint::default()],
+                analyzed_frames: Vec::new(),
+            });
+
+        heading(ui, "Match Move");
+        ui.horizontal(|ui| {
+            ui.label("Track point:");
+            ui.add(egui::DragValue::new(&mut td.points[0].x).range(0.0..=1.0).speed(0.01));
+            ui.label("x");
+            ui.add(egui::DragValue::new(&mut td.points[0].y).range(0.0..=1.0).speed(0.01));
+            ui.label("y");
+        });
+        let analysing = self.match_move_rx.is_some();
+        if ui
+            .add_enabled(!analysing, egui::Button::new("Track point"))
+            .clicked()
+        {
+            self.start_match_move_analysis(ctx, id, path, duration);
+        }
+        if !td.analyzed_frames.is_empty() {
+            ui.label(
+                RichText::new(format!("{} frames tracked", td.analyzed_frames.len())).small(),
+            );
+            ui.horizontal(|ui| {
+                if ui.button("Apply to transform").clicked() {
+                    self.run(Command::SetTrackingData {
+                        clip: id,
+                        tracking_data: vec![td.clone()],
+                    });
+                }
+                if ui.button("Clear tracking data").clicked() {
+                    self.run(Command::SetTrackingData {
+                        clip: id,
+                        tracking_data: vec![],
+                    });
+                }
+            });
+        }
+        if td != existing_td {
+            self.run(Command::SetTrackingData {
+                clip: id,
+                tracking_data: vec![td.clone()],
+            });
+        }
+    }
     fn transform_controls(
         &mut self,
         ui: &mut Ui,
