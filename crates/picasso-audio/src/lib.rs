@@ -3,6 +3,7 @@
 //! card output exist on the desktop only (the browser build has no sound yet).
 
 pub mod dsp;
+pub mod effects;
 mod loudness;
 mod mix;
 #[cfg(not(target_arch = "wasm32"))]

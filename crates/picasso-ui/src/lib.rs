@@ -27,6 +27,8 @@ mod i18n;
 #[cfg(test)]
 mod shots;
 mod keyboard;
+mod auto_subtitles;
+mod beat_markers;
 mod keyframes_ui;
 mod layouts;
 mod media;
@@ -63,6 +65,7 @@ mod theme;
 mod timeline;
 mod waveform_align;
 mod track_fx;
+mod video_layout;
 #[cfg(not(target_arch = "wasm32"))]
 mod update;
 mod video;

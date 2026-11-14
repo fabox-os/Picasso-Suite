@@ -796,6 +796,9 @@ impl StudioApp {
 
     pub(crate) fn replace_session(&mut self, project: Project, path: Option<String>) {
         self.session = Session::new(project);
+        // A new project asks about its video layout again.
+        self.extra.video_layout = None;
+        self.extra.video_layout_decided = false;
         self.epoch += 1;
         self.cache = crate::video::new_cache(&self.ctx);
         self.media_generation += 1;

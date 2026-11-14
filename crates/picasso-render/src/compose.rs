@@ -613,6 +613,41 @@ mod tests {
     }
 
     #[test]
+    fn a_title_comes_in_over_its_animation_and_then_stays() {
+        let mut p = Project::new("t");
+        let title = picasso_core::TitleText {
+            text: "Hi".into(),
+            size: 300,
+            style: picasso_core::TextStyle {
+                animation: picasso_core::TitleAnimation::Fade,
+                animation_ms: 1000,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let Outcome::Media(m) = (Command::AddMedia {
+            name: "t".into(),
+            source: MediaSource::Title(title),
+            length: None,
+            default_duration: 120,
+        })
+        .apply(&mut p)
+        .unwrap() else {
+            panic!()
+        };
+        place(&mut p, 0, m, 0);
+        let light = |frame| {
+            let f = render_frame(&p, &MediaCache::new(), frame, 160, 90).unwrap();
+            f.rgba.chunks_exact(4).map(|px| u32::from(px[1])).sum::<u32>()
+        };
+        let fps = p.fps.nominal();
+        let (start, middle, end, later) = (light(0), light(fps / 2), light(fps), light(fps * 2));
+        assert_eq!(start, 0, "the first frame is empty");
+        assert!(middle > start && end > middle, "{start} {middle} {end}");
+        assert_eq!(end, later, "after its animation the title stays as it is");
+    }
+
+    #[test]
     fn empty_timeline_is_black() {
         let (p, _) = project_with([9, 9, 9]);
         let f = render_frame(&p, &MediaCache::new(), 0, 4, 2).unwrap();
@@ -910,6 +945,7 @@ mod tests {
         for kind in picasso_core::TransitionKind::extra()
             .iter()
             .chain(picasso_core::TransitionKind::wipes())
+            .chain(picasso_core::TransitionKind::looks())
         {
             let (mut p, m) = project_with([200, 0, 0]);
             let v1 = p.tracks[0].id;

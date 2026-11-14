@@ -53,6 +53,13 @@ impl StudioApp {
             .unwrap_or_default();
         let (start, value) = (clip.start, clip.value_at(param, self.playhead));
         let here = self.clip_frame(id);
+        // The curve of the keyframe at the playhead, if there is one.
+        let curve_here = here.and_then(|f| {
+            clip.keys(param)?
+                .iter()
+                .find(|k| k.at == f)
+                .map(|k| k.curve)
+        });
         let on_key = here.is_some_and(|f| keys.contains(&f));
         let animated = !keys.is_empty();
         let before = here.and_then(|f| keys.iter().rev().find(|k| **k < f).copied());
@@ -85,6 +92,33 @@ impl StudioApp {
                     });
                 }
                 None => self.fail("put the playhead inside the clip to add a keyframe"),
+            }
+        }
+        // On a keyframe: the curve the value takes to the next one.
+        if let (Some(current), Some(at)) = (curve_here, here) {
+            let name = picasso_core::easing::preset_of(current).map_or("Custom", |p| p.label);
+            let mut chosen = None;
+            ui.menu_button("~", |ui| {
+                for family in picasso_core::easing::FAMILIES {
+                    ui.menu_button(family, |ui| {
+                        for p in picasso_core::easing::PRESETS.iter().filter(|p| p.family == family) {
+                            if ui.selectable_label(current == p.curve, p.label).clicked() {
+                                chosen = Some(p.curve);
+                                ui.close();
+                            }
+                        }
+                    });
+                }
+            })
+            .response
+            .on_hover_text(format!("Curve to the next keyframe: {name}"));
+            if let Some(curve) = chosen {
+                self.run(Command::SetKeyCurve {
+                    clip: id,
+                    param,
+                    at,
+                    curve,
+                });
             }
         }
         ui.add_enabled_ui(after.is_some(), |ui| {

@@ -3,6 +3,7 @@
 //! value moves in a straight line (or eases in and out), before the first and after the last it
 //! holds.
 
+use crate::easing::KeyCurve;
 use serde::{Deserialize, Serialize};
 
 use crate::project::{Clip, Transform};
@@ -81,6 +82,9 @@ pub struct Keyframe {
     /// Eases in and out of this keyframe (slow near it) instead of moving at an even rate.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ease: bool,
+    /// How the value moves from this keyframe to the next one (a straight line unless set).
+    #[serde(default, skip_serializing_if = "KeyCurve::is_linear")]
+    pub curve: KeyCurve,
 }
 
 /// The keyframes of one property, in time order.
@@ -101,8 +105,12 @@ pub fn value_at(keys: &[Keyframe], at: u64) -> Option<f32> {
         if at <= b.at {
             let span = (b.at - a.at).max(1) as f32;
             let mut t = (at - a.at) as f32 / span;
-            if a.ease || b.ease {
-                t = t * t * (3.0 - 2.0 * t);
+            // The curve of the keyframe the segment starts at; the older "ease" switch (on either
+            // end) is a smooth step.
+            if !a.curve.is_linear() {
+                t = a.curve.eval(t);
+            } else if a.ease || b.ease {
+                t = KeyCurve::Smooth.eval(t);
             }
             return Some(a.value + (b.value - a.value) * t);
         }
@@ -136,8 +144,11 @@ impl Clip {
 
     /// The value of `param` at timeline frame `frame`.
     pub fn value_at(&self, param: KeyParam, frame: u64) -> f32 {
+        let (lo, hi) = param.range();
         self.keys(param)
             .and_then(|k| value_at(k, frame.saturating_sub(self.start)))
+            // A curve that overshoots (back, elastic) stays inside what the property can be.
+            .map(|v| v.clamp(lo, hi))
             .unwrap_or_else(|| param.base(self))
     }
 
@@ -146,7 +157,8 @@ impl Clip {
         let (mut opacity, mut t) = (self.opacity, self.transform);
         for track in &self.keyframes {
             if let Some(v) = value_at(&track.keys, frame.saturating_sub(self.start)) {
-                track.param.apply(v, &mut opacity, &mut t);
+                let (lo, hi) = track.param.range();
+                track.param.apply(v.clamp(lo, hi), &mut opacity, &mut t);
             }
         }
         (opacity, t)
@@ -186,6 +198,7 @@ impl Clip {
                         at: 0,
                         value,
                         ease: false,
+                        curve: KeyCurve::Linear,
                     },
                 );
             }
@@ -204,6 +217,7 @@ mod tests {
             at,
             value,
             ease: false,
+            curve: KeyCurve::Linear,
         }
     }
 
@@ -224,6 +238,51 @@ mod tests {
         assert!(v < 0.2, "slow near the eased keyframe: {v}");
         assert_eq!(value_at(&eased, 5), Some(0.5));
         assert_eq!(value_at(&[], 5), None);
+    }
+
+    #[test]
+    fn a_keyframe_can_ease_along_any_curve_to_the_next() {
+        let with = |curve| {
+            [
+                Keyframe {
+                    curve,
+                    ..k(0, 0.0)
+                },
+                k(10, 1.0),
+            ]
+        };
+        // A jump stays until the next keyframe.
+        assert_eq!(value_at(&with(KeyCurve::Hold), 9), Some(0.0));
+        assert_eq!(value_at(&with(KeyCurve::Hold), 10), Some(1.0));
+        // Ease out is ahead of a straight line at the start, ease in behind it.
+        let out = value_at(&with(KeyCurve::Bezier([0.33, 1.0, 0.68, 1.0])), 3).unwrap();
+        let slow = value_at(&with(KeyCurve::Bezier([0.32, 0.0, 0.67, 0.0])), 3).unwrap();
+        assert!(out > 0.3 && slow < 0.3, "{out} {slow}");
+        // Bounce lands on the next value; elastic passes it on the way (so it is not capped).
+        assert_eq!(value_at(&with(KeyCurve::BounceOut), 10), Some(1.0));
+        assert!(
+            (1..10).any(|at| value_at(&with(KeyCurve::ElasticOut), at).unwrap() > 1.0)
+        );
+        // The curve belongs to the keyframe it starts at: the next keyframe's does not matter.
+        let two = [k(0, 0.0), Keyframe { curve: KeyCurve::Hold, ..k(10, 1.0) }];
+        assert_eq!(value_at(&two, 5), Some(0.5));
+    }
+
+    #[test]
+    fn a_property_stays_inside_its_range_when_a_curve_overshoots() {
+        let mut c = crate::Project::demo().tracks[0].clips[0].clone();
+        c.start = 0;
+        c.keyframes = vec![KeyTrack {
+            param: KeyParam::Opacity,
+            keys: vec![
+                Keyframe { curve: KeyCurve::ElasticOut, ..k(0, 0.0) },
+                k(10, 1.0),
+            ],
+        }];
+        for frame in 0..=10 {
+            let o = c.opacity_at(frame);
+            assert!((0.0..=1.0).contains(&o), "frame {frame}: {o}");
+        }
     }
 
     #[test]

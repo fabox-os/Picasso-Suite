@@ -478,6 +478,7 @@ fn every_extra_transition_and_wipe_can_be_added_from_the_menu_and_taken_off() {
     for kind in picasso_core::TransitionKind::extra()
         .iter()
         .chain(picasso_core::TransitionKind::wipes())
+        .chain(picasso_core::TransitionKind::looks())
     {
         assert!(app.act_enabled(Act::AddTransition(*kind)), "{kind:?}");
         act(&mut app, Act::AddTransition(*kind));
@@ -2071,7 +2072,10 @@ fn track_eq_and_dynamics_from_the_menus() {
     fx.dynamics.enabled = true;
     fx.eq.enabled = true;
     fx.eq.mid_gain = 6.0;
-    app.run(Command::SetTrackFx { track, fx });
+    app.run(Command::SetTrackFx {
+        track,
+        fx: fx.clone(),
+    });
     let plan = picasso_audio::plan(app.project());
     let index = app
         .project()
@@ -2082,6 +2086,46 @@ fn track_eq_and_dynamics_from_the_menus() {
     assert!(!plan.tracks[index].is_plain());
     let back = picasso_core::Project::from_json(&app.project().to_json().unwrap()).unwrap();
     assert_eq!(back.track(track).unwrap().fx, fx);
+}
+
+#[test]
+fn every_sound_effect_can_be_added_to_a_track_from_the_menu_and_taken_off() {
+    let mut app = app();
+    if !app
+        .project()
+        .tracks
+        .iter()
+        .any(|t| t.kind == picasso_core::TrackKind::Audio)
+    {
+        app.run(Command::AddTrack {
+            kind: picasso_core::TrackKind::Audio,
+        });
+    }
+    for kind in picasso_core::AudioEffectKind::ALL {
+        act(&mut app, Act::AddAudioEffect(kind));
+        let (track, tab) = app.extra.track_fx.unwrap();
+        assert_eq!(tab, crate::track_fx::FxTab::Effects);
+        let fx = app.track_fx_of(track);
+        assert_eq!(fx.chain.len(), 1, "{kind:?}");
+        assert_eq!(fx.chain[0], picasso_core::AudioEffect::new(kind));
+        // The mixer gets it, and it survives a save.
+        let plan = picasso_audio::plan(app.project());
+        assert!(plan.tracks.iter().any(|t| !t.chain.is_empty()), "{kind:?}");
+        let back = picasso_core::Project::from_json(&app.project().to_json().unwrap()).unwrap();
+        assert_eq!(back.track(track).unwrap().fx, fx);
+        app.run(Command::SetTrackFx {
+            track,
+            fx: picasso_core::TrackFx::default(),
+        });
+        assert!(app.track_fx_of(track).is_plain());
+    }
+    // A track holds a limited number of them.
+    let track = app.extra.track_fx.unwrap().0;
+    for _ in 0..picasso_core::MAX_CHAIN {
+        act(&mut app, Act::AddAudioEffect(picasso_core::AudioEffectKind::Echo));
+    }
+    act(&mut app, Act::AddAudioEffect(picasso_core::AudioEffectKind::Reverb));
+    assert_eq!(app.track_fx_of(track).chain.len(), picasso_core::MAX_CHAIN);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2775,4 +2819,296 @@ fn the_language_chosen_in_the_help_menu_is_kept_for_the_next_start() {
     assert_eq!(i18n::tr("Save Project"), "Save Project");
     assert_eq!(i18n::menu_name("File"), "File");
     assert!(app.extra.prefs.text().contains("language=en"));
+}
+
+#[test]
+fn the_video_layout_is_asked_on_a_new_project_and_sets_the_size() {
+    let ctx = Context::default();
+    let frame = |app: &mut StudioApp| {
+        let mut out =
+            ctx.run_ui(egui::RawInput::default(), |ui| app.video_layout_window(&ui.ctx().clone()));
+        out.textures_delta.clear();
+    };
+    let mut app = StudioApp::new(&ctx);
+    // A new, empty project asks by itself, with a YouTube video at 1080p picked.
+    app.new_project();
+    frame(&mut app);
+    let chooser = app.extra.video_layout.clone().expect("the chooser opens on a new project");
+    assert_eq!((chooser.template, chooser.size()), ("yt_video", (1920, 1080)));
+    // Continue with a TikTok at 720p: the size changes, the frame rate stays, and it is one undo.
+    let fps = app.project().fps;
+    let mut pick = chooser.clone();
+    pick.pick_platform(picasso_core::video_layout::Platform::TikTok);
+    pick.quality = picasso_core::video_layout::Quality::P720;
+    app.apply_video_layout(&pick);
+    assert_eq!((app.project().width, app.project().height), (720, 1280));
+    assert_eq!(app.project().fps, fps);
+    assert!(app.extra.video_layout.is_none() && app.extra.video_layout_decided);
+    app.session.undo();
+    assert_eq!((app.project().width, app.project().height), (1920, 1080));
+    // It does not come back by itself for this project...
+    frame(&mut app);
+    assert!(app.extra.video_layout.is_none());
+    // ...but a new project asks again,
+    app.new_project();
+    frame(&mut app);
+    assert!(app.extra.video_layout.is_some());
+    // and "Decide later" keeps the size and stops the asking.
+    app.dismiss_video_layout();
+    assert_eq!((app.project().width, app.project().height), (1920, 1080));
+    frame(&mut app);
+    assert!(app.extra.video_layout.is_none());
+}
+
+#[test]
+fn the_video_layout_menu_entry_starts_from_the_size_the_project_has() {
+    let mut app = app();
+    assert!(app.act_enabled(Act::ChooseVideoLayout));
+    let (w, h) = (1080, 1350);
+    app.run(Command::SetFormat { width: w, height: h, fps: app.project().fps });
+    act(&mut app, Act::ChooseVideoLayout);
+    let c = app.extra.video_layout.clone().unwrap();
+    assert_eq!((c.template, c.from_menu), ("ig_feed", true));
+    // A project with clips in it is not asked on its own.
+    app.dismiss_video_layout();
+    let ctx = Context::default();
+    let mut out =
+            ctx.run_ui(egui::RawInput::default(), |ui| app.video_layout_window(&ui.ctx().clone()));
+        out.textures_delta.clear();
+    assert!(app.extra.video_layout.is_none());
+}
+
+#[test]
+fn every_look_adds_its_effects_after_the_clips_own_and_can_be_taken_off() {
+    let mut app = app();
+    let a = app.project().tracks[0].clips[0].id;
+    app.select_only(a);
+    act(&mut app, Act::AddEffect(picasso_core::EffectKind::Sepia));
+    for (i, look) in picasso_core::effect_looks::LOOKS.iter().enumerate() {
+        assert!(app.act_enabled(Act::ApplyLook(i)), "{}", look.label);
+        act(&mut app, Act::ApplyLook(i));
+        let effects = app.project().clip(a).unwrap().1.effects.clone();
+        // The clip's own effect stays first, then the look's, in order.
+        assert_eq!(effects[0].kind, picasso_core::EffectKind::Sepia);
+        let added: Vec<_> = effects[1..].iter().map(|e| (e.kind, e.amount)).collect();
+        let wanted: Vec<_> = look.effects.iter().map(|&(k, a)| (k, a)).collect();
+        assert_eq!(added, wanted, "{}", look.label);
+        app.run(Command::SetEffects { clip: a, effects: effects[..1].to_vec() });
+    }
+    // A clip that is full gets no more, and says so.
+    for _ in 0..picasso_core::MAX_EFFECTS - 1 {
+        act(&mut app, Act::AddEffect(picasso_core::EffectKind::Invert));
+    }
+    let full = app.project().clip(a).unwrap().1.effects.len();
+    act(&mut app, Act::ApplyLook(0));
+    assert_eq!(app.project().clip(a).unwrap().1.effects.len(), full);
+}
+
+#[test]
+fn marking_beats_needs_a_clip_with_a_file_and_says_so() {
+    let mut app = app();
+    // The demo clips are made pictures, with no file to take a sound from.
+    let a = app.project().tracks[0].clips[0].id;
+    app.select_only(a);
+    assert!(!app.act_enabled(Act::MarkBeats));
+    let before = app.project().markers.len();
+    act(&mut app, Act::MarkBeats);
+    assert_eq!(app.project().markers.len(), before);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn markers_land_on_the_beats_of_a_real_sound_file() {
+    // Twelve seconds of clicks, two a second, as a stereo 16-bit WAV at 48 kHz.
+    let rate = 48_000u32;
+    let seconds = 12usize;
+    let mut samples = vec![0i16; rate as usize * seconds * 2];
+    for beat in 0..seconds * 2 {
+        let at = (beat as f64 * 0.5 + 0.25) * f64::from(rate);
+        for k in 0..2400usize {
+            let i = at as usize + k;
+            if i >= rate as usize * seconds {
+                break;
+            }
+            let v = ((-(k as f32) / 600.0).exp() * (std::f32::consts::TAU * 1000.0 * k as f32 / rate as f32).sin() * 20_000.0) as i16;
+            samples[i * 2] = v;
+            samples[i * 2 + 1] = v;
+        }
+    }
+    let data: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&rate.to_le_bytes());
+    wav.extend_from_slice(&(rate * 4).to_le_bytes());
+    wav.extend_from_slice(&4u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(&data);
+    let path = std::env::temp_dir().join("picasso_beats_test.wav");
+    std::fs::write(&path, &wav).unwrap();
+
+    let mut app = app();
+    let fps = app.project().fps.nominal();
+    let Some(picasso_core::Outcome::Media(media)) = app.run(Command::AddMedia {
+        name: "clicks".into(),
+        source: MediaSource::Audio { path: path.to_string_lossy().into_owned() },
+        length: Some(fps * seconds as u64),
+        default_duration: fps * seconds as u64,
+    }) else {
+        panic!("media")
+    };
+    app.run(Command::AddTrack { kind: picasso_core::TrackKind::Audio });
+    let track = app.project().tracks.iter().rev().find(|t| t.kind == picasso_core::TrackKind::Audio).unwrap().id;
+    let Some(picasso_core::Outcome::Clip(clip)) = app.run(Command::AddClip {
+        track,
+        media,
+        start: 0,
+        duration: Some(fps * seconds as u64),
+        with_sound: false,
+    }) else {
+        panic!("clip")
+    };
+    app.select_only(clip);
+    assert!(app.act_enabled(Act::MarkBeats));
+    let before = app.project().markers.len();
+    act(&mut app, Act::MarkBeats);
+    let markers: Vec<_> = app.project().markers.iter().skip(before).cloned().collect();
+    let _ = std::fs::remove_file(&path);
+    assert!(markers.len() >= 20, "{} markers", markers.len());
+    let frames: Vec<u64> = markers.iter().map(|m| m.frame).collect();
+    // A beat every half second, the first at a quarter of a second (a few frames of slack).
+    let step = fps as f64 / 2.0;
+    for w in frames.windows(2) {
+        assert!(((w[1] - w[0]) as f64 - step).abs() <= 1.5, "{frames:?}");
+    }
+    assert!((frames[0] as f64 - fps as f64 * 0.25).abs() <= 2.0, "{frames:?}");
+    assert!(markers.iter().any(|m| m.name == "Bar 1"));
+    // One undo takes them all away.
+    app.session.undo();
+    assert_eq!(app.project().markers.len(), before);
+}
+
+/// A project with one sound clip made from `samples` (mono, `rate` hertz) in a WAV file named
+/// `name` in the temporary folder.
+#[cfg(not(target_arch = "wasm32"))]
+fn app_with_sound(name: &str, samples: &[f32], rate: u32) -> (StudioApp, picasso_core::ClipId, std::path::PathBuf) {
+    let data: Vec<u8> = samples
+        .iter()
+        .flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes())
+        .collect();
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&rate.to_le_bytes());
+    wav.extend_from_slice(&(rate * 2).to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(&data);
+    let path = std::env::temp_dir().join(name);
+    std::fs::write(&path, &wav).unwrap();
+    let mut app = app();
+    let fps = app.project().fps.nominal();
+    let frames = (samples.len() as u64 * fps / u64::from(rate)).max(1);
+    let Some(picasso_core::Outcome::Media(media)) = app.run(Command::AddMedia {
+        name: "speech".into(),
+        source: MediaSource::Audio { path: path.to_string_lossy().into_owned() },
+        length: Some(frames),
+        default_duration: frames,
+    }) else {
+        panic!("media")
+    };
+    app.run(Command::AddTrack { kind: picasso_core::TrackKind::Audio });
+    let track = app.project().tracks.iter().rev().find(|t| t.kind == picasso_core::TrackKind::Audio).unwrap().id;
+    let Some(picasso_core::Outcome::Clip(clip)) = app.run(Command::AddClip {
+        track,
+        media,
+        start: 0,
+        duration: Some(frames),
+        with_sound: false,
+    }) else {
+        panic!("clip")
+    };
+    app.select_only(clip);
+    (app, clip, path)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn creating_subtitles_from_audio_opens_a_window_that_asks_for_the_model_first() {
+    let models = std::env::temp_dir().join("picasso_no_models_here");
+    let _ = std::fs::remove_dir_all(&models);
+    std::env::set_var("PICASSO_MODELS_DIR", &models);
+    let (mut app, clip, path) = app_with_sound("picasso_subtitles_ui.wav", &vec![0.1; 16_000], 16_000);
+    assert!(app.act_enabled(Act::AutoSubtitles));
+    act(&mut app, Act::AutoSubtitles);
+    let st = app.extra.auto_subtitles.as_ref().expect("the window opens");
+    assert_eq!(st.clip, clip);
+    assert!(st.job.is_none() && st.problem.is_none());
+    // The first model that knows many languages is the smallest of them.
+    assert!(picasso_asr::models::MODELS[st.model].multilingual);
+    assert!(!picasso_asr::models::is_installed(&models, &picasso_asr::models::MODELS[st.model]));
+    // A frame of the window draws without a model and without a job, and keeps the window open.
+    let ctx = Context::default();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| app.auto_subtitles_window(&ui.ctx().clone()));
+    out.textures_delta.clear();
+    assert!(app.extra.auto_subtitles.is_some());
+    let _ = std::fs::remove_file(&path);
+    // The demo's made pictures have no file to listen to: the menu entry is off and says why.
+    let mut plain = self::app();
+    let first = plain.project().tracks[0].clips[0].id;
+    plain.select_only(first);
+    assert!(!plain.act_enabled(Act::AutoSubtitles));
+    act(&mut plain, Act::AutoSubtitles);
+    assert!(plain.extra.auto_subtitles.is_none());
+}
+
+/// Needs a real model and sample: see `crates/picasso-asr/tests/real_model.rs`. Run with
+/// `PICASSO_ASR_TEST_DIR` set to the folder that holds `whisper-tiny/` and `jfk.f32`.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+#[ignore]
+fn a_spoken_clip_becomes_subtitles_on_a_new_track() {
+    let Some(dir) = std::env::var_os("PICASSO_ASR_TEST_DIR").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let bytes = std::fs::read(dir.join("jfk.f32")).unwrap();
+    let samples: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+    let (mut app, clip, path) = app_with_sound("picasso_subtitles_real.wav", &samples, 16_000);
+    let model = picasso_asr::models::by_id("whisper-tiny").unwrap();
+    let tracks_before = app.project().tracks.len();
+    let heard = crate::auto_subtitles::transcribe_file(
+        &dir,
+        model,
+        path.to_str().unwrap(),
+        (0.0, 11.0),
+        None,
+        7,
+        &mut |_, _| true,
+    )
+    .expect("the sound is read");
+    assert!(heard.len() >= 2, "{heard:?}");
+    let count = app.place_heard_subtitles(clip, &heard);
+    assert_eq!(count, heard.len());
+    // One new track of subtitles, in order, that together say the quote.
+    assert_eq!(app.project().tracks.len(), tracks_before + 1);
+    let cues = crate::subtitles::cues(app.project(), 0, app.project().duration());
+    let text: String = cues.iter().map(|c| c.text.to_lowercase()).collect::<Vec<_>>().join(" ");
+    assert!(text.contains("ask not what your country can do for you"), "{text}");
+    assert!(cues.windows(2).all(|w| w[0].end <= w[1].start));
+    // One undo takes them all away.
+    app.session.undo();
+    assert_eq!(app.project().tracks.len(), tracks_before);
+    let _ = std::fs::remove_file(&path);
 }

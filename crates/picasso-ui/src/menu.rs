@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use egui::{Key, KeyboardShortcut, Modifiers};
-use picasso_core::{EffectKind, GeneratorKind, TransitionKind};
+use picasso_core::{AudioEffectKind, EffectKind, GeneratorKind, TransitionKind};
 
 /// Everything a menu entry or a key can do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -210,8 +210,18 @@ pub(crate) enum Act {
     AddTransition(picasso_core::TransitionKind),
     /// Adds a generator (a gradient, test pattern, noise, grid...) to the media pool.
     AddGenerator(picasso_core::GeneratorKind),
+    /// Adds the look at this place of `picasso_core::effect_looks::LOOKS` (a stack of effects) to the clip.
+    ApplyLook(usize),
+    /// Listens to the clip's sound and puts what is said on a new subtitle track.
+    AutoSubtitles,
+    /// Puts a marker on each beat of the sound of the clip being worked on.
+    MarkBeats,
+    /// Opens the video layout chooser (a platform, a template and a quality give the size).
+    ChooseVideoLayout,
     TrackEq,
     TrackDynamics,
+    /// Adds a sound effect (reverb, echo, a voice changer...) to the track.
+    AddAudioEffect(picasso_core::AudioEffectKind),
     Preferences,
     // Help
     About,
@@ -326,6 +336,7 @@ const FILE: &[Entry] = &[
     item("Media Management...", &["Ctrl+M"], Act::MediaManagement),
     SEP,
     item("Project Settings...", &["Shift+9"], Act::ProjectSettings),
+    item("Choose Video Layout...", &[], Act::ChooseVideoLayout),
     item("System Preferences...", &["Ctrl+,"], Act::Preferences),
     SEP,
     item("Quick Export...", &["Ctrl+Shift+E"], Act::QuickExport),
@@ -492,6 +503,7 @@ const TIMELINE: &[Entry] = &[
     SEP,
     item("Create Subtitle Track", &[], Act::CreateSubtitleTrack),
     item("Create Subtitle Region", &[], Act::CreateSubtitleRegion),
+    item("Create Subtitles from Audio...", &[], Act::AutoSubtitles),
     item(
         "Add Transition to All Edits",
         &["Ctrl+T"],
@@ -571,6 +583,7 @@ const MARK: &[Entry] = &[
         &["Alt+M"],
         Act::AddMarkerDialog,
     ),
+    item("Add Markers on Beats", &[], Act::MarkBeats),
     item("Modify Marker...", &[], Act::ModifyMarker),
     item(
         "Delete Marker at Current Position",
@@ -1119,6 +1132,101 @@ const EFFECTS: &[Entry] = &[
                     ),
                 ],
             ),
+            sub(
+                "Looks",
+                &[
+                    item(
+                        "Interference Blast",
+                        &[],
+                        Act::AddTransition(TransitionKind::InterferenceBlast),
+                    ),
+                    item(
+                        "Bubbles",
+                        &[],
+                        Act::AddTransition(TransitionKind::Bubbles),
+                    ),
+                    item(
+                        "Zoom Swirl",
+                        &[],
+                        Act::AddTransition(TransitionKind::ZoomSwirl),
+                    ),
+                    item(
+                        "Honeycomb",
+                        &[],
+                        Act::AddTransition(TransitionKind::Honeycomb),
+                    ),
+                    item(
+                        "Ink Bleed",
+                        &[],
+                        Act::AddTransition(TransitionKind::InkBleed),
+                    ),
+                    item(
+                        "Kaleidoscope Spin",
+                        &[],
+                        Act::AddTransition(TransitionKind::KaleidoscopeSpin),
+                    ),
+                    item(
+                        "Lens Flare Wipe",
+                        &[],
+                        Act::AddTransition(TransitionKind::LensFlareWipe),
+                    ),
+                    item(
+                        "Liquid Smudge",
+                        &[],
+                        Act::AddTransition(TransitionKind::LiquidSmudge),
+                    ),
+                    item(
+                        "Luma Fade",
+                        &[],
+                        Act::AddTransition(TransitionKind::LumaFade),
+                    ),
+                    item(
+                        "Digital Rain",
+                        &[],
+                        Act::AddTransition(TransitionKind::DigitalRain),
+                    ),
+                    item(
+                        "Particle Wind",
+                        &[],
+                        Act::AddTransition(TransitionKind::ParticleWind),
+                    ),
+                    item(
+                        "Pixel Swap",
+                        &[],
+                        Act::AddTransition(TransitionKind::PixelSwap),
+                    ),
+                    item(
+                        "Plasma Burn",
+                        &[],
+                        Act::AddTransition(TransitionKind::PlasmaBurn),
+                    ),
+                    item(
+                        "Radial Zoom Blur",
+                        &[],
+                        Act::AddTransition(TransitionKind::RadialZoomBlur),
+                    ),
+                    item(
+                        "RGB Displacement",
+                        &[],
+                        Act::AddTransition(TransitionKind::RgbDisplacement),
+                    ),
+                    item(
+                        "Triangle Mosaic",
+                        &[],
+                        Act::AddTransition(TransitionKind::TriangleMosaic),
+                    ),
+                    item(
+                        "VHS Roll",
+                        &[],
+                        Act::AddTransition(TransitionKind::VhsRoll),
+                    ),
+                    item(
+                        "Shatter",
+                        &[],
+                        Act::AddTransition(TransitionKind::Shatter),
+                    ),
+                ],
+            ),
         ],
     ),
     sub(
@@ -1162,6 +1270,176 @@ const EFFECTS: &[Entry] = &[
         &[
             item("EQ", &[], Act::TrackEq),
             item("Dynamics", &[], Act::TrackDynamics),
+            sub(
+                "Space",
+                &[
+                    item(
+                        "Reverb",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Reverb),
+                    ),
+                    item(
+                        "Chorus",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Chorus),
+                    ),
+                    item(
+                        "Flanger",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Flanger),
+                    ),
+                    item(
+                        "Phaser",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Phaser),
+                    ),
+                    item(
+                        "Echo",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Echo),
+                    ),
+                    item(
+                        "Slapback",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Slapback),
+                    ),
+                    item(
+                        "Tremolo",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Tremolo),
+                    ),
+                    item(
+                        "Auto Pan",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::AutoPan),
+                    ),
+                    item(
+                        "Stereo Widen",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::StereoWiden),
+                    ),
+                ],
+            ),
+            sub(
+                "Texture",
+                &[
+                    item(
+                        "Bitcrush",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Bitcrush),
+                    ),
+                    item(
+                        "8-Bit",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::EightBit),
+                    ),
+                    item(
+                        "Crystalizer",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Crystalizer),
+                    ),
+                    item(
+                        "Tape",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::TapeSaturation),
+                    ),
+                    item(
+                        "Vinyl",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Vinyl),
+                    ),
+                ],
+            ),
+            sub(
+                "Transmission",
+                &[
+                    item(
+                        "Megaphone",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Megaphone),
+                    ),
+                    item(
+                        "Muffled",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Muffled),
+                    ),
+                    item(
+                        "Telephone",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Telephone),
+                    ),
+                    item(
+                        "Underwater",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Underwater),
+                    ),
+                    item(
+                        "Walkie-Talkie",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::WalkieTalkie),
+                    ),
+                ],
+            ),
+            sub(
+                "Utility",
+                &[
+                    item(
+                        "Noise Gate",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Gate),
+                    ),
+                    item(
+                        "De-Esser",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::DeEsser),
+                    ),
+                    item(
+                        "Leveler",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Leveler),
+                    ),
+                    item(
+                        "Limiter",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Limiter),
+                    ),
+                ],
+            ),
+            sub(
+                "Voice",
+                &[
+                    item(
+                        "Alien",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Alien),
+                    ),
+                    item(
+                        "Chipmunk",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Chipmunk),
+                    ),
+                    item(
+                        "Deep Voice",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::DeepVoice),
+                    ),
+                    item(
+                        "Robot",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Robot),
+                    ),
+                    item(
+                        "Dark Lord",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::DarkLord),
+                    ),
+                    item(
+                        "Wobble",
+                        &[],
+                        Act::AddAudioEffect(AudioEffectKind::Wobble),
+                    ),
+                ],
+            ),
         ],
     ),
     sub(
@@ -1579,6 +1857,158 @@ const EFFECTS: &[Entry] = &[
                         &[],
                         Act::AddEffect(EffectKind::StylizeCutout),
                     ),
+                ],
+            ),
+            sub(
+                "Glitch",
+                &[
+                    item(
+                        "Block Glitch",
+                        &[],
+                        Act::AddEffect(EffectKind::BlockGlitch),
+                    ),
+                    item(
+                        "Digital Glitch",
+                        &[],
+                        Act::AddEffect(EffectKind::DigitalGlitch),
+                    ),
+                    item(
+                        "Scanline Glitch",
+                        &[],
+                        Act::AddEffect(EffectKind::ScanlineGlitch),
+                    ),
+                    item(
+                        "RGB Split",
+                        &[],
+                        Act::AddEffect(EffectKind::RgbSplit),
+                    ),
+                ],
+            ),
+            sub(
+                "Film and Light",
+                &[
+                    item(
+                        "Film Burn",
+                        &[],
+                        Act::AddEffect(EffectKind::FilmBurn),
+                    ),
+                    item(
+                        "Light Leak",
+                        &[],
+                        Act::AddEffect(EffectKind::LightLeak),
+                    ),
+                    item(
+                        "Super 8",
+                        &[],
+                        Act::AddEffect(EffectKind::Super8),
+                    ),
+                    item(
+                        "VHS and CRT",
+                        &[],
+                        Act::AddEffect(EffectKind::VhsCrt),
+                    ),
+                    item(
+                        "Star Filter",
+                        &[],
+                        Act::AddEffect(EffectKind::StarFilter),
+                    ),
+                    item(
+                        "Bokeh Dream",
+                        &[],
+                        Act::AddEffect(EffectKind::BokehDream),
+                    ),
+                    item(
+                        "Sparkle",
+                        &[],
+                        Act::AddEffect(EffectKind::Sparkle),
+                    ),
+                ],
+            ),
+            sub(
+                "Zoom and Pulse",
+                &[
+                    item(
+                        "Infinite Zoom",
+                        &[],
+                        Act::AddEffect(EffectKind::InfiniteZoom),
+                    ),
+                    item(
+                        "Shockwave",
+                        &[],
+                        Act::AddEffect(EffectKind::Shockwave),
+                    ),
+                    item(
+                        "Zoom Punch",
+                        &[],
+                        Act::AddEffect(EffectKind::ZoomPunch),
+                    ),
+                ],
+            ),
+            sub(
+                "Paint",
+                &[
+                    item(
+                        "Oil Paint",
+                        &[],
+                        Act::AddEffect(EffectKind::OilPaint),
+                    ),
+                    item(
+                        "Neon Edges",
+                        &[],
+                        Act::AddEffect(EffectKind::NeonEdges),
+                    ),
+                ],
+            ),
+            sub(
+                "Grade",
+                &[
+                    item(
+                        "Cinematic Grade",
+                        &[],
+                        Act::AddEffect(EffectKind::CinematicGrade),
+                    ),
+                    item(
+                        "Hue Shift",
+                        &[],
+                        Act::AddEffect(EffectKind::HueShift),
+                    ),
+                    item(
+                        "Brightness",
+                        &[],
+                        Act::AddEffect(EffectKind::Brightness),
+                    ),
+                    item(
+                        "Contrast",
+                        &[],
+                        Act::AddEffect(EffectKind::Contrast),
+                    ),
+                    item(
+                        "Gamma",
+                        &[],
+                        Act::AddEffect(EffectKind::Gamma),
+                    ),
+                    item(
+                        "Saturation",
+                        &[],
+                        Act::AddEffect(EffectKind::Saturation),
+                    ),
+                ],
+            ),
+            sub(
+                "Looks",
+                &[
+                    item("Cinematic", &[], Act::ApplyLook(0)),
+                    item("Dream", &[], Act::ApplyLook(1)),
+                    item("Neon Night", &[], Act::ApplyLook(2)),
+                    item("Retro Tape", &[], Act::ApplyLook(3)),
+                    item("Sunset Leak", &[], Act::ApplyLook(4)),
+                    item("Bling", &[], Act::ApplyLook(5)),
+                    item("Glitch Cut", &[], Act::ApplyLook(6)),
+                    item("Anime Punch", &[], Act::ApplyLook(7)),
+                    item("Beat Drop", &[], Act::ApplyLook(8)),
+                    item("RGB Rave", &[], Act::ApplyLook(9)),
+                    item("Slow-Mo Drop", &[], Act::ApplyLook(10)),
+                    item("Snap", &[], Act::ApplyLook(11)),
                 ],
             ),
         ],

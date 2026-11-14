@@ -150,7 +150,12 @@ pub(crate) fn color_wheel(
     let scale = inner / range;
     let v = turn(vec2(x, y), TURN);
     let puck = center + clamp_len(vec2(v.x * scale, -v.y * scale), inner);
-    painter.circle_filled(puck, 3.6, Color32::from_rgb(222, 222, 224));
+    // The puck is the same fraction of the wheel at any size (3.6 points at the usual one).
+    painter.circle_filled(
+        puck,
+        (radius * 0.0777).max(2.2),
+        Color32::from_rgb(222, 222, 224),
+    );
 
     let rect = egui::Rect::from_center_size(center, vec2(radius * 2.0, radius * 2.0));
     let response = ui

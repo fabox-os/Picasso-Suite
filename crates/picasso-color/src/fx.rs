@@ -158,10 +158,32 @@ pub enum EffectKind {
     Deflicker,
     ColorStabilizer,
     DirtRemoval,
+    BlockGlitch,
+    DigitalGlitch,
+    ScanlineGlitch,
+    RgbSplit,
+    InfiniteZoom,
+    Shockwave,
+    ZoomPunch,
+    FilmBurn,
+    LightLeak,
+    Super8,
+    VhsCrt,
+    StarFilter,
+    BokehDream,
+    Sparkle,
+    NeonEdges,
+    OilPaint,
+    CinematicGrade,
+    HueShift,
+    Brightness,
+    Contrast,
+    Gamma,
+    Saturation,
 }
 
 impl EffectKind {
-    pub const ALL: [Self; 134] = [
+    pub const ALL: [Self; 156] = [
         Self::GaussianBlur,
         Self::Sharpen,
         Self::Mosaic,
@@ -296,6 +318,28 @@ impl EffectKind {
         Self::Deflicker,
         Self::ColorStabilizer,
         Self::DirtRemoval,
+        Self::BlockGlitch,
+        Self::DigitalGlitch,
+        Self::ScanlineGlitch,
+        Self::RgbSplit,
+        Self::InfiniteZoom,
+        Self::Shockwave,
+        Self::ZoomPunch,
+        Self::FilmBurn,
+        Self::LightLeak,
+        Self::Super8,
+        Self::VhsCrt,
+        Self::StarFilter,
+        Self::BokehDream,
+        Self::Sparkle,
+        Self::NeonEdges,
+        Self::OilPaint,
+        Self::CinematicGrade,
+        Self::HueShift,
+        Self::Brightness,
+        Self::Contrast,
+        Self::Gamma,
+        Self::Saturation,
     ];
 
     /// Whether the effect reads other frames of the clip, so the compositor has to draw it (it
@@ -453,6 +497,28 @@ impl EffectKind {
             Self::Deflicker => "Deflicker",
             Self::ColorStabilizer => "Color Stabilizer",
             Self::DirtRemoval => "Automatic Dirt Removal",
+            Self::BlockGlitch => "Block Glitch",
+            Self::DigitalGlitch => "Digital Glitch",
+            Self::ScanlineGlitch => "Scanline Glitch",
+            Self::RgbSplit => "RGB Split",
+            Self::InfiniteZoom => "Infinite Zoom",
+            Self::Shockwave => "Shockwave",
+            Self::ZoomPunch => "Zoom Punch",
+            Self::FilmBurn => "Film Burn",
+            Self::LightLeak => "Light Leak",
+            Self::Super8 => "Super 8",
+            Self::VhsCrt => "VHS and CRT",
+            Self::StarFilter => "Star Filter",
+            Self::BokehDream => "Bokeh Dream",
+            Self::Sparkle => "Sparkle",
+            Self::NeonEdges => "Neon Edges",
+            Self::OilPaint => "Oil Paint",
+            Self::CinematicGrade => "Cinematic Grade",
+            Self::HueShift => "Hue Shift",
+            Self::Brightness => "Brightness",
+            Self::Contrast => "Contrast",
+            Self::Gamma => "Gamma",
+            Self::Saturation => "Saturation",
         }
     }
 
@@ -590,6 +656,28 @@ impl EffectKind {
             Self::Deflicker => 50.0,
             Self::ColorStabilizer => 50.0,
             Self::DirtRemoval => 50.0,
+            Self::BlockGlitch => 5e+01,
+            Self::DigitalGlitch => 5e+01,
+            Self::ScanlineGlitch => 4e+01,
+            Self::RgbSplit => 4e+01,
+            Self::InfiniteZoom => 6e+01,
+            Self::Shockwave => 6e+01,
+            Self::ZoomPunch => 6e+01,
+            Self::FilmBurn => 5e+01,
+            Self::LightLeak => 6e+01,
+            Self::Super8 => 7e+01,
+            Self::VhsCrt => 5e+01,
+            Self::StarFilter => 6e+01,
+            Self::BokehDream => 6e+01,
+            Self::Sparkle => 6e+01,
+            Self::NeonEdges => 7e+01,
+            Self::OilPaint => 6e+01,
+            Self::CinematicGrade => 6e+01,
+            Self::HueShift => 3e+01,
+            Self::Brightness => 3e+01,
+            Self::Contrast => 3e+01,
+            Self::Gamma => 3e+01,
+            Self::Saturation => 4e+01,
         }
     }
 }
@@ -883,6 +971,30 @@ impl Effect {
             | EffectKind::StylizeInk
             | EffectKind::StylizeCutout => {
                 crate::paint::apply(self.kind, a, rgba, w, h);
+            }
+            EffectKind::BlockGlitch
+            | EffectKind::DigitalGlitch
+            | EffectKind::ScanlineGlitch
+            | EffectKind::RgbSplit
+            | EffectKind::InfiniteZoom
+            | EffectKind::Shockwave
+            | EffectKind::ZoomPunch
+            | EffectKind::FilmBurn
+            | EffectKind::LightLeak
+            | EffectKind::Super8
+            | EffectKind::VhsCrt
+            | EffectKind::StarFilter
+            | EffectKind::BokehDream
+            | EffectKind::Sparkle
+            | EffectKind::NeonEdges
+            | EffectKind::OilPaint
+            | EffectKind::CinematicGrade
+            | EffectKind::HueShift
+            | EffectKind::Brightness
+            | EffectKind::Contrast
+            | EffectKind::Gamma
+            | EffectKind::Saturation => {
+                crate::cinema::apply(self.kind, a, rgba, w, h, frame, rate);
             }
             // These read other frames of the clip; the compositor draws them (`picasso-render`).
             EffectKind::Echo

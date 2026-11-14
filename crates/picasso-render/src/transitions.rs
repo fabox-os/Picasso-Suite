@@ -89,7 +89,7 @@ pub(crate) fn cadd(a: C4, b: C4) -> C4 {
 }
 
 /// `top` over `bottom` (both premultiplied).
-fn over(top: C4, bottom: C4) -> C4 {
+pub(crate) fn over(top: C4, bottom: C4) -> C4 {
     cadd(top, cscale(bottom, 1.0 - top[3]))
 }
 
@@ -112,7 +112,7 @@ pub(crate) fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
 }
 
 /// GLSL `step`: 0 below the edge, 1 from it.
-fn step(edge: f32, x: f32) -> f32 {
+pub(crate) fn step(edge: f32, x: f32) -> f32 {
     if x < edge {
         0.0
     } else {
@@ -124,11 +124,11 @@ pub(crate) fn fract(x: f32) -> f32 {
     x - x.floor()
 }
 
-fn hash2(p: V2) -> f32 {
+pub(crate) fn hash2(p: V2) -> f32 {
     fract((p.x * 127.1 + p.y * 311.7).sin() * 43758.547)
 }
 
-fn vnoise(p: V2) -> f32 {
+pub(crate) fn vnoise(p: V2) -> f32 {
     let i = v2(p.x.floor(), p.y.floor());
     let f = v2(fract(p.x), fract(p.y));
     let f = v2(f.x * f.x * (3.0 - 2.0 * f.x), f.y * f.y * (3.0 - 2.0 * f.y));
@@ -139,11 +139,11 @@ fn vnoise(p: V2) -> f32 {
     )
 }
 
-fn fbm(p: V2) -> f32 {
+pub(crate) fn fbm(p: V2) -> f32 {
     0.5 * vnoise(p) + 0.3 * vnoise(p * 2.1) + 0.2 * vnoise(p * 4.3)
 }
 
-fn hash1(n: f32) -> f32 {
+pub(crate) fn hash1(n: f32) -> f32 {
     fract((n * 127.1 + 311.7).sin() * 43758.547)
 }
 
@@ -907,6 +907,7 @@ pub fn is_drawn_here(kind: K) -> bool {
 pub fn mix_into(kind: K, first: &[u8], second: &mut [u8], width: usize, height: usize, t: f32) {
     if crate::wipes::mix_into(kind, first, second, width, height, t)
         || crate::smooth_cut::mix_into(kind, first, second, width, height, t)
+        || crate::looks::mix_into(kind, first, second, width, height, t)
     {
         return;
     }

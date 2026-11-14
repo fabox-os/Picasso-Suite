@@ -8,6 +8,7 @@
 //! Nothing here allocates per pixel, does I/O or can panic, so it is safe to run on any thread.
 
 mod blur;
+mod cinema;
 pub mod curves;
 pub mod fx;
 pub mod grade;

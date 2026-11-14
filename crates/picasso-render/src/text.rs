@@ -68,6 +68,26 @@ pub(crate) fn draw_title(out: &mut [u8], w: usize, h: usize, title: &TitleText) 
     }
 }
 
+/// Draws `title` as it looks `time_us` microseconds after the start of its clip: the plain title
+/// once its animation (if it has one) is over.
+pub(crate) fn draw_title_at(out: &mut [u8], w: usize, h: usize, title: &TitleText, time_us: i64) {
+    use picasso_core::TitleAnimation;
+    let kind = title.style.animation;
+    let ms = title.style.animation_ms.clamp(100, 5000) as f32;
+    let p = (time_us.max(0) as f32 / 1000.0 / ms).clamp(0.0, 1.0);
+    let Some(len) = w.checked_mul(h) else {
+        return;
+    };
+    if kind == TitleAnimation::None || p >= 1.0 || len == 0 || out.len() < len * 4 {
+        draw_title(out, w, h, title);
+        return;
+    }
+    let mut layer = vec![0u8; len * 4];
+    draw_title(&mut layer, w, h, title);
+    crate::title_motion::animate(&mut layer, w, h, title, kind, p);
+    crate::title_motion::over(&mut out[..len * 4], &layer);
+}
+
 /// How much of each pixel the letters cover, 0 to 1.
 fn text_mask(w: usize, h: usize, title: &TitleText, style: &TextStyle) -> Vec<f32> {
     let mut mask = vec![0f32; w * h];
@@ -198,7 +218,7 @@ fn dilate(mask: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
 }
 
 /// A box blur of `radius`, rows then columns, for a soft shadow.
-fn blur(v: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
+pub(crate) fn blur(v: &[f32], w: usize, h: usize, radius: usize) -> Vec<f32> {
     let pass = |src: &[f32], len: usize, stride: usize, lines: usize, step: usize| {
         let mut dst = vec![0f32; src.len()];
         for line in 0..lines {

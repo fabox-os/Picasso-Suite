@@ -55,7 +55,7 @@ fn one_per_group(project: &Project, ids: &[ClipId]) -> Vec<ClipId> {
 }
 
 /// The file a clip's sound is read from.
-fn sound_path(project: &Project, id: ClipId) -> Option<String> {
+pub(crate) fn sound_path(project: &Project, id: ClipId) -> Option<String> {
     let (_, clip) = project.clip(id)?;
     match &project.media(clip.media)?.source {
         MediaSource::Video { path } | MediaSource::Audio { path } => Some(path.clone()),

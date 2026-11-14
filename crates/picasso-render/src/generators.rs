@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn noise_gradient_drifts_and_stays_between_its_colours() {
+    fn noise_gradient_moves_and_stays_between_its_colours() {
         let a = render(GeneratorKind::NoiseGradient, (80, 45), 0);
         let b = render(GeneratorKind::NoiseGradient, (80, 45), 2_000_000);
         assert_ne!(a, b);

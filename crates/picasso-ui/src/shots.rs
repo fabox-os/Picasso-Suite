@@ -321,3 +321,78 @@ fn shots() {
         "menu-generators-patterns",
     );
 }
+
+/// The Choose Video Layout window on a new project, for each platform, as pictures.
+#[test]
+#[ignore]
+fn video_layout_shots() {
+    let dir = PathBuf::from(std::env::var("SHOT_DIR").unwrap_or_else(|_| ".".into()));
+    let mut d = Driver::new();
+    d.app.new_project();
+    d.frames(6, vec![]);
+    for (platform, name) in [
+        (picasso_core::video_layout::Platform::YouTube, "video-layout-youtube"),
+        (picasso_core::video_layout::Platform::Instagram, "video-layout-instagram"),
+        (picasso_core::video_layout::Platform::TikTok, "video-layout-tiktok"),
+    ] {
+        if let Some(c) = d.app.extra.video_layout.as_mut() {
+            c.pick_platform(platform);
+        }
+        d.frames(4, vec![]);
+        let (w, h, px) = d.pixels();
+        let file = dir.join(format!("{name}.png"));
+        image::RgbaImage::from_raw(w as u32, h as u32, px)
+            .expect("size")
+            .save(&file)
+            .expect("write the picture");
+        eprintln!("wrote {}", file.display());
+    }
+}
+
+/// The Color page with its palettes divider dragged up and down, and the Deliver page with its
+/// render settings column narrowed, as pictures (for the issue about panels that do not scale).
+#[test]
+#[ignore]
+fn responsive_shots() {
+    use crate::app::Page;
+    let dir = PathBuf::from(std::env::var("SHOT_DIR").unwrap_or_else(|_| ".".into()));
+    let save = |d: &mut Driver, name: &str| {
+        d.frames(6, vec![]);
+        let (w, h, px) = d.pixels();
+        let file = dir.join(format!("{name}.png"));
+        image::RgbaImage::from_raw(w as u32, h as u32, px)
+            .expect("size")
+            .save(&file)
+            .expect("write the picture");
+        eprintln!("wrote {}", file.display());
+    };
+    let size = egui::vec2(1920.0, 1080.0);
+    for (moved, name) in [(0, "usual"), (-150, "up"), (120, "down")] {
+        let mut d = Driver::sized(size, 1.0);
+        d.app.set_page(Page::Color);
+        d.app.extra.prefs.panels.moved.clear();
+        if moved != 0 {
+            d.app
+                .extra
+                .prefs
+                .panels
+                .moved
+                .insert("color palettes".to_string(), moved);
+        }
+        save(&mut d, &format!("color-palettes-{name}"));
+    }
+    for (moved, name) in [(0, "usual"), (-150, "narrow"), (-250, "narrower"), (-500, "narrowest")] {
+        let mut d = Driver::sized(size, 1.0);
+        d.app.set_page(Page::Deliver);
+        d.app.extra.prefs.panels.moved.clear();
+        if moved != 0 {
+            d.app
+                .extra
+                .prefs
+                .panels
+                .moved
+                .insert("deliver settings".to_string(), moved);
+        }
+        save(&mut d, &format!("deliver-form-{name}"));
+    }
+}

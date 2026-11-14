@@ -49,9 +49,106 @@ mod native {
     use crate::platform;
     use crate::theme::{self, regular, semibold};
 
-    const LABEL_RIGHT: f32 = 205.0;
-    const CONTROL_LEFT: f32 = 220.0;
-    const WIDE: f32 = 292.0;
+    /// How wide the form has to be for labels beside their controls: the widest row (the
+    /// location's field and its Browse button) ends 638 points from the form's left edge.
+    pub(super) const SIDE_BY_SIDE: f32 = 650.0;
+    /// The margin of the stacked form on each side.
+    const MARGIN: f32 = 14.0;
+    /// The height a label above its control takes in the stacked form.
+    const LABEL_BAND: f32 = 26.0;
+
+    /// Where the form puts its labels and controls. Wide enough, a label sits at the left of its
+    /// control. Narrower, the form stacks: the label goes above the control, the controls take
+    /// the width there is and what would not fit beside another goes under it, so that nothing
+    /// runs into a neighbour or past the column however narrow a divider makes it.
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(super) struct Geo {
+        pub stacked: bool,
+        pub label_right: f32,
+        pub control_left: f32,
+        /// The width of a wide control (a text field, a drop-down).
+        pub wide: f32,
+        /// The width the rows have.
+        pub width: f32,
+    }
+
+    impl Geo {
+        pub(super) fn for_width(width: f32) -> Self {
+            if width >= SIDE_BY_SIDE {
+                Geo {
+                    stacked: false,
+                    label_right: 205.0,
+                    control_left: 220.0,
+                    wide: 292.0,
+                    width,
+                }
+            } else {
+                let control_left = MARGIN + 8.0;
+                Geo {
+                    stacked: true,
+                    label_right: 0.0,
+                    control_left,
+                    wide: (width - control_left - MARGIN).clamp(110.0, 292.0),
+                    width,
+                }
+            }
+        }
+
+        /// The room a control starting at `x` points from the form's left edge has.
+        fn room(&self, x: f32) -> f32 {
+            (self.width - x - MARGIN).max(60.0)
+        }
+    }
+
+    thread_local! {
+        /// The geometry of the form being drawn (set by `render_form_in` for each frame).
+        static GEO: std::cell::Cell<Geo> = const { std::cell::Cell::new(Geo {
+            stacked: false,
+            label_right: 205.0,
+            control_left: 220.0,
+            wide: 292.0,
+            width: 685.0,
+        }) };
+    }
+
+    fn geo() -> Geo {
+        GEO.with(std::cell::Cell::get)
+    }
+
+    /// The extra height a row with a label needs when the label is above its control.
+    fn stack() -> f32 {
+        if geo().stacked {
+            LABEL_BAND
+        } else {
+            0.0
+        }
+    }
+
+    /// `text` cut short with an ellipsis so that it fits `room` points (an estimate: the form's
+    /// 18 point text is about 9 points a letter).
+    fn ellipsis(text: &str, room: f32) -> String {
+        // In the language chosen, so that it is the translation that is cut short.
+        let text = crate::i18n::translate_ui(crate::i18n::current(), text.trim()).unwrap_or(text);
+        let fits = (room / 9.0).floor().max(1.0) as usize;
+        if text.chars().count() <= fits {
+            text.to_string()
+        } else {
+            let mut cut: String = text.chars().take(fits.saturating_sub(1)).collect();
+            cut.push('…');
+            cut
+        }
+    }
+
+    /// `text` for a place `room` points wide to the row's right edge: whole in the usual form,
+    /// cut short with an ellipsis in the stacked one.
+    fn fitted(text: &str, room: f32) -> String {
+        if geo().stacked {
+            ellipsis(text, room - MARGIN)
+        } else {
+            text.to_string()
+        }
+    }
+
     const FIELD: Color32 = Color32::from_rgb(34, 33, 38);
     const FIELD_LINE: Color32 = Color32::from_rgb(12, 12, 15);
     const TEXT: Color32 = Color32::from_rgb(244, 240, 236);
@@ -98,23 +195,40 @@ mod native {
     }
 
     fn label(p: &Painter, row: Rect, text: &str, on: bool) {
-        crate::i18n::paint_text(&p,
-            pos2(row.left() + LABEL_RIGHT, row.center().y),
-            Align2::RIGHT_CENTER,
-            text,
-            regular(18.0),
-            if on {
-                Color32::from_rgb(160, 160, 166)
-            } else {
-                OFF
-            },
-        );
+        let g = geo();
+        let color = if on {
+            Color32::from_rgb(160, 160, 166)
+        } else {
+            OFF
+        };
+        if g.stacked {
+            // Above its control, at the control's left edge.
+            crate::i18n::paint_text(
+                &p,
+                pos2(row.left() + g.control_left, row.top() + 12.0),
+                Align2::LEFT_CENTER,
+                ellipsis(text, g.room(g.control_left)),
+                regular(18.0),
+                color,
+            );
+        } else {
+            crate::i18n::paint_text(
+                &p,
+                pos2(row.left() + g.label_right, row.center().y),
+                Align2::RIGHT_CENTER,
+                text,
+                regular(18.0),
+                color,
+            );
+        }
     }
 
+    /// The field of a row, `width` wide at most: in the stacked form what is left of the row.
     fn control(row: Rect, width: f32) -> Rect {
+        let g = geo();
         Rect::from_min_size(
-            pos2(row.left() + CONTROL_LEFT, row.center().y - 15.0),
-            vec2(width, 30.0),
+            pos2(row.left() + g.control_left, row.center().y - 15.0),
+            vec2(width.min(g.room(g.control_left)), 30.0),
         )
     }
 
@@ -157,7 +271,11 @@ mod native {
         crate::i18n::paint_text(&p,
             rect.left_center() + vec2(12.0, 0.0),
             Align2::LEFT_CENTER,
-            current,
+            if geo().stacked {
+                ellipsis(current, rect.width() - 44.0)
+            } else {
+                current.to_string()
+            },
             regular(18.0),
             enabled_text(on),
         );
@@ -233,10 +351,11 @@ mod native {
             vec2(24.0, 24.0),
         );
         let r = box_at(ui, id, rect, on, value);
+        let shown = fitted(text, row.right() - (rect.right() + 14.0));
         crate::i18n::paint_text(&ui.painter(),
             pos2(rect.right() + 14.0, row.center().y),
             Align2::LEFT_CENTER,
-            text,
+            shown,
             regular(18.0),
             enabled_text(on),
         );
@@ -278,7 +397,7 @@ mod native {
         crate::i18n::paint_text(&p,
             pos2(c.x + 22.0, c.y),
             Align2::LEFT_CENTER,
-            text,
+            fitted(text, row.right() - (c.x + 22.0)),
             regular(18.0),
             enabled_text(on),
         );
@@ -325,43 +444,47 @@ mod native {
             top: f32,
             bottom: f32,
         ) {
+            // However narrow a divider makes its column, the form fits it: see `Geo`.
             let pane = s.r(LEFT, top + BAR, LEFT_RIGHT - 1.0, bottom);
-            let usual = s.usual().r(LEFT, top + BAR, LEFT_RIGHT - 1.0, bottom);
-            if pane.width() >= usual.width() - 0.5 {
-                self.render_form_in(ui, ctx, pane);
-                return;
-            }
-            // Its column was made narrower than the form: the form keeps its size and scrolls
-            // sideways inside the column instead of running into the viewer.
-            ui.scope_builder(UiBuilder::new().max_rect(pane), |ui| {
-                egui::ScrollArea::horizontal()
-                    .id_salt("render_form_narrow")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let size = vec2(usual.width(), pane.height() - 12.0);
-                        let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-                        self.render_form_in(ui, ctx, rect);
-                    });
-            });
+            self.render_form_in(ui, ctx, pane);
         }
 
         /// The form in `pane`.
         fn render_form_in(&mut self, ui: &mut Ui, ctx: &Context, pane: Rect) {
             let painter = ui.painter().clone();
+            // The rows of the settings are 14 points narrower than the pane (the scroll bar).
+            let g = Geo::for_width(pane.width() - 14.0);
+            GEO.with(|cell| cell.set(g));
 
             // The preset, always in view.
             let preset_row = Rect::from_min_size(pane.min, vec2(pane.width(), 96.0));
-            crate::i18n::paint_text(&painter,
-                pos2(preset_row.left() + 88.0, preset_row.center().y),
-                Align2::RIGHT_CENTER,
-                "Preset",
-                regular(19.0),
-                Color32::from_rgb(160, 160, 166),
-            );
-            let box_rect = Rect::from_min_size(
-                pos2(preset_row.left() + 102.0, preset_row.center().y - 27.0),
-                vec2(392.0, 54.0),
-            );
+            let box_rect = if g.stacked {
+                crate::i18n::paint_text(
+                    &painter,
+                    pos2(preset_row.left() + MARGIN, preset_row.top() + 16.0),
+                    Align2::LEFT_CENTER,
+                    "Preset",
+                    regular(19.0),
+                    Color32::from_rgb(160, 160, 166),
+                );
+                Rect::from_min_size(
+                    pos2(preset_row.left() + MARGIN, preset_row.top() + 34.0),
+                    vec2((pane.width() - 2.0 * MARGIN).max(120.0), 54.0),
+                )
+            } else {
+                crate::i18n::paint_text(
+                    &painter,
+                    pos2(preset_row.left() + 88.0, preset_row.center().y),
+                    Align2::RIGHT_CENTER,
+                    "Preset",
+                    regular(19.0),
+                    Color32::from_rgb(160, 160, 166),
+                );
+                Rect::from_min_size(
+                    pos2(preset_row.left() + 102.0, preset_row.center().y - 27.0),
+                    vec2(392.0, 54.0),
+                )
+            };
             let r = ui.interact(box_rect, ui.id().with("preset_box"), Sense::click());
             painter.rect_filled(
                 box_rect,
@@ -386,7 +509,11 @@ mod native {
             crate::i18n::paint_text(&painter,
                 box_rect.left_center() + vec2(72.0, 0.0),
                 Align2::LEFT_CENTER,
-                &self.deliver_ui.preset_name,
+                if g.stacked {
+                    ellipsis(&self.deliver_ui.preset_name, box_rect.width() - 72.0 - 40.0)
+                } else {
+                    self.deliver_ui.preset_name.clone()
+                },
                 semibold(20.0),
                 TEXT,
             );
@@ -405,25 +532,37 @@ mod native {
                 Stroke::new(1.0, Color32::from_rgb(14, 14, 18)),
             );
 
-            // The footer: the size and the button.
-            let footer = Rect::from_min_max(pos2(pane.left(), pane.bottom() - 74.0), pane.max);
+            // The footer: the size and the button. Narrow, the size is above the button.
+            let footer_height = if g.stacked { 122.0 } else { 74.0 };
+            let footer =
+                Rect::from_min_max(pos2(pane.left(), pane.bottom() - footer_height), pane.max);
             painter.rect_filled(footer, 0.0, theme::POOL_HEADER_BG);
             painter.hline(
                 pane.x_range(),
                 footer.top(),
                 Stroke::new(1.0, Color32::from_rgb(14, 14, 18)),
             );
+            let size_y = if g.stacked {
+                footer.top() + 30.0
+            } else {
+                footer.center().y
+            };
             crate::i18n::paint_text(&painter,
-                pos2(footer.left() + 40.0, footer.center().y),
+                pos2(footer.left() + if g.stacked { MARGIN } else { 40.0 }, size_y),
                 Align2::LEFT_CENTER,
                 "Estimated File Size",
                 regular(18.0),
                 Color32::from_rgb(160, 160, 166),
             );
             let mb = self.estimated_mb();
+            let (size_at, size_align) = if g.stacked {
+                (pos2(footer.right() - MARGIN, size_y), Align2::RIGHT_CENTER)
+            } else {
+                (pos2(footer.left() + 232.0, size_y), Align2::LEFT_CENTER)
+            };
             crate::i18n::paint_text(&painter,
-                pos2(footer.left() + 232.0, footer.center().y),
-                Align2::LEFT_CENTER,
+                size_at,
+                size_align,
                 if mb >= 1024.0 {
                     format!("{:.2} GB", mb / 1024.0)
                 } else {
@@ -433,10 +572,17 @@ mod native {
                 theme::WHITE,
             );
             let can_add = self.project().duration() > 0;
-            let button = Rect::from_min_size(
-                pos2(footer.left() + 363.0, footer.center().y - 18.0),
-                vec2(262.0, 36.0),
-            );
+            let button = if g.stacked {
+                Rect::from_min_size(
+                    pos2(footer.left() + MARGIN, footer.top() + 66.0),
+                    vec2((footer.width() - 2.0 * MARGIN).max(100.0), 36.0),
+                )
+            } else {
+                Rect::from_min_size(
+                    pos2(footer.left() + 363.0, footer.center().y - 18.0),
+                    vec2(262.0, 36.0),
+                )
+            };
             let r = ui.interact(
                 button,
                 ui.id().with("add_to_queue"),
@@ -487,9 +633,18 @@ mod native {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         let width = scroll.width() - 14.0;
+                        // The rows follow one another from here, whatever widgets placed at
+                        // a rectangle (a text field, a number) did to the layout's cursor.
+                        let origin = ui.cursor().min;
+                        let mut used = 0.0;
                         let mut row = |ui: &mut Ui, height: f32| {
-                            ui.allocate_exact_size(vec2(width, height), Sense::hover())
-                                .0
+                            let rect = Rect::from_min_size(
+                                origin + vec2(0.0, used),
+                                vec2(width, height),
+                            );
+                            used += height;
+                            ui.expand_to_include_rect(rect);
+                            rect
                         };
                         self.form_top(ui, ctx, &mut row);
                         match self.deliver_ui.tab {
@@ -512,9 +667,9 @@ mod native {
             let p = ui.painter().clone();
             row(ui, 10.0);
             // File name.
-            let r = row(ui, 46.0);
+            let r = row(ui, 46.0 + stack());
             label(&p, r, "File Name", true);
-            let field = control(r, WIDE);
+            let field = control(r, geo().wide);
             let mut name = std::mem::take(&mut self.deliver_ui.file_name);
             text_field(
                 ui,
@@ -559,16 +714,22 @@ mod native {
                 self.deliver_ui.file_name.push_str(&text);
             }
             // Location.
-            let r = row(ui, 46.0);
+            // Narrow, the Browse button goes under the field.
+            let below = geo().stacked;
+            let r = row(ui, 46.0 + stack() + if below { 44.0 } else { 0.0 });
             label(&p, r, "Location", true);
-            let field = control(r, WIDE);
+            let field = control(r, geo().wide);
             let mut location = std::mem::take(&mut self.deliver_ui.location);
             text_field(ui, field, &mut location, "Choose a folder");
             self.deliver_ui.location = location;
-            let browse = Rect::from_min_size(
-                pos2(field.right() + 16.0, field.top() - 1.0),
-                vec2(110.0, 32.0),
-            );
+            let browse = if below {
+                Rect::from_min_size(pos2(field.left(), field.bottom() + 10.0), vec2(110.0, 32.0))
+            } else {
+                Rect::from_min_size(
+                    pos2(field.right() + 16.0, field.top() - 1.0),
+                    vec2(110.0, 32.0),
+                )
+            };
             let br = ui.interact(browse, ui.id().with("browse"), Sense::click());
             p.rect_filled(
                 browse,
@@ -599,14 +760,21 @@ mod native {
             let r = row(ui, 12.0);
             rule(&p, r);
             // Render: one file, or one for each clip.
-            let r = row(ui, 62.0);
+            // Narrow, the second choice goes under the first.
+            let wrap = geo().stacked && geo().width < 360.0;
+            let r = row(ui, 62.0 + stack() + if wrap { 32.0 } else { 0.0 });
             label(&p, r, "Render", true);
             let individual = self.deliver_ui.individual;
+            let (first, second) = if wrap {
+                (r.translate(vec2(0.0, -16.0)), r.translate(vec2(0.0, 16.0)))
+            } else {
+                (r, r)
+            };
             if radio(
                 ui,
-                r,
+                first,
                 "single",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Single clip",
                 !individual,
                 true,
@@ -615,9 +783,9 @@ mod native {
             }
             if radio(
                 ui,
-                r,
+                second,
                 "individual",
-                CONTROL_LEFT + 140.0,
+                geo().control_left + if wrap { -8.0 } else { 140.0 },
                 "Individual clips",
                 individual,
                 true,
@@ -628,10 +796,18 @@ mod native {
             rule(&p, r);
             // The tabs.
             let r = row(ui, 56.0);
-            let tabs = Rect::from_min_size(
-                pos2(r.left() + 86.0, r.center().y - 17.0),
-                vec2(462.0, 34.0),
-            );
+            let tabs = if geo().stacked {
+                Rect::from_min_size(
+                    pos2(r.left() + MARGIN, r.center().y - 17.0),
+                    vec2((r.width() - 2.0 * MARGIN).max(90.0), 34.0),
+                )
+            } else {
+                Rect::from_min_size(
+                    pos2(r.left() + 86.0, r.center().y - 17.0),
+                    vec2(462.0, 34.0),
+                )
+            };
+            let seg_width = tabs.width() / 3.0;
             p.rect_filled(tabs, 2.0, FIELD);
             p.rect_stroke(tabs, 2.0, Stroke::new(1.0, FIELD_LINE), StrokeKind::Inside);
             for (n, (tab, name)) in [
@@ -642,8 +818,10 @@ mod native {
             .into_iter()
             .enumerate()
             {
-                let seg =
-                    Rect::from_min_size(tabs.min + vec2(n as f32 * 154.0, 0.0), vec2(154.0, 34.0));
+                let seg = Rect::from_min_size(
+                    tabs.min + vec2(n as f32 * seg_width, 0.0),
+                    vec2(seg_width, 34.0),
+                );
                 let tr = ui.interact(seg, ui.id().with(("tab", name)), Sense::click());
                 if tr.clicked() {
                     self.deliver_ui.tab = tab;
@@ -692,7 +870,7 @@ mod native {
                 .iter()
                 .position(|(_, ps)| ps.contains(&preset))
                 .unwrap_or(0);
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let formats: Vec<(String, bool)> = FORMATS
                 .iter()
                 .map(|(n, ps)| (n.to_string(), ps.iter().any(|p| p.available())))
@@ -704,14 +882,14 @@ mod native {
                 "Format",
                 FORMATS[format_now].0,
                 &formats,
-                WIDE,
+                geo().wide,
                 true,
             ) {
                 if let Some(first) = FORMATS[i].1.iter().find(|p| p.available()) {
                     self.deliver.preset = *first;
                 }
             }
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let codecs: Vec<(String, bool)> = FORMATS[format_now]
                 .1
                 .iter()
@@ -724,7 +902,7 @@ mod native {
                 "Codec",
                 codec_name(preset),
                 &codecs,
-                WIDE,
+                geo().wide,
                 true,
             ) {
                 if let Some(p) = FORMATS[format_now].1.get(i) {
@@ -733,7 +911,7 @@ mod native {
             }
             // The processor's encoder or a graphics card's: the ones this FFmpeg has, those that did
             // not open on this computer greyed out.
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let choices = preset.hardware_choices();
             // A codec without a card's encoder (ProRes ...) shows Native but keeps the choice
             // for when an H.264, H.265 or AV1 codec is chosen again.
@@ -759,7 +937,7 @@ mod native {
                 "Encoder",
                 hardware.label(),
                 &list,
-                WIDE,
+                geo().wide,
                 is_file && choices.len() > 1,
             ) {
                 if let Some(h) = choices.get(i) {
@@ -776,7 +954,7 @@ mod native {
                 ui,
                 r,
                 "network",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Network Optimization",
                 self.deliver.options.faststart && mp4,
                 is_file && mp4,
@@ -787,7 +965,7 @@ mod native {
             rule(&p, r);
 
             // Resolution and frame rate.
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let mut names: Vec<(String, bool)> = vec![("Timeline Resolution".to_string(), true)];
             names.extend(RESOLUTIONS.iter().map(|(n, _, _)| (n.to_string(), true)));
             names.push(("Custom".to_string(), true));
@@ -799,7 +977,7 @@ mod native {
                 "Resolution",
                 &names[mode].0,
                 &names,
-                WIDE,
+                geo().wide,
                 is_video_preset,
             ) {
                 self.deliver_ui.res_mode = i;
@@ -816,16 +994,18 @@ mod native {
             };
             let r = row(ui, 44.0);
             let (mut cw, mut ch) = (w, h);
-            let left = pos2(r.left() + CONTROL_LEFT, r.center().y - 15.0);
+            let left = pos2(r.left() + geo().control_left, r.center().y - 15.0);
+            // The two numbers are narrower where the column is.
+            let nw = if geo().stacked { 84.0 } else { 100.0 };
             let changed_w = number(
                 ui,
-                Rect::from_min_size(left, vec2(100.0, 30.0)),
+                Rect::from_min_size(left, vec2(nw, 30.0)),
                 &mut cw,
                 16..=16_384,
                 custom && !self.deliver_ui.vertical,
             );
             crate::i18n::paint_text(&p,
-                pos2(left.x + 126.0, r.center().y),
+                pos2(left.x + nw + 26.0, r.center().y),
                 Align2::CENTER_CENTER,
                 "x",
                 regular(18.0),
@@ -833,7 +1013,7 @@ mod native {
             );
             let changed_h = number(
                 ui,
-                Rect::from_min_size(left + vec2(152.0, 0.0), vec2(100.0, 30.0)),
+                Rect::from_min_size(left + vec2(nw + 52.0, 0.0), vec2(nw, 30.0)),
                 &mut ch,
                 16..=16_384,
                 custom,
@@ -846,14 +1026,14 @@ mod native {
                 ui,
                 r,
                 "vertical",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Use vertical resolution",
                 self.deliver_ui.vertical,
                 custom,
             ) {
                 self.deliver_ui.vertical = v;
             }
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let mut rates: Vec<(String, bool)> = vec![("Timeline Frame Rate".to_string(), true)];
             rates.extend(
                 picasso_core::Fps::PRESETS
@@ -868,7 +1048,7 @@ mod native {
                 "Frame rate",
                 &rates[fps_now].0,
                 &rates,
-                WIDE,
+                geo().wide,
                 is_video_preset,
             ) {
                 self.deliver_ui.fps_choice = i;
@@ -882,7 +1062,7 @@ mod native {
                     .unwrap_or(self.project().fps),
             };
             crate::i18n::paint_text(&p,
-                pos2(r.left() + CONTROL_LEFT + 4.0, r.center().y),
+                pos2(r.left() + geo().control_left + 4.0, r.center().y),
                 Align2::LEFT_CENTER,
                 format!("{} frames per second", fps_label(shown)),
                 regular(18.0),
@@ -893,7 +1073,7 @@ mod native {
                 ui,
                 r,
                 "chapters",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Chapters from Markers",
                 self.deliver.options.chapters,
                 is_file,
@@ -910,7 +1090,7 @@ mod native {
             );
             let on_card = self.deliver.options.hardware != Hardware::Native;
             let ten = self.deliver.options.ten_bit;
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             // The profiles of the codec; for H.264, H.265, AV1 and VP9 the last is the 10-bit one.
             let profiles: Vec<(String, bool)> = match preset {
                 Preset::ProRes422 => [
@@ -982,14 +1162,14 @@ mod native {
                 }
             }
             // Key frames.
-            let r = row(ui, 34.0);
+            let r = row(ui, 34.0 + stack());
             label(&p, r, "Key Frames", encodes);
             let auto = self.deliver_ui.key_auto;
             if radio(
                 ui,
                 r,
                 "key_auto",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Automatic",
                 auto,
                 encodes,
@@ -1001,7 +1181,7 @@ mod native {
                 ui,
                 r,
                 "key_every",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Every",
                 !auto,
                 encodes,
@@ -1010,7 +1190,7 @@ mod native {
             }
             let mut every = self.deliver_ui.every;
             let field = Rect::from_min_size(
-                pos2(r.left() + CONTROL_LEFT + 86.0, r.center().y - 14.0),
+                pos2(r.left() + geo().control_left + 86.0, r.center().y - 14.0),
                 vec2(80.0, 28.0),
             );
             if number(ui, field, &mut every, 1..=600, encodes && !auto) {
@@ -1028,7 +1208,7 @@ mod native {
                 ui,
                 r,
                 "reorder",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Frame reordering",
                 self.deliver.options.frame_reordering,
                 encodes,
@@ -1037,7 +1217,7 @@ mod native {
             }
             row(ui, 14.0);
             // Speed, rate control and quality.
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let speeds = [
                 ("Faster", Speed::Faster),
                 ("Balanced", Speed::Balanced),
@@ -1052,7 +1232,7 @@ mod native {
             if let Some(i) = combo(ui, r, "speed", "Preset", current, &list, 188.0, encodes) {
                 self.deliver.options.speed = speeds[i].1;
             }
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let by_quality = matches!(self.deliver.options.rate, Rate::Quality(_));
             let modes = [
                 ("Quality".to_string(), true),
@@ -1075,7 +1255,7 @@ mod native {
                     Rate::Bitrate(8000)
                 };
             }
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             match self.deliver.options.rate {
                 Rate::Quality(q) => {
                     let list: Vec<(String, bool)> = Quality::ALL
@@ -1099,7 +1279,7 @@ mod native {
                     label(&p, r, "Bitrate", encodes);
                     let mut value = kbps;
                     let field = Rect::from_min_size(
-                        pos2(r.left() + CONTROL_LEFT, r.center().y - 15.0),
+                        pos2(r.left() + geo().control_left, r.center().y - 15.0),
                         vec2(120.0, 30.0),
                     );
                     if number(ui, field, &mut value, 100..=500_000, encodes) {
@@ -1134,13 +1314,13 @@ mod native {
         /// version does not have are kept and change nothing.
         fn form_advanced(&mut self, ui: &mut Ui, row: &mut dyn FnMut(&mut Ui, f32) -> Rect) {
             let p = ui.painter().clone();
-            let x = CONTROL_LEFT - 8.0;
+            let x = geo().control_left - 8.0;
             let video = !self.deliver.preset.is_audio_only();
             let is_file = video_file(self.deliver.preset);
             let on = video && is_file;
             row(ui, 6.0);
             // The shape of a pixel.
-            let r = row(ui, 38.0);
+            let r = row(ui, 38.0 + stack());
             label(&p, r, "Pixel aspect ratio", on);
             let cine = self.deliver_ui.cinemascope;
             if radio(ui, r, "pa_square", x, "Square", !cine, on) {
@@ -1153,7 +1333,7 @@ mod native {
             // The levels.
             let levels = self.deliver_ui.levels;
             for (n, name) in ["Auto", "Video", "Full"].into_iter().enumerate() {
-                let r = row(ui, 38.0);
+                let r = row(ui, 38.0 + stack());
                 if n == 0 {
                     label(&p, r, "Data Levels", on);
                 }
@@ -1174,7 +1354,7 @@ mod native {
                 self.deliver_ui.retain_blacks = v;
             }
             // The tags.
-            let r = row(ui, 46.0);
+            let r = row(ui, 46.0 + stack());
             let list: Vec<(String, bool)> = crate::deliver::COLOR_TAGS
                 .iter()
                 .map(|(n, _)| (n.to_string(), true))
@@ -1187,12 +1367,12 @@ mod native {
                 "Color Space Tag",
                 &list[tag].0,
                 &list,
-                WIDE,
+                geo().wide,
                 on,
             ) {
                 self.deliver_ui.color_tag = i;
             }
-            let r = row(ui, 46.0);
+            let r = row(ui, 46.0 + stack());
             let list: Vec<(String, bool)> = crate::deliver::GAMMA_TAGS
                 .iter()
                 .map(|(n, _)| (n.to_string(), true))
@@ -1205,7 +1385,7 @@ mod native {
                 "Gamma Tag",
                 &list[tag].0,
                 &list,
-                WIDE,
+                geo().wide,
                 on,
             ) {
                 self.deliver_ui.gamma_tag = i;
@@ -1213,7 +1393,7 @@ mod native {
             let r = row(ui, 14.0);
             rule(&p, r);
             // Burn-in.
-            let r = row(ui, 46.0);
+            let r = row(ui, 46.0 + stack());
             let list: Vec<(String, bool)> = crate::deliver::BURN_INS
                 .iter()
                 .map(|n| (n.to_string(), true))
@@ -1277,7 +1457,7 @@ mod native {
             rule(&p, r);
             // Passes.
             let off_on = [("Off".to_string(), true), ("On".to_string(), true)];
-            let r = row(ui, 46.0);
+            let r = row(ui, 46.0 + stack());
             let now = usize::from(self.deliver_ui.flat_pass);
             if let Some(i) = combo(
                 ui,
@@ -1291,7 +1471,7 @@ mod native {
             ) {
                 self.deliver_ui.flat_pass = i == 1;
             }
-            let r = row(ui, 46.0);
+            let r = row(ui, 46.0 + stack());
             let now = usize::from(self.deliver_ui.vision_bypass);
             if let Some(i) = combo(
                 ui,
@@ -1300,7 +1480,7 @@ mod native {
                 "visionOS Bypass",
                 &off_on[now].0,
                 &off_on,
-                WIDE,
+                geo().wide,
                 true,
             ) {
                 self.deliver_ui.vision_bypass = i == 1;
@@ -1320,10 +1500,17 @@ mod native {
             let r = row(ui, 14.0);
             rule(&p, r);
             // A program at the start or end of the job.
-            let r = row(ui, 56.0);
+            // Narrow, the Start/End choice goes under the check box.
+            let below = geo().stacked;
+            let r = row(ui, if below { 96.0 } else { 56.0 });
+            let (boxed, beside) = if below {
+                (r.translate(vec2(0.0, -20.0)), r.translate(vec2(0.0, 20.0)))
+            } else {
+                (r, r)
+            };
             if let Some(v) = check(
                 ui,
-                r,
+                boxed,
                 "script",
                 x,
                 "Trigger script at",
@@ -1333,8 +1520,11 @@ mod native {
                 self.deliver_ui.script_on = v;
             }
             let at = Rect::from_min_size(
-                pos2(r.left() + CONTROL_LEFT + 218.0, r.center().y - 15.0),
-                vec2(130.0, 30.0),
+                pos2(
+                    beside.left() + geo().control_left + if below { 0.0 } else { 218.0 },
+                    beside.center().y - 15.0,
+                ),
+                vec2(if below { 96.0 } else { 130.0 }, 30.0),
             );
             let list = [("Start".to_string(), true), ("End".to_string(), true)];
             let now = usize::from(self.deliver_ui.script_at_end);
@@ -1380,16 +1570,16 @@ mod native {
                 self.deliver_ui.script_at_end = i == 1;
             }
             crate::i18n::paint_text(&p,
-                pos2(at.right() + 14.0, r.center().y),
+                pos2(at.right() + if below { 10.0 } else { 14.0 }, at.center().y),
                 Align2::LEFT_CENTER,
                 "of render job",
                 regular(18.0),
                 enabled_text(self.deliver_ui.script_on),
             );
             if self.deliver_ui.script_on {
-                let r = row(ui, 46.0);
+                let r = row(ui, 46.0 + stack());
                 label(&p, r, "Program", true);
-                let field = control(r, WIDE + 130.0);
+                let field = control(r, geo().wide + 130.0);
                 let mut path = std::mem::take(&mut self.deliver_ui.script_path);
                 text_field(ui, field, &mut path, "Path of a program or script");
                 self.deliver_ui.script_path = path;
@@ -1423,7 +1613,7 @@ mod native {
             rule(&p, r);
             let on = self.deliver_ui.export_subtitle;
             row(ui, 8.0);
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let format = self.deliver_ui.subtitle_format.min(FORMATS.len() - 1);
             // Embedded captions need a container that carries them; this version writes none.
             let list: Vec<(String, bool)> = FORMATS
@@ -1438,12 +1628,12 @@ mod native {
                 "Format",
                 FORMATS[format],
                 &list,
-                WIDE,
+                geo().wide,
                 on,
             ) {
                 self.deliver_ui.subtitle_format = i;
             }
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let kind = self.deliver_ui.subtitle_kind;
             let separate = format == 0;
             let list: Vec<(String, bool)> = SubtitleKind::ALL
@@ -1457,7 +1647,7 @@ mod native {
                 "Export As",
                 kind.label(),
                 &list,
-                WIDE,
+                geo().wide,
                 on && separate,
             ) {
                 if let Some(k) = SubtitleKind::ALL.get(i) {
@@ -1532,7 +1722,7 @@ mod native {
             rule(&p, r);
             let on = has_sound && self.deliver.options.audio;
             // The codec: each file type has its own, and a QuickTime file AAC or linear PCM.
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let mov = matches!(preset, Preset::ProRes422 | Preset::DnxHr);
             let pcm_now = mov && self.deliver.options.audio_codec != AudioCodec::Aac;
             let shown = match preset {
@@ -1548,7 +1738,7 @@ mod native {
             } else {
                 vec![(shown.to_string(), true)]
             };
-            if let Some(i) = combo(ui, r, "acodec", "Codec", shown, &list, WIDE, on && mov) {
+            if let Some(i) = combo(ui, r, "acodec", "Codec", shown, &list, geo().wide, on && mov) {
                 self.deliver.options.audio_codec = if i == 0 {
                     AudioCodec::Aac
                 } else {
@@ -1556,21 +1746,21 @@ mod native {
                 };
             }
             // The data rate of the codecs that have one.
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             let rates = [128u32, 192, 256, 320];
             let list: Vec<(String, bool)> =
                 rates.iter().map(|k| (format!("{k} kbps"), true)).collect();
             let current = format!("{} kbps", self.deliver.options.audio_kbps);
             let has_rate = on && matches!(shown, "AAC" | "Opus" | "MP3");
-            if let Some(i) = combo(ui, r, "arate", "Data Rate", &current, &list, WIDE, has_rate) {
+            if let Some(i) = combo(ui, r, "arate", "Data Rate", &current, &list, geo().wide, has_rate) {
                 if let Some(k) = rates.get(i) {
                     self.deliver.options.audio_kbps = *k;
                 }
             }
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             label(&p, r, "Output Track 1", on);
             crate::i18n::paint_text(&p,
-                pos2(r.left() + CONTROL_LEFT + 4.0, r.center().y),
+                pos2(r.left() + geo().control_left + 4.0, r.center().y),
                 Align2::LEFT_CENTER,
                 "Main, stereo, 48 kHz",
                 regular(18.0),
@@ -1602,20 +1792,20 @@ mod native {
             );
             let r = row(ui, 12.0);
             rule(&p, r);
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             label(&p, r, "File type", true);
             let ext = match self.deliver.preset.extension() {
                 "" => "folder of PNG pictures".to_string(),
                 e => format!(".{e}"),
             };
             crate::i18n::paint_text(&p,
-                pos2(r.left() + CONTROL_LEFT + 4.0, r.center().y),
+                pos2(r.left() + geo().control_left + 4.0, r.center().y),
                 Align2::LEFT_CENTER,
                 ext,
                 regular(18.0),
                 TEXT,
             );
-            let r = row(ui, 44.0);
+            let r = row(ui, 44.0 + stack());
             label(&p, r, "Range", true);
             let (marks, whole) = (
                 self.project().mark_in.is_some() || self.project().mark_out.is_some(),
@@ -1626,7 +1816,7 @@ mod native {
                 ui,
                 r2,
                 "range_whole",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "Whole timeline",
                 whole,
                 true,
@@ -1638,7 +1828,7 @@ mod native {
                 ui,
                 r,
                 "range_marks",
-                CONTROL_LEFT - 8.0,
+                geo().control_left - 8.0,
                 "In to out marks",
                 !whole,
                 marks,
@@ -1653,6 +1843,33 @@ mod native {
             "29.97".to_string()
         } else {
             format!("{}", f.as_f64())
+        }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod geometry_tests {
+    use super::native::{Geo, SIDE_BY_SIDE};
+
+    #[test]
+    fn a_wide_form_keeps_its_labels_beside_the_controls() {
+        let g = Geo::for_width(685.0);
+        assert!(!g.stacked);
+        assert_eq!((g.label_right, g.control_left, g.wide), (205.0, 220.0, 292.0));
+        assert!(!Geo::for_width(SIDE_BY_SIDE).stacked);
+    }
+
+    #[test]
+    fn a_narrow_form_stacks_and_its_controls_stay_inside_it() {
+        // From just under the wide layout down to the narrowest a divider allows (0.4 of 685).
+        for width in [649.0, 500.0, 360.0, 274.0, 150.0] {
+            let g = Geo::for_width(width);
+            assert!(g.stacked, "{width}");
+            assert!(
+                g.control_left + g.wide <= width.max(g.control_left + 110.0),
+                "{width}: a wide control must not pass the right edge"
+            );
+            assert!(g.wide >= 110.0);
         }
     }
 }

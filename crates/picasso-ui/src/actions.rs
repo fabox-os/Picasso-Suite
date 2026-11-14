@@ -1005,6 +1005,7 @@ impl StudioApp {
             | Act::ToggleHighlight => self.current_clip().is_some(),
             Act::ChangeClipSpeed
             | Act::AddEffect(_)
+            | Act::ApplyLook(_)
             | Act::SpeedRamp
             | Act::ChangeClipDuration
             | Act::LockClip
@@ -1015,6 +1016,8 @@ impl StudioApp {
             | Act::SetClipColor(_)
             | Act::NormalizeAudio => self.target_clip().is_some(),
             Act::AutoAlignWaveform => self.can_align_by_waveform(),
+            Act::MarkBeats => self.can_mark_beats(),
+            Act::AutoSubtitles => self.can_auto_subtitle(),
             Act::AutoAlignTimecode => {
                 let ids = self.selected_ids();
                 ids.len() >= 2
@@ -1162,6 +1165,35 @@ impl StudioApp {
             Act::AddTextPlus => self.add_text_plus(),
             Act::TrackEq => self.open_track_fx(crate::track_fx::FxTab::Eq),
             Act::TrackDynamics => self.open_track_fx(crate::track_fx::FxTab::Dynamics),
+            Act::AddAudioEffect(kind) => self.add_audio_effect(kind),
+            Act::ChooseVideoLayout => self.open_video_layout(),
+            Act::MarkBeats => self.mark_beats(),
+            Act::AutoSubtitles => self.open_auto_subtitles(),
+            Act::ApplyLook(i) => match (self.target_clip(), picasso_core::effect_looks::LOOKS.get(i)) {
+                (Some(clip), Some(look)) => {
+                    let mut effects = self
+                        .project()
+                        .clip(clip)
+                        .map(|(_, c)| c.effects.clone())
+                        .unwrap_or_default();
+                    if effects.len() + look.effects.len() > picasso_core::MAX_EFFECTS {
+                        self.fail(format!(
+                            "{} adds {} effects: a clip has at most {}",
+                            look.label,
+                            look.effects.len(),
+                            picasso_core::MAX_EFFECTS
+                        ));
+                    } else {
+                        effects.extend(look.effect_list());
+                        if self.run(Command::SetEffects { clip, effects }).is_some() {
+                            self.inspector_open = true;
+                            self.info(format!("Added the look {}: change it in the Inspector", look.label));
+                        }
+                    }
+                }
+                (None, _) => self.fail("select a clip first"),
+                (_, None) => {}
+            },
             Act::AddEffect(kind) => match self.target_clip() {
                 Some(clip) => {
                     if self.run(Command::AddEffect { clip, kind }).is_some() {

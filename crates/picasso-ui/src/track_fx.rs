@@ -2,15 +2,20 @@
 //! Effects > Audio FX menu and the Inspector.
 
 use egui::{pos2, Color32, Context, Rect, Sense, Stroke, Ui};
-use picasso_core::{Command, TrackFx, TrackId, TrackKind, EQ_RANGE_DB};
+use picasso_core::{
+    AudioEffect, AudioEffectGroup, AudioEffectKind, Command, TrackFx, TrackId, TrackKind,
+    EQ_RANGE_DB, MAX_CHAIN,
+};
 
 use crate::app::StudioApp;
 
-/// Which of the two the window shows.
+/// Which of the three the window shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FxTab {
     Eq,
     Dynamics,
+    /// The sound effects: reverb, echo, voice changers...
+    Effects,
 }
 
 /// The frequencies on the EQ graph, log spaced.
@@ -64,12 +69,15 @@ impl StudioApp {
         let Some((track, mut tab)) = self.extra.track_fx else {
             return;
         };
-        let Some((name, mut fx)) = self.project().track(track).map(|t| (t.name.clone(), t.fx))
+        let Some((name, mut fx)) = self
+            .project()
+            .track(track)
+            .map(|t| (t.name.clone(), t.fx.clone()))
         else {
             self.extra.track_fx = None;
             return;
         };
-        let before = fx;
+        let before = fx.clone();
         let mut open = true;
         egui::Window::new(format!("{name} - Audio FX"))
             .id(egui::Id::new("track_fx_window"))
@@ -80,11 +88,13 @@ impl StudioApp {
                 ui.horizontal(|ui| {
                     ui.selectable_value(&mut tab, FxTab::Eq, "EQ");
                     ui.selectable_value(&mut tab, FxTab::Dynamics, "Dynamics");
+                    ui.selectable_value(&mut tab, FxTab::Effects, "Effects");
                 });
                 ui.separator();
                 match tab {
                     FxTab::Eq => eq_controls(ui, &mut fx),
                     FxTab::Dynamics => dynamics_controls(ui, &mut fx),
+                    FxTab::Effects => chain_controls(ui, &mut fx),
                 }
             });
         if fx != before {
@@ -97,9 +107,97 @@ impl StudioApp {
     pub(crate) fn track_fx_of(&self, track: TrackId) -> TrackFx {
         self.project()
             .track(track)
-            .map(|t| t.fx)
+            .map(|t| t.fx.clone())
             .unwrap_or_default()
     }
+
+    /// Adds sound effect `kind` to the track of the clip being worked on (or the first sound
+    /// track) and opens its Effects list.
+    pub(crate) fn add_audio_effect(&mut self, kind: AudioEffectKind) {
+        self.open_track_fx(FxTab::Effects);
+        let Some((track, _)) = self.extra.track_fx else {
+            return;
+        };
+        let mut fx = self.track_fx_of(track);
+        if fx.chain.len() >= MAX_CHAIN {
+            self.fail(format!("a track has at most {MAX_CHAIN} sound effects"));
+            return;
+        }
+        fx.chain.push(AudioEffect::new(kind));
+        if self.run(Command::SetTrackFx { track, fx }).is_some() {
+            self.info(format!("Added {} to the track", kind.label()));
+        }
+    }
+}
+
+/// The sound effects of the track: each with its switch, its knobs and buttons to move or remove
+/// it, and a menu to add another.
+fn chain_controls(ui: &mut Ui, fx: &mut TrackFx) {
+    if fx.chain.is_empty() {
+        ui.weak("No sound effects yet. Add one below, or from Effects > Audio FX.");
+    }
+    let count = fx.chain.len();
+    let mut remove = None;
+    let mut swap = None;
+    egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+        for (i, effect) in fx.chain.iter_mut().enumerate() {
+            ui.push_id(i, |ui| {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut effect.enabled, "");
+                    ui.label(egui::RichText::new(effect.kind.label()).strong());
+                    ui.weak(effect.kind.group().label());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("Remove").clicked() {
+                            remove = Some(i);
+                        }
+                        if ui.add_enabled(i + 1 < count, egui::Button::new("Down").small()).clicked() {
+                            swap = Some((i, i + 1));
+                        }
+                        if ui.add_enabled(i > 0, egui::Button::new("Up").small()).clicked() {
+                            swap = Some((i - 1, i));
+                        }
+                        if ui.small_button("Reset").clicked() {
+                            *effect = AudioEffect {
+                                enabled: effect.enabled,
+                                ..AudioEffect::new(effect.kind)
+                            };
+                        }
+                    });
+                });
+                ui.add_enabled_ui(effect.enabled, |ui| {
+                    for (value, spec) in effect.params.iter_mut().zip(effect.kind.params()) {
+                        ui.add(
+                            egui::Slider::new(value, spec.min..=spec.max)
+                                .logarithmic(spec.log)
+                                .text(spec.label)
+                                .suffix(spec.unit),
+                        );
+                    }
+                });
+                ui.separator();
+            });
+        }
+    });
+    if let Some(i) = remove {
+        fx.chain.remove(i);
+    }
+    if let Some((a, b)) = swap {
+        fx.chain.swap(a, b);
+    }
+    ui.add_enabled_ui(fx.chain.len() < MAX_CHAIN, |ui| {
+        ui.menu_button("Add sound effect", |ui| {
+            for group in AudioEffectGroup::ALL {
+                ui.menu_button(group.label(), |ui| {
+                    for kind in AudioEffectKind::ALL.iter().filter(|k| k.group() == group) {
+                        if ui.button(kind.label()).clicked() {
+                            fx.chain.push(AudioEffect::new(*kind));
+                            ui.close();
+                        }
+                    }
+                });
+            }
+        });
+    });
 }
 
 fn eq_controls(ui: &mut Ui, fx: &mut TrackFx) {

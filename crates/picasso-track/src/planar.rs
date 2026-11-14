@@ -3,7 +3,7 @@
 //! by the homography found for the previous frame so that perspective and rotation do not spoil
 //! the match. RANSAC with a normalised DLT turns the matches into the plane's homography, which
 //! re-warps the patches for a second, finer pass. The patches are taken from the start frame (no
-//! drift) and re-taken from the current frame when the matches get weak.
+//! wandering) and re-taken from the current frame when the matches get weak.
 
 use crate::homography::{
     estimate_homography, homography_from_quads, is_convex_quad, quad_area, Homography, Quad,

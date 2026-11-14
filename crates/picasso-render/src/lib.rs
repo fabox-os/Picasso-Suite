@@ -9,12 +9,14 @@ mod cache;
 mod compose;
 mod frames;
 mod generators;
+mod looks;
 #[cfg(test)]
 mod sheets;
 mod smooth_cut;
 mod temporal;
 mod source;
 mod text;
+mod title_motion;
 mod transform;
 pub mod transitions;
 mod wipes;

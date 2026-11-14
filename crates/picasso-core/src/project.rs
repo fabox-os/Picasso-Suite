@@ -130,6 +130,9 @@ pub struct TextStyle {
     pub align: TextAlign,
     /// The text's own opacity, in percent.
     pub opacity: u32,
+    /// How the title comes in, and over how many milliseconds from the start of its clip.
+    pub animation: crate::title_animation::TitleAnimation,
+    pub animation_ms: u32,
 }
 
 impl Default for TextStyle {
@@ -149,6 +152,8 @@ impl Default for TextStyle {
             line_spacing: 100,
             align: TextAlign::Center,
             opacity: 100,
+            animation: crate::title_animation::TitleAnimation::None,
+            animation_ms: 600,
         }
     }
 }
@@ -169,6 +174,9 @@ impl TextStyle {
         self.tracking = self.tracking.clamp(-300, 1000);
         self.line_spacing = self.line_spacing.clamp(50, 400);
         self.opacity = self.opacity.min(100);
+        self.animation_ms = self
+            .animation_ms
+            .clamp(*crate::title_animation::ANIMATION_MS.start(), *crate::title_animation::ANIMATION_MS.end());
         self
     }
 }
@@ -678,11 +686,30 @@ pub enum TransitionKind {
     StarShape6,
     TriangleLeftShape,
     TriangleRightShape,
+    // Looks made of noise, cells and light (the picture changes in blobs, cells, rain, ...).
+    InterferenceBlast,
+    Bubbles,
+    ZoomSwirl,
+    Honeycomb,
+    InkBleed,
+    KaleidoscopeSpin,
+    LensFlareWipe,
+    LiquidSmudge,
+    LumaFade,
+    DigitalRain,
+    ParticleWind,
+    PixelSwap,
+    PlasmaBurn,
+    RadialZoomBlur,
+    RgbDisplacement,
+    TriangleMosaic,
+    VhsRoll,
+    Shatter,
 }
 
 impl TransitionKind {
     /// Every kind: the two dissolves, then the more transitions.
-    pub const ALL: [Self; 97] = [
+    pub const ALL: [Self; 115] = [
         Self::CrossDissolve,
         Self::DipToBlack,
         Self::BrightnessFlash,
@@ -780,6 +807,24 @@ impl TransitionKind {
         Self::StarShape6,
         Self::TriangleLeftShape,
         Self::TriangleRightShape,
+        Self::InterferenceBlast,
+        Self::Bubbles,
+        Self::ZoomSwirl,
+        Self::Honeycomb,
+        Self::InkBleed,
+        Self::KaleidoscopeSpin,
+        Self::LensFlareWipe,
+        Self::LiquidSmudge,
+        Self::LumaFade,
+        Self::DigitalRain,
+        Self::ParticleWind,
+        Self::PixelSwap,
+        Self::PlasmaBurn,
+        Self::RadialZoomBlur,
+        Self::RgbDisplacement,
+        Self::TriangleMosaic,
+        Self::VhsRoll,
+        Self::Shatter,
     ];
 
     /// The 45 more transitions (zooms, glitch, slides, blur dissolve, ...), in the order of the
@@ -790,7 +835,13 @@ impl TransitionKind {
 
     /// The 50 wipes, irises and shapes, in the order of the Wipe, Iris and Shape menus.
     pub fn wipes() -> &'static [Self] {
-        &Self::ALL[47..]
+        &Self::ALL[47..97]
+    }
+
+    /// The 18 looks made of noise, cells and light (ink, bubbles, honeycomb, rain, shatter...), in
+    /// the order of the Looks menu.
+    pub fn looks() -> &'static [Self] {
+        &Self::ALL[97..]
     }
 
     /// The name people know it by.
@@ -893,6 +944,24 @@ impl TransitionKind {
             Self::StarShape6 => "Star 6-Point",
             Self::TriangleLeftShape => "Triangle Left",
             Self::TriangleRightShape => "Triangle Right",
+            Self::InterferenceBlast => "Interference Blast",
+            Self::Bubbles => "Bubbles",
+            Self::ZoomSwirl => "Zoom Swirl",
+            Self::Honeycomb => "Honeycomb",
+            Self::InkBleed => "Ink Bleed",
+            Self::KaleidoscopeSpin => "Kaleidoscope Spin",
+            Self::LensFlareWipe => "Lens Flare Wipe",
+            Self::LiquidSmudge => "Liquid Smudge",
+            Self::LumaFade => "Luma Fade",
+            Self::DigitalRain => "Digital Rain",
+            Self::ParticleWind => "Particle Wind",
+            Self::PixelSwap => "Pixel Swap",
+            Self::PlasmaBurn => "Plasma Burn",
+            Self::RadialZoomBlur => "Radial Zoom Blur",
+            Self::RgbDisplacement => "RGB Displacement",
+            Self::TriangleMosaic => "Triangle Mosaic",
+            Self::VhsRoll => "VHS Roll",
+            Self::Shatter => "Shatter",
         }
     }
 
@@ -1610,7 +1679,7 @@ impl Project {
         for t in &mut self.tracks {
             t.gain_db = t.gain_db.clamp(MIN_GAIN_DB, MAX_GAIN_DB);
             t.pan = t.pan.clamp(-1.0, 1.0);
-            t.fx = t.fx.sanitized();
+            t.fx = std::mem::take(&mut t.fx).sanitized();
             for c in &mut t.clips {
                 c.audio = c.audio.sanitized(c.duration);
                 c.keyframes = std::mem::take(&mut c.keyframes)

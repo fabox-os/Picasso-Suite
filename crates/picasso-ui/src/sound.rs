@@ -121,8 +121,8 @@ mod native {
 
     use super::{scrub_step, ScrubStep, SCRUB};
 
-    /// The playhead and the sound may drift this far apart (in samples) before the sound jumps.
-    const DRIFT: i64 = SAMPLE_RATE as i64 / 15;
+    /// The playhead and the sound may be this far apart (in samples) before the sound jumps.
+    const CLOCK_SLACK: i64 = SAMPLE_RATE as i64 / 15;
     /// How far ahead of the play position sound is decoded, in seconds.
     const AHEAD: u64 = 4;
 
@@ -205,7 +205,7 @@ mod native {
                 if !self.active {
                     out.play(at);
                     self.active = true;
-                } else if (out.position() as i64 - at as i64).abs() > DRIFT {
+                } else if (out.position() as i64 - at as i64).abs() > CLOCK_SLACK {
                     out.seek(at);
                 }
                 // Keep decoding ahead of the play position, once a second.

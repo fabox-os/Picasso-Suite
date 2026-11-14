@@ -43,6 +43,12 @@ pub(crate) struct Extra {
     pub asymmetric: bool,
     /// The Speed Ramp window.
     pub ramp: Option<RampDialog>,
+    /// The Create Subtitles from Audio window, while it is open.
+    pub auto_subtitles: Option<crate::auto_subtitles::AutoSubtitles>,
+    /// The Choose Video Layout window, while it is open.
+    pub video_layout: Option<crate::video_layout::VideoLayoutChooser>,
+    /// The project's video layout has been asked about (or the project is past the question).
+    pub video_layout_decided: bool,
     /// The Audio FX window: the track and whether it shows the EQ or the dynamics.
     pub track_fx: Option<(picasso_core::TrackId, crate::track_fx::FxTab)>,
     /// Clip Attributes: the clip and the name being typed.
@@ -706,6 +712,11 @@ impl StudioApp {
             self.fail(format!("{name}: no subtitles found"));
             return;
         }
+        self.place_subtitles(name, cues);
+    }
+
+    /// Puts `cues` (in frames of the timeline) on a new track as subtitles, one undo step.
+    pub(crate) fn place_subtitles(&mut self, name: &str, cues: Vec<crate::subtitles::Cue>) {
         let mut first: Vec<Command> = cues
             .iter()
             .enumerate()
@@ -740,7 +751,7 @@ impl StudioApp {
                 .collect()
         });
         match result {
-            Ok(_) => self.info(format!("Imported {} subtitles from {name}", cues.len())),
+            Ok(_) => self.info(format!("Added {} subtitles from {name}", cues.len())),
             Err(e) => self.fail(format!("{name}: {e}")),
         }
     }
@@ -1334,6 +1345,8 @@ impl StudioApp {
     /// The windows of this module.
     pub(crate) fn extra_windows(&mut self, ctx: &Context) {
         self.track_fx_window(ctx);
+        self.video_layout_window(ctx);
+        self.auto_subtitles_window(ctx);
         self.multicam_windows(ctx);
         self.attributes_window(ctx);
         self.ramp_window(ctx);

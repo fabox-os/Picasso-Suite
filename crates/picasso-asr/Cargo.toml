@@ -1,0 +1,21 @@
+[package]
+name = "picasso-asr"
+description = "Speech to text for auto subtitles: Whisper run in pure Rust, models downloaded when first wanted (desktop only)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Pure Rust tensors and the Whisper model; no runtime library to install.
+candle-core = "0.9"  # MIT OR Apache-2.0
+candle-nn = "0.9"  # MIT OR Apache-2.0
+candle-transformers = "0.9"  # MIT OR Apache-2.0
+# Checks a downloaded model is the file that was meant.
+sha2 = "0.10"  # MIT OR Apache-2.0
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true
