@@ -873,7 +873,7 @@ mod tests {
     }
 
     /// A stabilized clip exports through the same render path: `render()` applies
-    /// `clip.stabilization.matrix_at(frame)` inside `draw_clip()`, so a clip with analyzed
+    /// `clip_warp()` inside `draw_clip()`, so a clip with analyzed
     /// transforms still writes every frame without erroring.
     #[test]
     fn stabilized_export_writes_every_frame() {

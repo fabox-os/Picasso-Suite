@@ -2088,7 +2088,6 @@ name = "picasso-core"
 version = "0.7.0"
 dependencies = [
  "picasso-color",
- "picasso-track",
  "quick-xml",
  "serde",
  "serde_json",

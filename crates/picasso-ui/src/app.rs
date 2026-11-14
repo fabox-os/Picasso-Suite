@@ -221,7 +221,11 @@ pub struct StudioApp {
     #[cfg(not(target_arch = "wasm32"))]
     #[allow(clippy::type_complexity)]
     pub(crate) match_move_rx: Option<
-        std::sync::mpsc::Receiver<(picasso_core::ClipId, Result<Vec<[[f32; 3]; 3]>, String>)>,
+        std::sync::mpsc::Receiver<(
+            picasso_core::ClipId,
+            picasso_core::TrackPoint,
+            Result<Vec<picasso_core::Matrix3>, String>,
+        )>,
     >,
     /// Receiver half of the channel the background Color page window tracking sends its result
     /// on (desktop only): the clip, the node, the window's index and what was tracked.
@@ -451,57 +455,62 @@ impl StudioApp {
     }
 
     /// Applies a background stabilization analysis result to the given clip as one undo step.
+    /// The measured camera path goes in; the settings the user has now (method, smoothness, crop)
+    /// stay as they are, including any change made while the analysis was running.
     pub(crate) fn apply_stabilization_result(&mut self) {
         let Some((clip_id, result)) = self.stab_rx.as_mut().and_then(|rx| rx.try_recv().ok()) else {
             return;
         };
-        let Ok(matrices) = result else {
-            self.fail(format!("stabilization analysis failed: {result:?}"));
+        let matrices = match result {
+            Ok(m) => m,
+            Err(e) => {
+                self.fail(e);
+                return;
+            }
+        };
+        let Some((_, clip)) = self.project().clip(clip_id) else {
             return;
         };
-        let settings = picasso_core::StabilizationSettings {
-            enabled: true,
-            method: picasso_core::StabilizationMethod::Similarity,
-            smoothness: 5.0,
-            crop_mode: picasso_core::StabilizationCropMode::AutoZoom,
-            crop_percent: 5.0,
-            analyzed_transforms: matrices
-                .into_iter()
-                .enumerate()
-                .map(|(i, m)| picasso_core::FrameTransform {
-                    frame_number: i as i64,
-                    matrix: m,
-                })
-                .collect(),
-        };
+        let mut settings = clip.stabilization.clone();
+        settings.enabled = true;
+        settings.analyzed_transforms = frame_transforms(matrices);
         self.run(Command::SetStabilization {
             clip: clip_id,
             stabilization: settings,
         });
     }
 
-    /// Applies a background match-move analysis result to the given clip as one undo step.
+    /// Applies a background match-move result to the given clip as one undo step: the tracked
+    /// point and its position in every frame replace the clip's point track. Other tracks (the
+    /// Color page windows) are kept.
     pub(crate) fn apply_match_move_result(&mut self) {
-        let Some((clip_id, result)) = self.match_move_rx.as_mut().and_then(|rx| rx.try_recv().ok()) else {
+        let Some((clip_id, point, result)) =
+            self.match_move_rx.as_mut().and_then(|rx| rx.try_recv().ok())
+        else {
             return;
         };
-        let Ok(matrices) = result else {
-            self.fail(format!("match-move tracking failed: {result:?}"));
+        let matrices = match result {
+            Ok(m) => m,
+            Err(e) => {
+                self.fail(e);
+                return;
+            }
+        };
+        let Some((_, clip)) = self.project().clip(clip_id) else {
             return;
         };
-        let tracking_data = vec![picasso_core::TrackData {
+        let mut tracking_data: Vec<picasso_core::TrackData> = clip
+            .tracking_data
+            .iter()
+            .filter(|t| t.tracker_type != picasso_core::TrackerType::Point)
+            .cloned()
+            .collect();
+        tracking_data.push(picasso_core::TrackData {
             track_id: clip_id.0,
             tracker_type: picasso_core::TrackerType::Point,
-            points: vec![picasso_core::TrackPoint::default()],
-            analyzed_frames: matrices
-                .into_iter()
-                .enumerate()
-                .map(|(i, m)| picasso_core::FrameTransform {
-                    frame_number: i as i64,
-                    matrix: m,
-                })
-                .collect(),
-        }];
+            points: vec![point],
+            analyzed_frames: frame_transforms(matrices),
+        });
         self.run(Command::SetTrackingData {
             clip: clip_id,
             tracking_data,
@@ -592,152 +601,62 @@ impl StudioApp {
         self.info(format!("Window tracked: {} frames", result.frames));
     }
 
-    /// Starts measuring camera movement on a background thread, then applies the result as one
-    /// undo step when it arrives. Desktop only (no FFmpeg in the browser).
+    /// Measures the camera movement of clip `id` on a background thread, then stores it as one
+    /// undo step when it arrives. Desktop only.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_stabilization_analysis(
         &mut self,
         ctx: &Context,
         id: picasso_core::ClipId,
         media: String,
-        duration: u64,
         method: picasso_core::StabilizationMethod,
     ) {
-        let path = media;
-        let fps = self.project().fps;
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let times = clip_frame_times_us(self.project(), clip);
+        let mode = match method {
+            picasso_core::StabilizationMethod::Translation => {
+                picasso_track::stabilize::Mode::Translation
+            }
+            picasso_core::StabilizationMethod::Similarity => {
+                picasso_track::stabilize::Mode::Similarity
+            }
+            picasso_core::StabilizationMethod::Perspective => {
+                picasso_track::stabilize::Mode::Perspective
+            }
+        };
         let (tx, rx) = std::sync::mpsc::channel();
         self.stab_rx = Some(rx);
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let result = (|| -> Result<Vec<[[f32; 3]; 3]>, String> {
-                let mut decoder =
-                    picasso_decode::VideoDecoder::open(Path::new(&path))
-                        .map_err(|e| format!("cannot open {path}: {e}"))?;
-                let mut frames = Vec::with_capacity(duration as usize);
-                for i in 0..duration {
-                    let pts_us =
-                        (i as f64 * 1_000_000.0 * f64::from(fps.den) / f64::from(fps.num)) as i64;
-                    let frame = decoder
-                        .frame_at(pts_us)
-                        .map_err(|e| format!("cannot read frame {i}: {e}"))?;
-                    let gray = picasso_track::image::GrayImage::from_rgba8(
-                        frame.width as usize,
-                        frame.height as usize,
-                        &frame.rgba,
-                    )
-                    .ok_or("failed to convert frame to grayscale")?;
-                    frames.push(gray);
-                }
-                if frames.len() < 2 {
-                    return Err("need at least two frames".into());
-                }
-                let mut previous = frames.remove(0);
-                let mut mats = Vec::with_capacity(frames.len());
-                mats.push([
-                    [1.0f32, 0.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    [0.0, 0.0, 1.0],
-                ]);
-                let mode = match method {
-                    picasso_core::StabilizationMethod::Translation =>
-                        picasso_track::stabilize::Mode::Translation,
-                    picasso_core::StabilizationMethod::Similarity =>
-                        picasso_track::stabilize::Mode::Similarity,
-                    picasso_core::StabilizationMethod::Perspective =>
-                        picasso_track::stabilize::Mode::Perspective,
-                };
-                for next in frames {
-                    let motion =
-                        picasso_track::stabilize::estimate_frame_motion(&previous, &next, mode);
-                    previous = next;
-                    if motion.ok {
-                        let m = &motion.m.m;
-                        mats.push([
-                            [m[0] as f32, m[1] as f32, m[2] as f32],
-                            [m[3] as f32, m[4] as f32, m[5] as f32],
-                            [m[6] as f32, m[7] as f32, m[8] as f32],
-                        ]);
-                    } else {
-                        mats.push([
-                            [1.0f32, 0.0, 0.0],
-                            [0.0, 1.0, 0.0],
-                            [0.0, 0.0, 1.0],
-                        ]);
-                    }
-                }
-                Ok(mats)
-            })();
+            let result = analyse_camera(&media, &times, mode);
             let _ = tx.send((id, result));
             ctx.request_repaint();
         });
     }
 
-    /// Starts point tracking on `clip`'s media on a background thread, then applies the result as
-    /// one undo step when it arrives. Desktop only.
+    /// Tracks the point `point` of clip `id` through the clip on a background thread, then
+    /// stores the result as one undo step when it arrives. Desktop only.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_match_move_analysis(
         &mut self,
         ctx: &Context,
         id: picasso_core::ClipId,
         media: String,
-        duration: u64,
+        point: picasso_core::TrackPoint,
     ) {
-        let path = media;
-        let fps = self.project().fps;
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let times = clip_frame_times_us(self.project(), clip);
         let (tx, rx) = std::sync::mpsc::channel();
         self.match_move_rx = Some(rx);
         let ctx = ctx.clone();
+        let tracked = point.clone();
         std::thread::spawn(move || {
-            let result = (|| -> Result<Vec<[[f32; 3]; 3]>, String> {
-                let mut decoder =
-                    picasso_decode::VideoDecoder::open(Path::new(&path))
-                        .map_err(|e| format!("cannot open {path}: {e}"))?;
-                let mut frames = Vec::with_capacity(duration as usize);
-                for i in 0..duration {
-                    let pts_us =
-                        (i as f64 * 1_000_000.0 * f64::from(fps.den) / f64::from(fps.num)) as i64;
-                    let frame = decoder
-                        .frame_at(pts_us)
-                        .map_err(|e| format!("cannot read frame {i}: {e}"))?;
-                    let gray = picasso_track::image::GrayImage::from_rgba8(
-                        frame.width as usize,
-                        frame.height as usize,
-                        &frame.rgba,
-                    )
-                    .ok_or("failed to convert frame to grayscale")?;
-                    frames.push(gray);
-                }
-                if frames.len() < 2 {
-                    return Err("need at least two frames".into());
-                }
-                let mut previous = frames.remove(0);
-                let mut mats = Vec::with_capacity(frames.len());
-                mats.push([
-                    [1.0f32, 0.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    [0.0, 0.0, 1.0],
-                ]);
-                for next in frames {
-                    let motion = picasso_track::stabilize::estimate_frame_motion(&previous, &next, picasso_track::stabilize::Mode::Translation);
-                    previous = next;
-                    if motion.ok {
-                        let m = &motion.m.m;
-                        mats.push([
-                            [m[0] as f32, m[1] as f32, m[2] as f32],
-                            [m[3] as f32, m[4] as f32, m[5] as f32],
-                            [m[6] as f32, m[7] as f32, m[8] as f32],
-                        ]);
-                    } else {
-                        mats.push([
-                            [1.0f32, 0.0, 0.0],
-                            [0.0, 1.0, 0.0],
-                            [0.0, 0.0, 1.0],
-                        ]);
-                    }
-                }
-                Ok(mats)
-            })();
-            let _ = tx.send((id, result));
+            let result = track_point(&media, &times, &tracked);
+            let _ = tx.send((id, point, result));
             ctx.request_repaint();
         });
     }
@@ -745,7 +664,6 @@ impl StudioApp {
     /// Tracks the chosen Color page window's region through the clip on a background thread, then
     /// re-centres the window and stores the motion as one undo step. Desktop only.
     #[cfg(not(target_arch = "wasm32"))]
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start_window_tracking(
         &mut self,
         ctx: &Context,
@@ -753,122 +671,17 @@ impl StudioApp {
         node: usize,
         index: usize,
         media: String,
-        duration: u64,
         window: picasso_color::PowerWindow,
     ) {
-        let path = media;
-        let fps = self.project().fps;
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let times = clip_frame_times_us(self.project(), clip);
         let (tx, rx) = std::sync::mpsc::channel();
         self.window_track_rx = Some(rx);
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let result = (|| -> Result<WindowTrackResult, String> {
-                let mut decoder = picasso_decode::VideoDecoder::open(Path::new(&path))
-                    .map_err(|e| format!("cannot open {path}: {e}"))?;
-                let mut frames = Vec::with_capacity(duration as usize);
-                for i in 0..duration {
-                    let pts_us = (i as f64 * 1_000_000.0 * f64::from(fps.den)
-                        / f64::from(fps.num)) as i64;
-                    let frame = decoder
-                        .frame_at(pts_us)
-                        .map_err(|e| format!("cannot read frame {i}: {e}"))?;
-                    let gray = picasso_track::image::GrayImage::from_rgba8(
-                        frame.width as usize,
-                        frame.height as usize,
-                        &frame.rgba,
-                    )
-                    .ok_or("failed to convert frame to grayscale")?;
-                    frames.push(gray);
-                }
-                if frames.len() < 2 {
-                    return Err("need at least two frames".into());
-                }
-                let (w, h) = (frames[0].width() as f64, frames[0].height() as f64);
-                let (sin, cos) = (window.rotation as f64).to_radians().sin_cos();
-                let cx = window.center[0] as f64 * w;
-                let cy = window.center[1] as f64 * h;
-                let rx = (window.size[0] as f64 * w / 2.0).max(2.0);
-                let ry = (window.size[1] as f64 * h / 2.0).max(2.0);
-                let corner = |u: f64, v: f64| {
-                    picasso_track::Vec2::new(cx + u * cos - v * sin, cy + u * sin + v * cos)
-                };
-                let quad = [
-                    corner(-rx, -ry),
-                    corner(rx, -ry),
-                    corner(rx, ry),
-                    corner(-rx, ry),
-                ];
-                let mut planar =
-                    picasso_track::PlanarTracker::new(picasso_track::PlanarSettings::default());
-                let use_planar = planar.reset(&frames[0], &quad);
-                let mut point =
-                    picasso_track::PointTracker::new(picasso_track::TrackerSettings::default());
-                let use_point = !use_planar
-                    && point.reset(
-                        &frames[0],
-                        picasso_track::Vec2::new(cx.clamp(0.0, w - 1.0), cy.clamp(0.0, h - 1.0)),
-                    );
-                if !use_planar && !use_point {
-                    return Err("the window has too little detail to track".into());
-                }
-                let identity = picasso_track::Homography::default();
-                // Normalized picture coordinates (origin at the centre, the picture spanning
-                // -0.5..0.5 on both axes), the convention `FrameTransform` stores.
-                let to_px = picasso_track::Homography {
-                    m: [w, 0.0, w / 2.0, 0.0, h, h / 2.0, 0.0, 0.0, 1.0],
-                };
-                let to_norm = to_px.inverse().unwrap_or_default();
-                let mut motion = identity;
-                let mut matrices = Vec::with_capacity(frames.len());
-                let mut center_sum = picasso_track::Vec2::new(cx, cy);
-                matrices.push([
-                    [1.0f32, 0.0, 0.0],
-                    [0.0, 1.0, 0.0],
-                    [0.0, 0.0, 1.0],
-                ]);
-                for frame in &frames[1..] {
-                    motion = if use_planar {
-                        planar.track(frame).motion
-                    } else {
-                        let tracked = point.track(frame);
-                        if tracked.ok {
-                            picasso_track::Homography {
-                                m: [
-                                    1.0,
-                                    0.0,
-                                    tracked.position.x - cx,
-                                    0.0,
-                                    1.0,
-                                    tracked.position.y - cy,
-                                    0.0,
-                                    0.0,
-                                    1.0,
-                                ],
-                            }
-                        } else {
-                            motion
-                        }
-                    };
-                    let center = motion.map(picasso_track::Vec2::new(cx, cy));
-                    center_sum.x += center.x;
-                    center_sum.y += center.y;
-                    let m = to_norm.after(&motion).after(&to_px);
-                    matrices.push([
-                        [m.m[0] as f32, m.m[1] as f32, m.m[2] as f32],
-                        [m.m[3] as f32, m.m[4] as f32, m.m[5] as f32],
-                        [m.m[6] as f32, m.m[7] as f32, m.m[8] as f32],
-                    ]);
-                }
-                let count = matrices.len() as f64;
-                Ok(WindowTrackResult {
-                    frames: matrices.len(),
-                    center: [
-                        (center_sum.x / count / w) as f32,
-                        (center_sum.y / count / h) as f32,
-                    ],
-                    matrices,
-                })
-            })();
+            let result = track_window(&media, &times, &window);
             let _ = tx.send((id, node, index, result));
             ctx.request_repaint();
         });
@@ -2225,4 +2038,207 @@ impl StudioApp {
     }
 
     // ----- shared pieces of the pages -----
+}
+
+/// One matrix per clip frame, numbered by position.
+fn frame_transforms(matrices: Vec<picasso_core::Matrix3>) -> Vec<picasso_core::FrameTransform> {
+    matrices
+        .into_iter()
+        .enumerate()
+        .map(|(i, matrix)| picasso_core::FrameTransform {
+            frame_number: i as i64,
+            matrix,
+        })
+        .collect()
+}
+
+/// The presentation time, in microseconds, of each frame of `clip` as the renderer reads it, so
+/// the analyses measure exactly the pictures the clip shows.
+#[cfg(not(target_arch = "wasm32"))]
+fn clip_frame_times_us(project: &picasso_core::Project, clip: &picasso_core::Clip) -> Vec<i64> {
+    let fps = project.fps;
+    let media_length = project.media(clip.media).and_then(|m| m.length);
+    (0..clip.duration)
+        .map(|k| {
+            let mut frame = clip.source_frame_at(clip.start + k);
+            if media_length.is_some_and(|l| frame >= l) {
+                frame = clip.source_frame_at(clip.end().saturating_sub(1).max(clip.start));
+            }
+            let us =
+                u128::from(frame) * 1_000_000 * u128::from(fps.den) / u128::from(fps.num.max(1));
+            i64::try_from(us).unwrap_or(i64::MAX)
+        })
+        .collect()
+}
+
+/// The picture at `pts_us` as grey, or `None` when it cannot be read.
+#[cfg(not(target_arch = "wasm32"))]
+fn decode_gray(
+    decoder: &mut picasso_decode::VideoDecoder,
+    pts_us: i64,
+) -> Option<picasso_track::GrayImage> {
+    let frame = decoder.frame_at(pts_us).ok()?;
+    picasso_track::GrayImage::from_rgba8(frame.width as usize, frame.height as usize, &frame.rgba)
+}
+
+/// A measured map as the matrix a clip stores.
+#[cfg(not(target_arch = "wasm32"))]
+fn homography_matrix(h: &picasso_track::Homography) -> picasso_core::Matrix3 {
+    let m = &h.m;
+    [
+        [m[0] as f32, m[1] as f32, m[2] as f32],
+        [m[3] as f32, m[4] as f32, m[5] as f32],
+        [m[6] as f32, m[7] as f32, m[8] as f32],
+    ]
+}
+
+/// The camera path over the clip's frames (see `picasso_track::stabilize::analyse`). Frames are
+/// read one at a time, so a long clip does not have to fit in memory.
+#[cfg(not(target_arch = "wasm32"))]
+fn analyse_camera(
+    media: &str,
+    times: &[i64],
+    mode: picasso_track::stabilize::Mode,
+) -> Result<Vec<picasso_core::Matrix3>, String> {
+    if times.len() < 2 {
+        return Err("stabilization needs at least two frames".into());
+    }
+    let mut decoder = picasso_decode::VideoDecoder::open(Path::new(media))
+        .map_err(|e| format!("cannot open {media}: {e}"))?;
+    let path = picasso_track::stabilize::analyse(
+        mode,
+        times.len(),
+        &mut |i| decode_gray(&mut decoder, times[i]),
+        &mut |_, _| {},
+        None,
+    )
+    .map_err(|e| format!("stabilization analysis failed: {e:?}"))?;
+    Ok(path.frames.iter().map(homography_matrix).collect())
+}
+
+/// The position of one point in every frame, as translations from its first position (in
+/// normalized picture coordinates). A frame the point is lost in keeps the last position found.
+#[cfg(not(target_arch = "wasm32"))]
+fn track_point(
+    media: &str,
+    times: &[i64],
+    point: &picasso_core::TrackPoint,
+) -> Result<Vec<picasso_core::Matrix3>, String> {
+    if times.len() < 2 {
+        return Err("tracking needs at least two frames".into());
+    }
+    let mut decoder = picasso_decode::VideoDecoder::open(Path::new(media))
+        .map_err(|e| format!("cannot open {media}: {e}"))?;
+    let first = decode_gray(&mut decoder, times[0]).ok_or("cannot read the first frame")?;
+    let (w, h) = (first.width() as f64, first.height() as f64);
+    let start = picasso_track::Vec2::new(
+        (f64::from(point.x) * w).clamp(0.0, w - 1.0),
+        (f64::from(point.y) * h).clamp(0.0, h - 1.0),
+    );
+    let mut tracker = picasso_track::PointTracker::new(picasso_track::TrackerSettings::default());
+    if !tracker.reset(&first, start) {
+        return Err("the point has too little detail to track".into());
+    }
+    let mut matrices = vec![picasso_core::IDENTITY];
+    let mut at = start;
+    for &t in &times[1..] {
+        let frame = decode_gray(&mut decoder, t).ok_or("cannot read a frame")?;
+        let tracked = tracker.track(&frame);
+        if tracked.ok {
+            at = tracked.position;
+        }
+        let (dx, dy) = ((at.x - start.x) / w, (at.y - start.y) / w);
+        matrices.push([[1.0, 0.0, dx as f32], [0.0, 1.0, dy as f32], [0.0, 0.0, 1.0]]);
+    }
+    Ok(matrices)
+}
+
+/// Follows the region of a Color page window through the clip (a planar region when it has
+/// enough detail, else its centre point) and says where the window's motion took it.
+#[cfg(not(target_arch = "wasm32"))]
+fn track_window(
+    media: &str,
+    times: &[i64],
+    window: &picasso_color::PowerWindow,
+) -> Result<WindowTrackResult, String> {
+    if times.len() < 2 {
+        return Err("need at least two frames".into());
+    }
+    let mut decoder = picasso_decode::VideoDecoder::open(Path::new(media))
+        .map_err(|e| format!("cannot open {media}: {e}"))?;
+    let first = decode_gray(&mut decoder, times[0]).ok_or("cannot read the first frame")?;
+    let (w, h) = (first.width() as f64, first.height() as f64);
+    let (sin, cos) = (window.rotation as f64).to_radians().sin_cos();
+    let cx = window.center[0] as f64 * w;
+    let cy = window.center[1] as f64 * h;
+    let rx = (window.size[0] as f64 * w / 2.0).max(2.0);
+    let ry = (window.size[1] as f64 * h / 2.0).max(2.0);
+    let corner = |u: f64, v: f64| {
+        picasso_track::Vec2::new(cx + u * cos - v * sin, cy + u * sin + v * cos)
+    };
+    let quad = [
+        corner(-rx, -ry),
+        corner(rx, -ry),
+        corner(rx, ry),
+        corner(-rx, ry),
+    ];
+    let mut planar = picasso_track::PlanarTracker::new(picasso_track::PlanarSettings::default());
+    let use_planar = planar.reset(&first, &quad);
+    let mut point = picasso_track::PointTracker::new(picasso_track::TrackerSettings::default());
+    let use_point = !use_planar
+        && point.reset(
+            &first,
+            picasso_track::Vec2::new(cx.clamp(0.0, w - 1.0), cy.clamp(0.0, h - 1.0)),
+        );
+    if !use_planar && !use_point {
+        return Err("the window has too little detail to track".into());
+    }
+    // Pixels <-> normalized picture coordinates (origin at the centre, one unit = the width on
+    // both axes), the convention `FrameTransform` stores.
+    let to_px = picasso_track::Homography {
+        m: [w, 0.0, w / 2.0, 0.0, w, h / 2.0, 0.0, 0.0, 1.0],
+    };
+    let to_norm = to_px.inverse().unwrap_or_default();
+    let mut motion = picasso_track::Homography::default();
+    let mut matrices = vec![picasso_core::IDENTITY];
+    let mut center_sum = picasso_track::Vec2::new(cx, cy);
+    for &t in &times[1..] {
+        let frame = decode_gray(&mut decoder, t).ok_or("cannot read a frame")?;
+        motion = if use_planar {
+            planar.track(&frame).motion
+        } else {
+            let tracked = point.track(&frame);
+            if tracked.ok {
+                picasso_track::Homography {
+                    m: [
+                        1.0,
+                        0.0,
+                        tracked.position.x - cx,
+                        0.0,
+                        1.0,
+                        tracked.position.y - cy,
+                        0.0,
+                        0.0,
+                        1.0,
+                    ],
+                }
+            } else {
+                motion
+            }
+        };
+        let center = motion.map(picasso_track::Vec2::new(cx, cy));
+        center_sum.x += center.x;
+        center_sum.y += center.y;
+        let m = to_norm.after(&motion).after(&to_px);
+        matrices.push(homography_matrix(&m));
+    }
+    let count = matrices.len() as f64;
+    Ok(WindowTrackResult {
+        frames: matrices.len(),
+        center: [
+            (center_sum.x / count / w) as f32,
+            (center_sum.y / count / h) as f32,
+        ],
+        matrices,
+    })
 }

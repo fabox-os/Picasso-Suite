@@ -1,21 +1,20 @@
 //! Moving, scaling, turning and cropping a layer, and mixing layers with a blend mode.
 
-use picasso_core::{BlendMode, Transform};
+use picasso_core::{BlendMode, PictureWarp, Transform};
 
 /// Draws `layer` (`w * h` RGBA) into `out` (the same size) with `t` applied. Where the moved
 /// picture does not reach, `out` is transparent.
 ///
-/// When `stab` is `Some`, it is a stabilization matrix (frame 0 -> current frame, normalized
-/// picture coordinates). Each output pixel is mapped through `t` into the current frame and then
-/// back through `stab`'s inverse to frame 0, so the footage is shown with the camera movement
-/// removed. Crop bounds are applied to the stabilized position, so auto-zoom can cut off the
-/// edges the stabilization reveals.
+/// With `warp` (stabilization or a tracked point), the picture is first zoomed about its centre
+/// and then sampled through `warp.matrix`: each output pixel takes the footage at
+/// `matrix * p` in normalized picture coordinates (see `picasso_core::tracking`). Edges the warp
+/// reveals stay transparent, unless the zoom has covered them.
 pub(crate) fn apply(
     layer: &[u8],
     out: &mut [u8],
     (w, h): (usize, usize),
     t: &Transform,
-    stab: Option<&[[f32; 3]; 3]>,
+    warp: Option<&PictureWarp>,
 ) {
     out.fill(0);
     if w == 0 || h == 0 || layer.len() < w * h * 4 || out.len() < w * h * 4 {
@@ -26,25 +25,23 @@ pub(crate) fn apply(
     let (sin, cos) = angle.sin_cos();
     let (left, right) = (t.crop_left * wf, (1.0 - t.crop_right) * wf);
     let (top, bottom) = (t.crop_top * hf, (1.0 - t.crop_bottom) * hf);
-    let stab_inv = stab.and_then(homography_inverse);
     for y in 0..h {
         for x in 0..w {
             // The output pixel, relative to where the picture's middle now is, in pixels.
             let dx = (x as f32 + 0.5) - wf * (0.5 + t.x);
             let dy = (y as f32 + 0.5) - hf * (0.5 + t.y);
-            // Undo the turn (clockwise on screen) and the scale to find the source pixel in the
-            // current (unstabilized) frame.
+            // Undo the turn (clockwise on screen) and the scale to find the source pixel.
             let rx = dx * cos + dy * sin;
             let ry = -dx * sin + dy * cos;
             let mut sx = rx / t.scale_x + wf * 0.5;
             let mut sy = ry / t.scale_y + hf * 0.5;
-            // Remove the camera movement: map the current-frame point back to frame 0.
-            if let Some(inv) = stab_inv {
-                let nx = (sx - wf * 0.5) / wf;
-                let ny = (sy - hf * 0.5) / hf;
-                let (nx2, ny2) = homography_map(&inv, nx, ny);
+            if let Some(warp) = warp {
+                // Normalized picture coordinates: one unit is the picture width on both axes.
+                let nx = (sx - wf * 0.5) / wf / warp.zoom;
+                let ny = (sy - hf * 0.5) / wf / warp.zoom;
+                let (nx2, ny2) = homography_map(&warp.matrix, nx, ny);
                 sx = (nx2 + 0.5) * wf;
-                sy = (ny2 + 0.5) * hf;
+                sy = ny2 * wf + hf * 0.5;
             }
             if sx < left || sx >= right || sy < top || sy >= bottom {
                 continue;
@@ -53,31 +50,6 @@ pub(crate) fn apply(
             sample(layer, (w, h), sx - 0.5, sy - 0.5, &mut out[dst..dst + 4]);
         }
     }
-}
-
-/// Inverts a 3x3 homography matrix, or `None` when it is singular.
-fn homography_inverse(m: &[[f32; 3]; 3]) -> Option<[[f32; 3]; 3]> {
-    let a = &m[0];
-    let b = &m[1];
-    let c = &m[2];
-    let det = a[0] * (b[1] * c[2] - b[2] * c[1])
-        - a[1] * (b[0] * c[2] - b[2] * c[0])
-        + a[2] * (b[0] * c[1] - b[1] * c[0]);
-    if !det.is_finite() || det.abs() < 1e-12 {
-        return None;
-    }
-    let inv = 1.0 / det;
-    let mut r = [[0.0; 3]; 3];
-    r[0][0] = (b[1] * c[2] - b[2] * c[1]) * inv;
-    r[0][1] = (a[2] * c[1] - a[1] * c[2]) * inv;
-    r[0][2] = (a[1] * b[2] - a[2] * b[1]) * inv;
-    r[1][0] = (b[2] * c[0] - b[0] * c[2]) * inv;
-    r[1][1] = (a[0] * c[2] - a[2] * c[0]) * inv;
-    r[1][2] = (a[2] * b[0] - a[0] * b[2]) * inv;
-    r[2][0] = (b[0] * c[1] - b[1] * c[0]) * inv;
-    r[2][1] = (a[1] * c[0] - a[0] * c[1]) * inv;
-    r[2][2] = (a[0] * b[1] - a[1] * b[0]) * inv;
-    Some(r)
 }
 
 /// Maps a normalized point through a 3x3 homography.

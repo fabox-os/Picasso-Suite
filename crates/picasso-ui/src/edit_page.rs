@@ -1593,7 +1593,7 @@ impl StudioApp {
                 .add_enabled(!analysing, egui::Button::new("Analyze"))
                 .clicked()
             {
-                self.start_stabilization_analysis(ctx, id, path, clip.duration, s.method);
+                self.start_stabilization_analysis(ctx, id, path, s.method);
             }
         }
         if s != original {
@@ -1623,7 +1623,6 @@ impl StudioApp {
                 _ => None,
             })
             .unwrap_or_default();
-        let duration = clip.duration;
         let existing_td = clip
             .tracking_data
             .iter()
@@ -1655,26 +1654,23 @@ impl StudioApp {
             .add_enabled(!analysing, egui::Button::new("Track point"))
             .clicked()
         {
-            self.start_match_move_analysis(ctx, id, path, duration);
+            self.start_match_move_analysis(ctx, id, path, td.points[0].clone());
         }
         if !td.analyzed_frames.is_empty() {
             ui.label(
                 RichText::new(format!("{} frames tracked", td.analyzed_frames.len())).small(),
             );
-            ui.horizontal(|ui| {
-                if ui.button("Apply to transform").clicked() {
-                    self.run(Command::SetTrackingData {
-                        clip: id,
-                        tracking_data: vec![td.clone()],
-                    });
-                }
-                if ui.button("Clear tracking data").clicked() {
-                    self.run(Command::SetTrackingData {
-                        clip: id,
-                        tracking_data: vec![],
-                    });
-                }
-            });
+            if ui.button("Clear tracking data").clicked() {
+                self.run(Command::SetTrackingData {
+                    clip: id,
+                    tracking_data: vec![],
+                });
+            }
+        }
+        // The analysis is of the point it was run on: a point that has moved needs tracking again.
+        let first_point = |t: &picasso_core::TrackData| t.points.first().cloned().unwrap_or_default();
+        if first_point(&td) != first_point(&existing_td) {
+            td.analyzed_frames.clear();
         }
         if td != existing_td {
             self.run(Command::SetTrackingData {

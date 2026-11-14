@@ -488,7 +488,6 @@ impl StudioApp {
                 _ => None,
             })
             .unwrap_or_default();
-        let duration = self.project().clip(id).map_or(0, |(_, clip)| clip.duration);
 
         // Adding windows.
         let shapes = [
@@ -639,7 +638,6 @@ impl StudioApp {
                         node,
                         chosen,
                         media_path.clone(),
-                        duration,
                         w.clone(),
                     );
                 }

@@ -40,6 +40,6 @@ pub use project::{
 pub use session::Session;
 pub use time::Fps;
 pub use tracking::{
-    FrameTransform, StabilizationCropMode, StabilizationMethod, StabilizationSettings, TrackData,
-    TrackPoint, TrackerType,
+    fit_zoom, warp_for_frame, FrameTransform, Matrix3, PictureWarp, StabilizationCropMode, IDENTITY,
+    StabilizationMethod, StabilizationSettings, TrackData, TrackPoint, TrackerType,
 };
