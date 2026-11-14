@@ -3,6 +3,8 @@
 //! ```text
 //! picasso-bridge info <file.drp>              what the file holds, and which media is missing
 //! picasso-bridge convert <file.drp> [out]     writes a Picasso Suite project (default: next to it)
+//! picasso-bridge export-otio <file.drp> [out.otio]
+//!                                           writes an OpenTimelineIO file (default: next to it)
 //! picasso-bridge install-linux [--exec PATH]  opens Resolve files with Picasso Suite from the
 //!                                             desktop (Linux: a .desktop entry and MIME types)
 //! ```
@@ -16,6 +18,7 @@ use std::process::ExitCode;
 const USAGE: &str = "usage:
   picasso-bridge info <file.drp>
   picasso-bridge convert <file.drp> [out.picasso]
+  picasso-bridge export-otio <file.drp> [out.otio]
   picasso-bridge install-linux [--exec /path/to/picasso-suite]";
 
 fn main() -> ExitCode {
@@ -26,6 +29,10 @@ fn main() -> ExitCode {
             .get(1)
             .ok_or(USAGE.to_string())
             .and_then(|f| convert(f, args.get(2).map(String::as_str))),
+        Some("export-otio") => args
+            .get(1)
+            .ok_or(USAGE.to_string())
+            .and_then(|f| export_otio(f, args.get(2).map(String::as_str))),
         Some("install-linux") => {
             let exec = args
                 .iter()
@@ -104,6 +111,19 @@ fn convert(file: &str, out: Option<&str>) -> Result<(), String> {
         out.display(),
         project.media.len()
     );
+    Ok(())
+}
+
+fn export_otio(file: &str, out: Option<&str>) -> Result<(), String> {
+    let p = read(file)?;
+    let project = picasso_drp::to_project(&p, &stem(file));
+    let otio = picasso_core::otio::to_otio(&project);
+    let out = out.map_or_else(
+        || Path::new(file).with_extension("otio"),
+        PathBuf::from,
+    );
+    std::fs::write(&out, otio).map_err(|e| format!("{}: {e}", out.display()))?;
+    println!("Wrote {}", out.display());
     Ok(())
 }
 

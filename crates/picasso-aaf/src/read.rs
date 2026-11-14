@@ -17,8 +17,10 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 
 use cfb::CompoundFile;
-use picasso_core::otio::{path_of_url, OtioClip, OtioMedia, OtioTimeline, OtioTrack, MAX_ITEMS};
-use picasso_core::{Fps, TrackKind, Transition, TransitionKind};
+use picasso_core::otio::{
+    path_of_url, OtioClip, OtioMedia, OtioTimeline, OtioTrack, MAX_ITEMS, MAX_NESTING_DEPTH,
+};
+use picasso_core::{Fps, Marker, TrackKind, Transition, TransitionKind};
 use uuid::Uuid;
 
 use crate::{class, data, id, pid, SF_DATA, SF_STRONG, SF_STRONG_SET, SF_STRONG_VECTOR, SF_WEAK};
@@ -37,6 +39,10 @@ const USAGE_CODE: u16 = 0x4408;
 const SELECTED: u16 = 0x0f01;
 const CHOICES: u16 = 0x0501;
 const INPUT_SEGMENTS: u16 = 0x0b02;
+
+/// The Edit Protocol operations a time warp is written with.
+const VIDEO_SPEED_CONTROL: Uuid = id("9d2ea890-0968-11d3-8a38-0050040ef7d2");
+const VIDEO_REPEAT: Uuid = id("9d2ea891-0968-11d3-8a38-0050040ef7d2");
 
 /// A composition meant as an editor's timeline, rather than one used inside another.
 const USAGE_TOP_LEVEL: Uuid = id("0d010102-0101-0300-060e-2b3404010105");
@@ -314,6 +320,39 @@ fn source_clip_of(seg: &Object) -> Option<&Object> {
     }
 }
 
+/// The time warp of a component: speed multiplier, direction and freeze, from an operation
+/// group's operation and, for a speed change, its Speed Ratio parameter. `None` for a component
+/// that plays at normal speed.
+fn time_warp(component: &Object) -> Option<(f32, bool, bool)> {
+    if component.class != class::OPERATION_GROUP {
+        return None;
+    }
+    let operation = component.weak_auid(pid::OPERATION)?;
+    if operation == VIDEO_REPEAT {
+        return Some((1.0, false, true));
+    }
+    if operation != VIDEO_SPEED_CONTROL {
+        return None;
+    }
+    // The Speed Ratio parameter: output length over input length, negative when reversed.
+    let value = component.list(pid::PARAMETERS).first()?.data(pid::PARAMETER_VALUE)?;
+    let num = i32::from_le_bytes(value.get(..4)?.try_into().ok()?);
+    let den = i32::from_le_bytes(value.get(4..8)?.try_into().ok()?);
+    if num == 0 || den == 0 {
+        return None;
+    }
+    let ratio = f64::from(num) / f64::from(den);
+    let speed = (1.0 / ratio.abs()) as f32;
+    if !speed.is_finite() {
+        return None;
+    }
+    Some((
+        speed.clamp(picasso_core::MIN_SPEED, picasso_core::MAX_SPEED),
+        ratio < 0.0,
+        false,
+    ))
+}
+
 /// Frames of the project in `value` units of `rate` (numerator, denominator).
 fn frames(value: i64, rate: (i64, i64), fps: f64) -> u64 {
     let f = (value as f64 * rate.1 as f64 / rate.0 as f64 * fps).round();
@@ -378,7 +417,8 @@ impl<'a> Timeline<'a> {
     }
 
     /// What a composition's source clip plays, following master mobs to the file source mob.
-    /// `None` for a nested composition (a compound clip), which is not read.
+    /// `None` for a nested composition (a compound clip), which `track` reads as nested tracks
+    /// instead.
     fn source(&self, clip: &Object) -> Option<Source> {
         let mut mob = self.mob(clip.data(pid::SOURCE_ID)?)?;
         let mut slot_id = clip.u32(pid::SOURCE_MOB_SLOT_ID);
@@ -408,8 +448,7 @@ impl<'a> Timeline<'a> {
                         offset,
                         rate,
                     });
-                }
-            }
+                }            }
             // A master (or a source without a locator): through the slot the clip names.
             let slots = mob.list(pid::SLOTS);
             let slot = slots
@@ -437,7 +476,13 @@ impl<'a> Timeline<'a> {
         None
     }
 
-    fn track(&self, slot: &Object, skipped: &mut usize) -> Option<(TrackKind, u32, OtioTrack)> {
+    fn track(
+        &self,
+        slot: &Object,
+        visited: &mut HashSet<Vec<u8>>,
+        depth: usize,
+        skipped: &mut usize,
+    ) -> Option<(TrackKind, u32, OtioTrack)> {
         let rate = slot.rate(pid::EDIT_RATE)?;
         let segment = slot.strong(pid::SEGMENT)?;
         let kind = kind_of(segment)?;
@@ -464,8 +509,8 @@ impl<'a> Timeline<'a> {
                 continue;
             }
             match source_clip_of(c) {
-                Some(clip) if c.class != class::SEQUENCE => {
-                    pieces.push(Piece::Clip(cursor, length, clip));
+                Some(_) if c.class != class::SEQUENCE => {
+                    pieces.push(Piece::Clip(cursor, length, c));
                 }
                 _ => {
                     if c.class != class::FILLER {
@@ -478,13 +523,13 @@ impl<'a> Timeline<'a> {
         }
         let mut clips = Vec::new();
         for (i, piece) in pieces.iter().enumerate() {
-            let Piece::Clip(start, length, clip) = piece else {
+            let Piece::Clip(start, length, component) = piece else {
                 continue;
             };
-            let Some(source) = self.source(clip) else {
-                *skipped += 1;
+            let Some(clip) = source_clip_of(component) else {
                 continue;
             };
+            let (speed, reverse, freeze) = time_warp(component).unwrap_or((1.0, false, false));
             let (mut start, mut length) = (*start, *length);
             let mut source_in = clip.i64(pid::START_TIME).unwrap_or(0);
             // A transition before: the clip starts at its cut, the frames before are handles.
@@ -511,6 +556,39 @@ impl<'a> Timeline<'a> {
             if length <= 0 {
                 continue;
             }
+            // A source clip whose source is another composition is a nested sequence (a
+            // compound clip): its tracks are read into the clip, never deeper than
+            // MAX_NESTING_DEPTH and never a composition already being read.
+            if let Some(mob) = clip.data(pid::SOURCE_ID).and_then(|id| self.mob(id)) {
+                if mob.class == class::COMPOSITION_MOB {
+                    let nested = self.nested_tracks(mob, visited, depth + 1, skipped);
+                    if nested.is_empty() {
+                        *skipped += 1;
+                        continue;
+                    }
+                    let name = mob.text(pid::MOB_NAME).unwrap_or_default();
+                    clips.push(OtioClip {
+                        name: name.clone(),
+                        media_name: name,
+                        media: OtioMedia::Missing,
+                        available: None,
+                        record: frames(start, rate, self.fps),
+                        source_in: 0,
+                        duration: frames(length, rate, self.fps).max(1),
+                        speed: 1.0,
+                        reverse: false,
+                        freeze: false,
+                        enabled: true,
+                        transition: transition.filter(|t| t.frames > 0),
+                        nested,
+                    });
+                    continue;
+                }
+            }
+            let Some(source) = self.source(clip) else {
+                *skipped += 1;
+                continue;
+            };
             // The source clip's start is in the master's rate when it has one.
             let source_rate = source.rate.unwrap_or(rate);
             let in_source = source_in.saturating_add(source.offset);
@@ -523,11 +601,12 @@ impl<'a> Timeline<'a> {
                 record: frames(start, rate, self.fps),
                 source_in,
                 duration: frames(length, rate, self.fps).max(1),
-                speed: 1.0,
-                reverse: false,
-                freeze: false,
+                speed,
+                reverse,
+                freeze,
                 enabled: true,
                 transition: transition.filter(|t| t.frames > 0),
+                nested: vec![],
             });
         }
         let number = slot.u32(pid::PHYSICAL_TRACK_NUMBER).unwrap_or(u32::MAX);
@@ -540,6 +619,45 @@ impl<'a> Timeline<'a> {
                 clips,
             },
         ))
+    }
+
+    /// The tracks of a composition used inside another (a nested sequence): its slots read as
+    /// tracks, pictures first then sound. Reading stops at `MAX_NESTING_DEPTH` and at a
+    /// composition that is already being read, so a file that nests deep or refers back to
+    /// itself cannot loop.
+    fn nested_tracks(
+        &self,
+        mob: &'a Object,
+        visited: &mut HashSet<Vec<u8>>,
+        depth: usize,
+        skipped: &mut usize,
+    ) -> Vec<OtioTrack> {
+        if depth > MAX_NESTING_DEPTH {
+            *skipped += 1;
+            return Vec::new();
+        }
+        let Some(id) = mob.data(pid::MOB_ID) else {
+            return Vec::new();
+        };
+        let key = id.to_vec();
+        if !visited.insert(key.clone()) {
+            *skipped += 1;
+            return Vec::new();
+        }
+        let mut tracks: Vec<(TrackKind, u32, usize, OtioTrack)> = mob
+            .list(pid::SLOTS)
+            .iter()
+            .filter(|s| s.class == class::TIMELINE_MOB_SLOT)
+            .enumerate()
+            .filter_map(|(i, s)| {
+                let (kind, number, track) = self.track(s, visited, depth, skipped)?;
+                Some((kind, number, i, track))
+            })
+            .collect();
+        // Pictures first, then sound, each in the order of their track numbers.
+        tracks.sort_by_key(|(kind, number, i, _)| (*kind == TrackKind::Audio, *number, *i));
+        visited.remove(&key);
+        tracks.into_iter().map(|(_, _, _, t)| t).collect()
     }
 }
 
@@ -595,22 +713,37 @@ pub fn read_aaf(bytes: &[u8], fps: Fps) -> Result<OtioTimeline, String> {
         fps: fps.as_f64(),
     };
     let mut skipped = 0;
+    let mut visited = HashSet::new();
     let mut tracks: Vec<(TrackKind, u32, usize, OtioTrack)> = top
         .list(pid::SLOTS)
         .iter()
         .filter(|s| s.class == class::TIMELINE_MOB_SLOT)
         .enumerate()
         .filter_map(|(i, s)| {
-            let (kind, number, track) = timeline.track(s, &mut skipped)?;
+            let (kind, number, track) = timeline.track(s, &mut visited, 0, &mut skipped)?;
             Some((kind, number, i, track))
         })
         .collect();
     // Pictures first, then sound, each in the order of their track numbers.
     tracks.sort_by_key(|(kind, number, i, _)| (*kind == TrackKind::Audio, *number, *i));
+    // Markers: locator objects on the composition mob.
+    let markers: Vec<Marker> = top
+        .list(pid::LOCATOR)
+        .iter()
+        .filter_map(|loc| {
+            let frame = loc.i64(pid::START_TIME)? as u64;
+            let name = loc.text(pid::MOB_NAME).unwrap_or_default();
+            Some(Marker {
+                frame,
+                name,
+                color: 0,
+            })
+        })
+        .collect();
     Ok(OtioTimeline {
         name: top.text(pid::MOB_NAME).unwrap_or_default().trim().to_string(),
         tracks: tracks.into_iter().map(|(_, _, _, t)| t).collect(),
-        markers: Vec::new(),
+        markers,
         skipped,
     })
 }
@@ -733,6 +866,65 @@ mod tests {
     }
 
     #[test]
+    fn speeds_and_markers_read_back_as_they_were() {
+        let mut p = project();
+        let v1 = p.tracks[0].id;
+        let media = p.tracks[0].clips[0].media;
+        (Command::AddClip {
+            track: v1,
+            media,
+            start: 96,
+            duration: Some(24),
+            with_sound: false,
+        })
+        .apply(&mut p)
+        .unwrap_or_else(|e| panic!("{e}"));
+        p.tracks[0].clips[0].speed = 2.0;
+        p.tracks[0].clips[1].speed = 0.5;
+        p.tracks[0].clips[1].reverse = true;
+        p.tracks[0].clips[2].freeze = true;
+        p.markers.push(Marker {
+            frame: 12,
+            name: "Cut".into(),
+            color: 3,
+        });
+        p.markers.push(Marker {
+            frame: 40,
+            name: "Beat".into(),
+            color: 1,
+        });
+        let written = crate::to_aaf_at(&p, crate::Stamp::from_unix(1_798_000_000))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(written.retimed, 3, "the three retimed clips are written");
+        let t = read_aaf(&written.bytes, p.fps).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(t.skipped, 0);
+        let v1 = &t.tracks[0];
+        assert_eq!(
+            (v1.clips[0].speed, v1.clips[0].reverse, v1.clips[0].freeze),
+            (2.0, false, false),
+            "a speed change"
+        );
+        assert_eq!(
+            (v1.clips[1].speed, v1.clips[1].reverse, v1.clips[1].freeze),
+            (0.5, true, false),
+            "a reversed half-speed clip"
+        );
+        assert_eq!(
+            (v1.clips[2].speed, v1.clips[2].reverse, v1.clips[2].freeze),
+            (1.0, false, true),
+            "a freeze frame"
+        );
+        // Markers are locators on the composition: their frame and name come back.
+        assert_eq!(
+            t.markers
+                .iter()
+                .map(|m| (m.frame, m.name.as_str()))
+                .collect::<Vec<_>>(),
+            [(12, "Cut"), (40, "Beat")]
+        );
+    }
+
+    #[test]
     fn other_rates_are_converted_and_other_files_refused() {
         let p = project();
         let written = crate::to_aaf_at(&p, crate::Stamp::from_unix(0)).unwrap_or_else(|e| panic!("{e}"));
@@ -747,5 +939,55 @@ mod tests {
         cf.create_stream("/other").unwrap_or_else(|e| panic!("{e}"));
         let bytes = cf.into_inner().into_inner();
         assert!(read_aaf(&bytes, fps).is_err());
+    }
+
+    #[test]
+    fn a_composition_that_refers_to_itself_stops() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::{auid, i64_of, rational};
+        // A composition whose one picture track plays a source clip that points back at the
+        // composition: reading must stop at the loop, not recurse for ever.
+        let mob_id = vec![7_u8; 16];
+        let clip = Object {
+            class: class::SOURCE_CLIP,
+            props: vec![
+                (pid::DATA_DEFINITION, Prop::Weak(auid(data::PICTURE))),
+                (pid::LENGTH, Prop::Data(i64_of(20))),
+                (pid::START_TIME, Prop::Data(i64_of(0))),
+                (pid::SOURCE_ID, Prop::Data(mob_id.clone())),
+            ],
+        };
+        let slot = Object {
+            class: class::TIMELINE_MOB_SLOT,
+            props: vec![
+                (pid::SLOT_ID, Prop::Data(1_u32.to_le_bytes().to_vec())),
+                (pid::EDIT_RATE, Prop::Data(rational(25, 1))),
+                (pid::SEGMENT, Prop::Strong(Box::new(clip))),
+            ],
+        };
+        let composition = Object {
+            class: class::COMPOSITION_MOB,
+            props: vec![
+                (pid::MOB_ID, Prop::Data(mob_id.clone())),
+                (pid::SLOTS, Prop::List(vec![slot])),
+            ],
+        };
+        let mut mobs = HashMap::new();
+        mobs.insert(mob_id.as_slice(), &composition);
+        let timeline = Timeline { mobs, fps: 25.0 };
+        let mut visited = HashSet::new();
+        let mut skipped = 0;
+        let slot = composition
+            .list(pid::SLOTS)
+            .first()
+            .ok_or("the composition has a slot")?;
+        let (_, _, track) = timeline
+            .track(slot, &mut visited, 0, &mut skipped)
+            .ok_or("the track is read")?;
+        assert_eq!(skipped, 2, "the loop and the empty composition are counted");
+        assert!(visited.is_empty(), "the visited set is cleared");
+        // The nested composition is kept as a compound clip, but its own track is empty.
+        assert_eq!(track.clips.len(), 1);
+        assert!(track.clips[0].nested.iter().all(|t| t.clips.is_empty()));
+        Ok(())
     }
 }

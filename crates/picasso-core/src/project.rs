@@ -930,7 +930,8 @@ pub struct ImportedTrack {
 /// A clip of an imported timeline: media of the pool, where it sits and what of it it shows.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ImportedClip {
-    pub media: MediaId,
+    /// The media this clip shows; `None` for a nested sequence, whose tracks are in `nested`.
+    pub media: Option<MediaId>,
     pub name: String,
     /// First frame on the timeline.
     pub start: u64,
@@ -944,6 +945,9 @@ pub struct ImportedClip {
     pub enabled: bool,
     /// A transition from the clip before, centred on the cut.
     pub transition: Option<Transition>,
+    /// The tracks of a nested sequence (a compound clip), read from the file.
+    #[serde(default)]
+    pub nested: Vec<ImportedTrack>,
 }
 
 /// How long the transition between `left` and the clip after it, `right`, plays: None when

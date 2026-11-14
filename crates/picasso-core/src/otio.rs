@@ -226,6 +226,11 @@ pub fn to_otio(project: &Project) -> String {
 /// The most clips, gaps and transitions read from one file.
 pub const MAX_ITEMS: usize = 100_000;
 
+/// How deep a nested sequence (a compound clip, a nested composition) may nest when a file is
+/// read. A file that nests deeper, or refers back to a sequence already being read, stops there
+/// instead of overflowing the stack.
+pub const MAX_NESTING_DEPTH: usize = 8;
+
 /// What a clip of a file being read shows.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OtioMedia {
@@ -255,6 +260,9 @@ pub struct OtioClip {
     pub enabled: bool,
     /// A transition from the clip before: its length and kind.
     pub transition: Option<crate::Transition>,
+    /// A nested timeline (compound clip): the tracks inside the stack, when the clip is a
+    /// nested sequence rather than a file or generated clip.
+    pub nested: Vec<OtioTrack>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -455,7 +463,13 @@ fn marker_color(name: &str) -> u8 {
         .unwrap_or(0)
 }
 
-fn read_track(track: &Value, fps: f64, items: &mut usize, skipped: &mut usize) -> OtioTrack {
+fn read_track(
+    track: &Value,
+    fps: f64,
+    items: &mut usize,
+    skipped: &mut usize,
+    depth: usize,
+) -> OtioTrack {
     let kind = if track["kind"].as_str() == Some("Audio") {
         TrackKind::Audio
     } else {
@@ -514,9 +528,37 @@ fn read_track(track: &Value, fps: f64, items: &mut usize, skipped: &mut usize) -
                 freeze,
                 enabled: item["enabled"].as_bool().unwrap_or(true),
                 transition: pending.take(),
+                nested: vec![],
             });
+        } else if is(item, "Stack") {
+            // A nested stack (compound clip): read its tracks as nested timeline data. A stack
+            // with nothing to read, or one nested deeper than MAX_NESTING_DEPTH, is left out.
+            let nested = if depth < MAX_NESTING_DEPTH {
+                stack_tracks(item, fps, items, skipped, depth + 1)
+            } else {
+                Vec::new()
+            };
+            if nested.is_empty() {
+                *skipped += 1;
+            } else {
+                clips.push(OtioClip {
+                    name: item["name"].as_str().unwrap_or("").to_string(),
+                    media_name: item["name"].as_str().unwrap_or("Nested").to_string(),
+                    media: OtioMedia::Missing,
+                    available: None,
+                    record: cursor,
+                    source_in: 0,
+                    duration,
+                    speed: 1.0,
+                    reverse: false,
+                    freeze: false,
+                    enabled: item["enabled"].as_bool().unwrap_or(true),
+                    transition: pending.take(),
+                    nested,
+                });
+            }
         } else if !is(item, "Gap") {
-            // A nested stack or track (a compound clip) or something unknown: its time is kept.
+            // Something unknown: its time is kept.
             *skipped += 1;
         }
         pending = None;
@@ -527,6 +569,30 @@ fn read_track(track: &Value, fps: f64, items: &mut usize, skipped: &mut usize) -
         enabled: track["enabled"].as_bool().unwrap_or(true),
         clips,
     }
+}
+
+/// Reads a nested Stack.1 item's tracks into `Vec<OtioTrack>`, recursing into further nesting.
+fn stack_tracks(
+    stack: &Value,
+    fps: f64,
+    items: &mut usize,
+    skipped: &mut usize,
+    depth: usize,
+) -> Vec<OtioTrack> {
+    let mut out = Vec::new();
+    let children = stack["children"].as_array().into_iter().flatten();
+    for child in children {
+        *items += 1;
+        if *items > MAX_ITEMS {
+            *skipped += 1;
+            continue;
+        }
+        if is(child, "Track") {
+            out.push(read_track(child, fps, items, skipped, depth));
+        }
+        // Unknown child schemas inside a stack are left out.
+    }
+    out
 }
 
 /// Reads the first timeline of an OTIO file (a timeline, or a collection holding timelines),
@@ -554,7 +620,7 @@ pub fn read_otio(text: &str, fps: crate::Fps) -> Result<OtioTimeline, String> {
         .into_iter()
         .flatten()
         .filter(|t| is(t, "Track"))
-        .map(|t| read_track(t, rate, &mut items, &mut skipped))
+        .map(|t| read_track(t, rate, &mut items, &mut skipped, 0))
         .collect();
     let markers = stack["markers"]
         .as_array()
@@ -767,8 +833,17 @@ mod tests {
                     "target_url": "file://localhost/D:/Footage/shot%201.mxf",
                     "available_range": { "start_time": { "value": 90000, "rate": 25 },
                                          "duration": { "value": 500, "rate": 25 } } } },
-                { "OTIO_SCHEMA": "Stack.1", "source_range": {
-                    "start_time": { "value": 0, "rate": 25 }, "duration": { "value": 25, "rate": 25 } } },
+                { "OTIO_SCHEMA": "Stack.1", "name": "nested", "source_range": {
+                    "start_time": { "value": 0, "rate": 25 }, "duration": { "value": 25, "rate": 25 } },
+                  "children": [
+                    { "OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [
+                      { "OTIO_SCHEMA": "Clip.1", "name": "inner",
+                        "source_range": { "start_time": { "value": 0, "rate": 25 },
+                                          "duration": { "value": 25, "rate": 25 } },
+                        "media_reference": { "OTIO_SCHEMA": "ExternalReference.1",
+                          "target_url": "file://localhost/D:/Footage/inner.mxf" } }
+                    ] }
+                  ] },
                 { "OTIO_SCHEMA": "Clip.1", "name": "black",
                   "source_range": { "start_time": { "value": 0, "rate": 25 },
                                     "duration": { "value": 25, "rate": 25 } },
@@ -786,11 +861,12 @@ mod tests {
         let fps = crate::Fps::FPS_24;
         let read = read_otio(text, fps).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(read.name, "Cut 3");
-        assert_eq!(read.skipped, 1, "the nested stack");
+        // The nested stack is now read as a clip with nested tracks, not skipped.
+        assert_eq!(read.skipped, 0);
         assert_eq!(read.markers[0].frame, 48);
         assert_eq!(read.markers[0].color, 2);
         let clips = &read.tracks[0].clips;
-        assert_eq!(clips.len(), 3);
+        assert_eq!(clips.len(), 4);
         let shot = &clips[0];
         // 25 fps times in a 24 fps project: one second of gap is 24 frames.
         assert_eq!((shot.record, shot.source_in, shot.duration), (24, 48, 48));
@@ -802,19 +878,70 @@ mod tests {
             }
         );
         assert_eq!(shot.available, Some(480));
+        // The nested stack follows the shot: 24 + 48 = 72, and keeps its own track.
+        assert_eq!(clips[1].record, 72, "after the shot");
+        assert_eq!(clips[1].name, "nested");
+        assert_eq!(clips[1].nested.len(), 1, "the nested stack's track");
+        let inner = &clips[1].nested[0].clips[0];
+        assert_eq!((inner.record, inner.duration), (0, 24));
         assert_eq!(
-            clips[1].record,
-            24 + 48 + 24,
-            "after the nested stack's time"
+            inner.media,
+            OtioMedia::File {
+                path: "D:/Footage/inner.mxf".into()
+            }
         );
         assert_eq!(
-            clips[1].media,
+            clips[2].media,
             OtioMedia::Generated(MediaSource::Solid { rgb: [255, 128, 0] })
         );
-        assert_eq!(clips[2].media, OtioMedia::Missing);
-        assert_eq!(clips[2].media_name, "web.mov");
+        assert_eq!(clips[3].media, OtioMedia::Missing);
+        assert_eq!(clips[3].media_name, "web.mov");
         assert!(read_otio("{}", fps).is_err());
         assert!(read_otio("not json", fps).is_err());
+    }
+
+    #[test]
+    fn a_stack_that_nests_too_deep_stops() {
+        let fps = crate::Fps::FPS_24;
+        let range = serde_json::json!({
+            "start_time": { "value": 0, "rate": 24 }, "duration": { "value": 24, "rate": 24 }
+        });
+        let mut item = serde_json::json!({
+            "OTIO_SCHEMA": "Clip.1", "name": "bottom", "source_range": range,
+            "media_reference": { "OTIO_SCHEMA": "ExternalReference.1",
+                                 "target_url": "file://localhost/bottom.mov" }
+        });
+        // Each level is a stack inside a track, deeper than MAX_NESTING_DEPTH.
+        for _ in 0..=MAX_NESTING_DEPTH {
+            item = serde_json::json!({
+                "OTIO_SCHEMA": "Stack.1", "name": "level", "source_range": range,
+                "children": [{
+                    "OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [item]
+                }]
+            });
+        }
+        let text = serde_json::json!({
+            "OTIO_SCHEMA": "Timeline.1", "name": "deep",
+            "tracks": { "OTIO_SCHEMA": "Stack.1", "children": [{
+                "OTIO_SCHEMA": "Track.1", "kind": "Video", "children": [item]
+            }] }
+        })
+        .to_string();
+        let read = read_otio(&text, fps).unwrap_or_else(|e| panic!("{e}"));
+        // The clips that were read stop at the cap rather than recursing for ever.
+        let mut tracks = &read.tracks;
+        let mut count = 0;
+        while let Some(clip) = tracks.iter().flat_map(|t| &t.clips).next() {
+            count += 1;
+            assert!(count <= MAX_NESTING_DEPTH, "nesting stops at the cap");
+            tracks = &clip.nested;
+        }
+        assert!(
+            read.skipped > 0,
+            "the nesting past the cap is left out ({} skipped, {count} read)",
+            read.skipped
+        );
+        assert!(count > 1, "the nesting was read to the cap");
     }
 
     #[test]
@@ -823,7 +950,7 @@ mod tests {
         let media = p.tracks[0].clips[0].media;
         let timelines = p.timelines.len();
         let clip = |start: u64, source_in: u64, duration: u64| crate::ImportedClip {
-            media,
+            media: Some(media),
             name: "c".into(),
             start,
             source_in,
@@ -833,6 +960,7 @@ mod tests {
             freeze: false,
             enabled: true,
             transition: None,
+            nested: Vec::new(),
         };
         let tracks = vec![
             crate::ImportedTrack {

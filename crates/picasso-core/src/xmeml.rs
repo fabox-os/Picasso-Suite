@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::otio::{OtioClip, OtioMedia, OtioTimeline, OtioTrack};
+use crate::otio::{OtioClip, OtioMedia, OtioTimeline, OtioTrack, MAX_NESTING_DEPTH};
 use crate::{Clip, MediaSource, Project, TrackKind, TransitionKind};
 
 /// The timeline starts at this time of day (01:00:00:00), as on the timeline.
@@ -579,14 +579,25 @@ fn cut_of(item: Option<&Item>) -> Option<i64> {
     }
 }
 
+/// What reading a sequence's tracks needs: the document's files and named sequences, and the
+/// rates its times are converted to.
+struct Ctx<'a> {
+    files: &'a HashMap<String, XmlFile>,
+    sequences: &'a HashMap<String, &'a Node>,
+    seq_rate: f64,
+    fps: f64,
+}
+
 fn read_xml_track(
     track: &Node,
     kind: TrackKind,
-    files: &HashMap<String, XmlFile>,
-    (seq_rate, fps): (f64, f64),
+    ctx: &Ctx<'_>,
     taken: &mut HashSet<(String, u64, u64, u64)>,
+    visited: &mut HashSet<String>,
+    depth: usize,
     skipped: &mut usize,
 ) -> OtioTrack {
+    let (seq_rate, fps) = (ctx.seq_rate, ctx.fps);
     let items = items_of(track);
     let mut clips = Vec::new();
     for (i, item) in items.iter().enumerate() {
@@ -598,20 +609,25 @@ fn read_xml_track(
                 continue;
             }
         };
+        // A clipitem may hold a nested sequence instead of a file: its own <name>, <in>, <out>,
+        // <start> and <end> are read as the outer clip's, and the sequence's tracks as the
+        // compound clip's.
+        let nested = node
+            .child("sequence")
+            .map(|seq| nested_tracks(seq, ctx, visited, depth + 1, skipped))
+            .unwrap_or_default();
+        let file = node.child("file").and_then(|file_node| {
+            file_node
+                .attr("id")
+                .and_then(|id| ctx.files.get(id))
+                .cloned()
+                .or_else(|| file_of(file_node, seq_rate, fps))
+        });
         // A nested sequence or a multicam clip has no one file.
-        let Some(file_node) = node.child("file") else {
+        if file.is_none() && nested.is_empty() {
             *skipped += 1;
             continue;
-        };
-        let file = file_node
-            .attr("id")
-            .and_then(|id| files.get(id))
-            .cloned()
-            .or_else(|| file_of(file_node, seq_rate, fps));
-        let Some(file) = file else {
-            *skipped += 1;
-            continue;
-        };
+        }
         let clip_rate = rate_of(Some(node)).unwrap_or(seq_rate);
         let (speed, reverse, freeze) = time_remap(node);
         let source_in = node.number("in").and_then(|v| frames_at(v, clip_rate, fps));
@@ -651,14 +667,16 @@ fn read_xml_track(
         }
         let source_in = source_in.unwrap_or(0);
         // A stereo pair is the same file on two sound tracks: it is heard once.
-        let key = (
-            file.path.clone().unwrap_or_else(|| file.name.clone()),
-            start,
-            duration,
-            source_in,
-        );
-        if kind == TrackKind::Audio && !taken.insert(key) {
-            continue;
+        if let Some(file) = &file {
+            let key = (
+                file.path.clone().unwrap_or_else(|| file.name.clone()),
+                start,
+                duration,
+                source_in,
+            );
+            if kind == TrackKind::Audio && !taken.insert(key) {
+                continue;
+            }
         }
         let transition = match before {
             Some(Item::Transition { start: s, end: e, kind }) if *e > *s => {
@@ -669,14 +687,22 @@ fn read_xml_track(
             }
             _ => None,
         };
+        let name = node.text_of("name").unwrap_or("").to_string();
+        let media_name = match &file {
+            Some(file) => file.name.clone(),
+            None => name.clone(),
+        };
         clips.push(OtioClip {
-            name: node.text_of("name").unwrap_or("").to_string(),
-            media_name: file.name.clone(),
-            media: match file.path {
-                Some(path) => OtioMedia::File { path },
+            name,
+            media_name,
+            media: match &file {
+                Some(file) => match &file.path {
+                    Some(path) => OtioMedia::File { path: path.clone() },
+                    None => OtioMedia::Missing,
+                },
                 None => OtioMedia::Missing,
             },
-            available: file.length,
+            available: file.as_ref().and_then(|f| f.length),
             record: start,
             source_in,
             duration,
@@ -685,6 +711,7 @@ fn read_xml_track(
             freeze,
             enabled: node.flag("enabled") != Some(false),
             transition,
+            nested,
         });
         if clips.len() >= crate::otio::MAX_ITEMS {
             break;
@@ -697,6 +724,53 @@ fn read_xml_track(
     }
 }
 
+/// The tracks of a nested sequence in a clipitem: the sequence itself when it is inline, or the
+/// `<sequence id="...">` it refers to. Reading stops at `MAX_NESTING_DEPTH` and at a sequence
+/// that is already being read, so a file that nests deep or refers back to itself cannot loop.
+fn nested_tracks(
+    seq: &Node,
+    ctx: &Ctx<'_>,
+    visited: &mut HashSet<String>,
+    depth: usize,
+    skipped: &mut usize,
+) -> Vec<OtioTrack> {
+    let seq = if seq.child("media").is_some() {
+        seq
+    } else {
+        match seq.attr("id").and_then(|id| ctx.sequences.get(id).copied()) {
+            Some(found) => found,
+            None => return Vec::new(),
+        }
+    };
+    if depth > MAX_NESTING_DEPTH {
+        *skipped += 1;
+        return Vec::new();
+    }
+    let id = seq.attr("id").map(str::to_string);
+    if let Some(id) = &id {
+        if !visited.insert(id.clone()) {
+            *skipped += 1;
+            return Vec::new();
+        }
+    }
+    let mut out = Vec::new();
+    if let Some(media) = seq.child("media") {
+        // A stereo pair inside the nested sequence is heard once, as on the timeline.
+        let mut taken = HashSet::new();
+        for (kind, part) in [(TrackKind::Video, "video"), (TrackKind::Audio, "audio")] {
+            for track in media.child(part).into_iter().flat_map(|m| m.all("track")) {
+                out.push(read_xml_track(
+                    track, kind, ctx, &mut taken, visited, depth, skipped,
+                ));
+            }
+        }
+    }
+    if let Some(id) = id {
+        visited.remove(&id);
+    }
+    out
+}
+
 /// Whether `text` looks like a Final Cut Pro 7 / Premiere XML sequence with clips (rather than
 /// another XML file), without reading all of it.
 pub fn is_xmeml_timeline(text: &str) -> bool {
@@ -707,8 +781,9 @@ pub fn is_xmeml_timeline(text: &str) -> bool {
 /// Reads the first sequence of a Final Cut Pro 7 / Premiere XML file (the format Resolve and
 /// Premiere also export), with every time in frames of `fps`: its tracks of clips (by the files
 /// they come from), dissolves, speed changes, reverse, freeze frames, disabled clips, turned
-/// off tracks and markers. Nested sequences, multicam clips and generators are left out
-/// (counted in `skipped`).
+/// off tracks and markers. A clipitem that holds a nested sequence (a compound clip) keeps its
+/// tracks in [`OtioClip::nested`], at most `MAX_NESTING_DEPTH` deep. Multicam clips and
+/// generators are left out (counted in `skipped`).
 pub fn read_xmeml(text: &str, fps: crate::Fps) -> Result<OtioTimeline, String> {
     if text.len() > MAX_BYTES {
         return Err("the XML file is too large to import".into());
@@ -724,17 +799,34 @@ pub fn read_xmeml(text: &str, fps: crate::Fps) -> Result<OtioTimeline, String> {
     let fps = fps.as_f64();
     let seq_rate = rate_of(Some(sequence)).unwrap_or(fps);
     let files = files_of(xmeml, seq_rate, fps);
+    // The sequences that a clipitem may refer to by id, for nested sequences.
+    let mut seq_nodes = Vec::new();
+    xmeml.find_all("sequence", &mut seq_nodes);
+    let mut sequences: HashMap<String, &Node> = HashMap::new();
+    for s in seq_nodes {
+        if let Some(id) = s.attr("id") {
+            sequences.entry(id.to_string()).or_insert(s);
+        }
+    }
+    let ctx = Ctx {
+        files: &files,
+        sequences: &sequences,
+        seq_rate,
+        fps,
+    };
     let mut skipped = 0;
     let mut taken = HashSet::new();
+    let mut visited = HashSet::new();
     let mut tracks = Vec::new();
     for (kind, part) in [(TrackKind::Video, "video"), (TrackKind::Audio, "audio")] {
         for track in media.child(part).into_iter().flat_map(|m| m.all("track")) {
             tracks.push(read_xml_track(
                 track,
                 kind,
-                &files,
-                (seq_rate, fps),
+                &ctx,
                 &mut taken,
+                &mut visited,
+                0,
                 &mut skipped,
             ));
         }
@@ -1011,6 +1103,71 @@ mod tests {
         assert_eq!(sounds[0].clips.len(), 1);
         assert!(sounds[1].clips.is_empty(), "the second channel is not a second clip");
         assert_eq!(t.markers[0].frame, 45);
+    }
+
+    const NESTED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xmeml version="5">
+ <sequence id="sequence-main"><name>Main</name>
+  <rate><timebase>24</timebase><ntsc>FALSE</ntsc></rate>
+  <media><video><track>
+   <clipitem id="clipitem-outer"><name>Nested</name><start>0</start><end>48</end><in>0</in><out>48</out>
+    <sequence id="sequence-inner"><name>Inner</name>
+     <rate><timebase>24</timebase><ntsc>FALSE</ntsc></rate>
+     <media><video><track>
+      <clipitem id="clipitem-inner"><name>Shot</name><start>0</start><end>48</end><in>0</in><out>48</out>
+       <file id="file-1"><name>shot.mov</name><pathurl>file://localhost/media/shot.mov</pathurl>
+        <rate><timebase>24</timebase><ntsc>FALSE</ntsc></rate><duration>240</duration></file></clipitem>
+     </track></video></media>
+    </sequence></clipitem>
+  </track></video></media>
+ </sequence>
+</xmeml>"#;
+
+    #[test]
+    fn a_nested_sequence_keeps_its_tracks() -> Result<(), Box<dyn std::error::Error>> {
+        let fps = crate::Fps { num: 24, den: 1 };
+        let t = read_xmeml(NESTED, fps)?;
+        assert_eq!(t.skipped, 0);
+        assert_eq!(t.tracks.len(), 1);
+        let outer = t.tracks[0].clips.first().ok_or("the outer clip is read")?;
+        // The outer clipitem's own name, in, out, start and end are kept, not the inner one's.
+        assert_eq!(outer.name, "Nested");
+        assert_eq!((outer.record, outer.source_in, outer.duration), (0, 0, 48));
+        assert_eq!(outer.nested.len(), 1, "the nested sequence's track");
+        let inner = outer.nested[0]
+            .clips
+            .first()
+            .ok_or("the inner clip is read")?;
+        assert_eq!(inner.name, "Shot");
+        assert_eq!(
+            inner.media,
+            OtioMedia::File {
+                path: "/media/shot.mov".into()
+            }
+        );
+        assert_eq!((inner.record, inner.duration), (0, 48));
+        Ok(())
+    }
+
+    #[test]
+    fn a_sequence_that_refers_to_itself_stops() -> Result<(), Box<dyn std::error::Error>> {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<xmeml version="5">
+ <sequence id="sequence-main"><name>Loop</name>
+  <rate><timebase>24</timebase><ntsc>FALSE</ntsc></rate>
+  <media><video><track>
+   <clipitem id="clipitem-1"><name>Again</name><start>0</start><end>48</end><in>0</in><out>48</out>
+    <sequence id="sequence-main"/></clipitem>
+  </track></video></media>
+ </sequence>
+</xmeml>"#;
+        let fps = crate::Fps { num: 24, den: 1 };
+        let t = read_xmeml(xml, fps)?;
+        assert!(t.skipped >= 1, "the loop is cut");
+        // It terminated, and nothing recursed into the same sequence twice.
+        let outer = t.tracks[0].clips.first().ok_or("the clip is read")?;
+        assert!(outer.nested.iter().all(|track| track.clips.is_empty()));
+        Ok(())
     }
 
     #[test]

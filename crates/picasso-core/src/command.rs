@@ -2621,49 +2621,8 @@ fn import_timeline(
                 _ => break,
             },
         };
-        // The clips are taken in time order, and one fits when it starts at or after the end of
-        // the one kept before it: a sort for the track, rather than a search of the track and a
-        // sort for every clip, which a file of many clips made slow enough to hang the window.
-        // The track is the new timeline's, so it starts empty (anything on it is kept before).
-        let mut clips = imported.clips;
-        clips.sort_by_key(|c| c.start);
-        let mut end = q
-            .track(track)
-            .and_then(|t| t.clips.iter().map(Clip::end).max())
-            .unwrap_or(0);
-        let mut placed: Vec<Clip> = Vec::with_capacity(clips.len());
-        for c in clips {
-            let Some(item) = q.media(c.media) else {
-                continue;
-            };
-            let speed = if c.speed.is_finite()
-                && (crate::MIN_SPEED..=crate::MAX_SPEED).contains(&c.speed)
-            {
-                c.speed
-            } else {
-                1.0
-            };
-            let mut clip = plain_clip(ClipId(0), c.media, c.name, c.start, c.duration);
-            (clip.source_in, clip.speed) = (c.source_in, speed);
-            (clip.reverse, clip.freeze, clip.enabled) = (c.reverse, c.freeze, c.enabled);
-            let fits = item.source.fits(imported.kind)
-                && item
-                    .length
-                    .is_none_or(|l| c.source_in.saturating_add(clip.source_span()) <= l);
-            let clip_end = clip.start.checked_add(clip.duration);
-            let free = clip.duration > 0
-                && clip.start >= end
-                && clip_end.is_some_and(|e| e <= MAX_FRAMES);
-            if !fits || !free {
-                continue;
-            }
-            end = clip_end.unwrap_or(end);
-            clip.transition = c
-                .transition
-                .filter(|t| (2..=crate::MAX_TRANSITION).contains(&t.frames));
-            clip.id = ClipId(q.fresh_id());
-            placed.push(clip);
-        }
+        // The track is the new timeline's, so it starts empty.
+        let (placed, _) = import_track_clips(&mut q, imported.kind, &imported.clips, 1);
         if let Some(t) = q.track_mut(track) {
             t.clips.extend(placed);
             sort_clips(t);
@@ -2689,6 +2648,154 @@ fn import_timeline(
     q.markers = markers;
     *p = q;
     Ok(Outcome::Nothing)
+}
+
+/// The clips of one imported track, in time order, with the ones that do not fit left out: a
+/// clip that overlaps the one kept before it or runs past the end of the timeline is dropped, and
+/// so is a clip whose media does not fit the track or hold the part it shows. A nested sequence
+/// becomes a compound clip, whose own tracks are built by [`import_compound`]. The end of the last
+/// clip kept is returned with them.
+fn import_track_clips(
+    q: &mut Project,
+    kind: TrackKind,
+    clips: &[crate::ImportedClip],
+    depth: usize,
+) -> (Vec<Clip>, u64) {
+    // A sort for the track, rather than a search of the track and a sort for every clip, which a
+    // file of many clips made slow enough to hang the window.
+    let mut items: Vec<&crate::ImportedClip> = clips.iter().collect();
+    items.sort_by_key(|c| c.start);
+    let mut placed: Vec<Clip> = Vec::with_capacity(items.len());
+    let mut end = 0_u64;
+    for c in items {
+        // A clip that overlaps the one before, or runs past the end of the timeline, is left out
+        // before any compound clip it holds is built.
+        let clip_end = c.start.checked_add(c.duration);
+        if c.duration == 0 || c.start < end || clip_end.is_none_or(|e| e > MAX_FRAMES) {
+            continue;
+        }
+        let speed =
+            if c.speed.is_finite() && (crate::MIN_SPEED..=crate::MAX_SPEED).contains(&c.speed) {
+                c.speed
+            } else {
+                1.0
+            };
+        let (media, fits) = if c.nested.is_empty() {
+            let Some(media) = c.media else { continue };
+            let Some(item) = q.media(media) else {
+                continue;
+            };
+            let span = if c.freeze {
+                1
+            } else {
+                (c.duration as f64 * f64::from(speed)).ceil() as u64
+            };
+            let fits = item.source.fits(kind)
+                && item
+                    .length
+                    .is_none_or(|l| c.source_in.saturating_add(span) <= l);
+            (media, fits)
+        } else {
+            // A compound clip is pictures; its own tracks hold the sound.
+            if kind != TrackKind::Video {
+                continue;
+            }
+            // A nested sequence becomes a compound clip: its tracks get a timeline of their own,
+            // and the clip shows that timeline.
+            let Some(media) = import_compound(q, &c.name, &c.nested, depth) else {
+                continue;
+            };
+            (media, true)
+        };
+        if !fits {
+            continue;
+        }
+        let mut clip = plain_clip(ClipId(0), media, c.name.clone(), c.start, c.duration);
+        (clip.source_in, clip.speed) = (c.source_in, speed);
+        (clip.reverse, clip.freeze, clip.enabled) = (c.reverse, c.freeze, c.enabled);
+        end = clip_end.unwrap_or(end);
+        clip.transition = c
+            .transition
+            .filter(|t| (2..=crate::MAX_TRANSITION).contains(&t.frames));
+        clip.id = ClipId(q.fresh_id());
+        placed.push(clip);
+    }
+    (placed, end)
+}
+
+/// Builds a compound clip's timeline and media from the nested tracks of an imported sequence,
+/// adding them to `q`. `None` when it holds no picture clip, when the project has no room for
+/// another timeline, or when it nests deeper than [`crate::otio::MAX_NESTING_DEPTH`].
+fn import_compound(
+    q: &mut Project,
+    name: &str,
+    nested: &[crate::ImportedTrack],
+    depth: usize,
+) -> Option<MediaId> {
+    if depth > crate::otio::MAX_NESTING_DEPTH || q.timelines.len() + 1 >= crate::MAX_TIMELINES {
+        return None;
+    }
+    let mut tracks: Vec<Track> = Vec::new();
+    let mut length = 0_u64;
+    let mut has_video = false;
+    let mut numbers = [0usize; 2];
+    for imported in nested {
+        let slot = usize::from(imported.kind == TrackKind::Audio);
+        numbers[slot] += 1;
+        let (placed, end) = import_track_clips(q, imported.kind, &imported.clips, depth + 1);
+        if placed.is_empty() {
+            continue;
+        }
+        if imported.kind == TrackKind::Video {
+            has_video = true;
+        }
+        length = length.max(end);
+        tracks.push(Track {
+            id: TrackId(q.fresh_id()),
+            name: format!(
+                "{}{}",
+                if imported.kind == TrackKind::Video {
+                    'V'
+                } else {
+                    'A'
+                },
+                numbers[slot]
+            ),
+            kind: imported.kind,
+            clips: placed,
+            muted: imported.muted,
+            locked: false,
+            solo: false,
+            picture: true,
+            gain_db: 0.0,
+            pan: 0.0,
+            fx: Default::default(),
+        });
+    }
+    if !has_video || length == 0 {
+        return None;
+    }
+    let timeline = q.fresh_id();
+    let media = MediaId(q.fresh_id());
+    q.timelines.push(crate::Timeline {
+        id: timeline,
+        name: name.to_string(),
+        tracks,
+        markers: Vec::new(),
+        mark_in: None,
+        mark_out: None,
+        compound: true,
+    });
+    q.media.push(MediaItem {
+        id: media,
+        name: name.to_string(),
+        source: MediaSource::Compound { timeline },
+        length: Some(length),
+        default_duration: length,
+        bin: None,
+        timecode: None,
+    });
+    Some(media)
 }
 
 /// Links each picture of an imported timeline to the sound clips of the same file at the same
@@ -6611,5 +6718,72 @@ mod tests {
                 name: "".into(),
             },
         );
+    }
+
+    #[test]
+    fn a_nested_import_becomes_a_compound_clip() -> Result<(), Box<dyn std::error::Error>> {
+        let (mut p, _, _, _) = demo();
+        let media = p.media[0].id;
+        let inner = crate::ImportedClip {
+            media: Some(media),
+            name: "Shot".into(),
+            start: 0,
+            source_in: 0,
+            duration: 48,
+            speed: 1.0,
+            reverse: false,
+            freeze: false,
+            enabled: true,
+            transition: None,
+            nested: Vec::new(),
+        };
+        let outer = crate::ImportedClip {
+            media: None,
+            name: "Nested".into(),
+            start: 0,
+            source_in: 0,
+            duration: 48,
+            speed: 1.0,
+            reverse: false,
+            freeze: false,
+            enabled: true,
+            transition: None,
+            nested: vec![crate::ImportedTrack {
+                kind: TrackKind::Video,
+                muted: false,
+                clips: vec![inner],
+            }],
+        };
+        (Command::ImportTimeline {
+            name: "Imported".into(),
+            tracks: vec![crate::ImportedTrack {
+                kind: TrackKind::Video,
+                muted: false,
+                clips: vec![outer],
+            }],
+            markers: Vec::new(),
+        })
+        .apply(&mut p)?;
+        p.clone().validate()?;
+        let clip = p
+            .tracks
+            .iter()
+            .flat_map(|t| &t.clips)
+            .find(|c| c.name == "Nested")
+            .ok_or("the nested clip is placed")?;
+        let item = p.media(clip.media).ok_or("the compound media exists")?;
+        let crate::MediaSource::Compound { timeline } = &item.source else {
+            return Err("the clip's media is a compound".into());
+        };
+        let compound = p
+            .timelines
+            .iter()
+            .find(|t| t.id == *timeline && t.compound)
+            .ok_or("the compound timeline exists")?;
+        assert_eq!(compound.tracks.len(), 1);
+        assert_eq!(compound.tracks[0].clips.len(), 1);
+        assert_eq!(compound.tracks[0].clips[0].media, media);
+        assert_eq!(compound.tracks[0].clips[0].duration, 48);
+        Ok(())
     }
 }

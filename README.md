@@ -61,12 +61,12 @@ Picasso Suite is a video editor in the shape of an editing suite: bring media in
 ## Status
 
 <!-- status:start -->
-![Status: 94.70% of the menu entries work, 78.57% of the roadmap is done](docs/status.svg)
+![Status: 94.70% of the menu entries work, 79.37% of the roadmap is done](docs/status.svg)
 
 | | Done | Total | |
 |---|---|---|---|
 | Menu entries | 518 | 547 | 94.70% |
-| Roadmap items* | 99 | 126 | 78.57% |
+| Roadmap items* | 100 | 126 | 79.37% |
 
 Green is made, grey is not. Menu entries: every entry of every menu ([`Menu-Status.md`](Menu-Status.md)); the rest are shown disabled. \* Roadmap items ([`ROADMAP.md`](ROADMAP.md)): the to-do items are bigger than the done ones, so this share looks better than the work left. Made by `python3 scripts/status.py`.
 <!-- status:end -->

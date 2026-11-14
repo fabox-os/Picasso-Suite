@@ -11,6 +11,7 @@ name = "picasso-bridge"
 path = "src/main.rs"
 
 [dependencies]
+picasso-core.workspace = true
 picasso-drp.workspace = true
 
 [lints]
