@@ -102,13 +102,13 @@ Status at 0.7.0.
 - [x] Playback: HDR video (HLG, PQ, BT.2020) is mapped to the SDR timeline when decoded
 - [x] Hardware: VA-API encoders and decoding try every graphics card and the low-power mode, not only the default card
 - [x] Tracking: `picasso-track` (point tracker, planar tracker, homographies, stabilisation analysis), the maths only
+- [x] Tracking: use `picasso-track` in the interface: a Track button for Match Move and Stabilization in the Inspector on the Edit page, and window tracking on the Color page
 
 ## To do
 
 - [ ] Interface density: finish the pages measured on the 1080p screenshots (`docs/reference/resolve-1080p`). Done: page bar, labelled top toolbars, Cut, Edit, Fusion, Fairlight, Photo, Color, Media, Deliver. Every page is at Resolve's 1080p size; next, check the same pages at 4K and at small windows
 - [ ] Deliver: IMF Generic and Pro Tools presets (listed, greyed out) need an MXF writer and AAF with embedded or rendered sound
 - [ ] Effects: Color Palette (a strip of the picture's main colours), Dust Buster and Patch Replacer (they need a region you place), and the time effects seeing the effects before them in the stack
-- [ ] Tracking: use `picasso-track` in the interface: a Track button for Match Move and window tracking, and Stabilization in the Inspector
 - [ ] Transitions: motion blur, border and reverse on Slide Out, Split and Barn Door, and the Wipe Reverse option
 - [ ] Keys with a colour picked from the picture (Custom Key Color, HSL Key by hue, 3D Keyer colours), the matte and status views, and spill removal for other colours
 - [ ] Match Move and Surface Tracker (the tracking maths is in; they need tracking controls and a track stored with the clip), collage settings (columns, rows, spacing, corner radius, fit)
@@ -116,7 +116,7 @@ Status at 0.7.0.
 - [ ] Generators: settings (sizes, line widths, noise scale, countdown start, angle of the linear gradient) and keyframes
 - [ ] Transitions: settings for the 29 more transitions and the 50 wipes (zoom amount, strength, direction, colour, border, feather, number of bands); a transition has only a kind and a length now
 - [ ] Effects: settings beyond the strength for the keys and the 119 effects (screen colour, softness, spill, radius, centre, dot size, colours, Tilt-Shift's band, Lens Blur's highlights), an HSL key and a 3D keyer
-- [ ] Color: splitter/combiner nodes, viewer split/wipe, window tracking, magic mask, polygon and B-spline masks, Paint and particle tools
+- [ ] Color: splitter/combiner nodes, viewer split/wipe, magic mask, polygon and B-spline masks, Paint and particle tools
 - [ ] Editing: Trim Editor window, JKL in dynamic trim, timeline in a new window, auto align by waveform for clips at another speed, reversed or frozen
 - [ ] Multicam: sync by timecode or waveform, live angle previews, switching sound
 - [ ] Audio: choosing the input device, the "Bus 1 -> Auto" output, ADR, audio effect cache, link groups

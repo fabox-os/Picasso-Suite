@@ -20,6 +20,7 @@ pub mod project;
 pub mod session;
 pub mod sync;
 pub mod time;
+pub mod tracking;
 pub mod xmeml;
 
 pub use audio_fx::{Compressor, Equalizer, TrackFx, EQ_RANGE_DB};
@@ -38,3 +39,7 @@ pub use project::{
 };
 pub use session::Session;
 pub use time::Fps;
+pub use tracking::{
+    fit_zoom, warp_for_frame, FrameTransform, Matrix3, PictureWarp, StabilizationCropMode, IDENTITY,
+    StabilizationMethod, StabilizationSettings, TrackData, TrackPoint, TrackerType,
+};

@@ -4,7 +4,7 @@
 
 use super::*;
 use picasso_color::{PowerWindow, Qualifier, WindowShape, MAX_WINDOWS};
-use picasso_core::ClipId;
+use picasso_core::{ClipId, MediaSource};
 
 /// The palette shown under the clips, in place of the wheels.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -478,6 +478,16 @@ impl StudioApp {
         if reset {
             grade.windows.clear();
         }
+        // What the window tracking reads: the clip's file and how many frames it has.
+        let media_path = self
+            .project()
+            .clip(id)
+            .and_then(|(_, clip)| self.project().media(clip.media))
+            .and_then(|m| match &m.source {
+                MediaSource::Video { path } | MediaSource::Image { path } => Some(path.clone()),
+                _ => None,
+            })
+            .unwrap_or_default();
 
         // Adding windows.
         let shapes = [
@@ -602,64 +612,85 @@ impl StudioApp {
         // The transform of the chosen window.
         let chosen = self.color.window;
         if let Some(w) = grade.windows.get_mut(chosen) {
-            c.label(
-                360.0,
-                660.0,
-                Align2::LEFT_CENTER,
-                "Transform",
-                16.0,
-                TEXT,
-                true,
-            );
-            let fields: [(&str, f32, f32, f32); 6] = [
-                ("Size X", w.size[0] * 100.0, 0.25, 40.0),
-                ("Size Y", w.size[1] * 100.0, 0.25, 50.0),
-                ("Pan", w.center[0] * 100.0, 0.25, 50.0),
-                ("Tilt", w.center[1] * 100.0, 0.25, 50.0),
-                ("Rotate", w.rotation, 0.5, 0.0),
-                ("Softness", w.softness * 100.0, 0.25, 20.0),
-            ];
-            for (f, (label, value, per, neutral)) in fields.into_iter().enumerate() {
-                let x0 = 380.0 + (f % 3) as f32 * 220.0;
-                let y = 730.0 + (f / 3) as f32 * 95.0;
+            ui.push_id(("window_transform", chosen), |ui| {
                 c.label(
-                    x0 + 75.0,
-                    y - 30.0,
-                    Align2::CENTER_CENTER,
-                    label,
+                    360.0,
+                    660.0,
+                    Align2::LEFT_CENTER,
+                    "Transform",
+                    16.0,
+                    TEXT,
+                    true,
+                );
+                let tracking = self.window_tracking();
+                if text_button(
+                    ui,
+                    c,
+                    "window_track",
+                    (860.0, 648.0, 1000.0, 676.0),
+                    if tracking { "Tracking..." } else { "Track" },
+                    tracking,
+                ) && !tracking
+                {
+                    self.start_window_tracking(
+                        ctx,
+                        id,
+                        node,
+                        chosen,
+                        media_path.clone(),
+                        w.clone(),
+                    );
+                }
+                let fields: [(&str, f32, f32, f32); 6] = [
+                    ("Size X", w.size[0] * 100.0, 0.25, 40.0),
+                    ("Size Y", w.size[1] * 100.0, 0.25, 50.0),
+                    ("Pan", w.center[0] * 100.0, 0.25, 50.0),
+                    ("Tilt", w.center[1] * 100.0, 0.25, 50.0),
+                    ("Rotate", w.rotation, 0.5, 0.0),
+                    ("Softness", w.softness * 100.0, 0.25, 20.0),
+                ];
+                for (f, (label, value, per, neutral)) in fields.into_iter().enumerate() {
+                    let x0 = 380.0 + (f % 3) as f32 * 220.0;
+                    let y = 730.0 + (f / 3) as f32 * 95.0;
+                    c.label(
+                        x0 + 75.0,
+                        y - 30.0,
+                        Align2::CENTER_CENTER,
+                        label,
+                        14.0,
+                        LABEL,
+                        false,
+                    );
+                    if let Some(v) = value_box(
+                        ui,
+                        c,
+                        ("window_value", f),
+                        (x0, y - 16.0, x0 + 150.0, y + 16.0),
+                        value,
+                        &format!("{value:.1}"),
+                        per,
+                        neutral,
+                    ) {
+                        match f {
+                            0 => w.size[0] = (v / 100.0).clamp(0.005, 4.0),
+                            1 => w.size[1] = (v / 100.0).clamp(0.005, 4.0),
+                            2 => w.center[0] = (v / 100.0).clamp(-1.0, 2.0),
+                            3 => w.center[1] = (v / 100.0).clamp(-1.0, 2.0),
+                            4 => w.rotation = v.clamp(-360.0, 360.0),
+                            _ => w.softness = (v / 100.0).clamp(0.0, 1.0),
+                        }
+                    }
+                }
+                c.label(
+                    380.0,
+                    935.0,
+                    Align2::LEFT_CENTER,
+                    "Drag the window in the viewer to move it, its handles to size and turn it",
                     14.0,
                     LABEL,
                     false,
                 );
-                if let Some(v) = value_box(
-                    ui,
-                    c,
-                    ("window_value", f),
-                    (x0, y - 16.0, x0 + 150.0, y + 16.0),
-                    value,
-                    &format!("{value:.1}"),
-                    per,
-                    neutral,
-                ) {
-                    match f {
-                        0 => w.size[0] = (v / 100.0).clamp(0.005, 4.0),
-                        1 => w.size[1] = (v / 100.0).clamp(0.005, 4.0),
-                        2 => w.center[0] = (v / 100.0).clamp(-1.0, 2.0),
-                        3 => w.center[1] = (v / 100.0).clamp(-1.0, 2.0),
-                        4 => w.rotation = v.clamp(-360.0, 360.0),
-                        _ => w.softness = (v / 100.0).clamp(0.0, 1.0),
-                    }
-                }
-            }
-            c.label(
-                380.0,
-                935.0,
-                Align2::LEFT_CENTER,
-                "Drag the window in the viewer to move it, its handles to size and turn it",
-                14.0,
-                LABEL,
-                false,
-            );
+            });
         }
         self.commit_node(ctx, id, node, &before, grade);
     }

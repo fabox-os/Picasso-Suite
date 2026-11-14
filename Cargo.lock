@@ -2184,6 +2184,7 @@ dependencies = [
  "picasso-export",
  "picasso-media",
  "picasso-render",
+ "picasso-track",
  "pollster 0.4.0",
  "rfd",
  "serde",
