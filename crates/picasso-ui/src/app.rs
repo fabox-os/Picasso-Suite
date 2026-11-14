@@ -1,8 +1,10 @@
 //! The application: state shared by the pages, commands, shortcuts and the frame loop.
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use egui::{vec2, Context, Ui};
+use picasso_decode::FrameProvider;
 use picasso_core::{ClipId, Command, MediaId, MediaSource, Outcome, Project, Session, TrackKind};
 use picasso_render::{Decoded, MediaCache};
 
@@ -41,6 +43,15 @@ pub(crate) struct Status {
 
 /// What a highlighted copy of the project was made for: the project's stamp, the clip and node.
 type HighlightStamp = ((u64, u64, u64), picasso_core::ClipId, usize);
+
+/// What tracking a Color page window found: one motion matrix per analyzed frame (in normalized
+/// picture coordinates, as `TrackData` stores them), and where the tracked region sat on average
+/// (fractions of the picture's width and height).
+pub(crate) struct WindowTrackResult {
+    pub matrices: Vec<[[f32; 3]; 3]>,
+    pub center: [f32; 2],
+    pub frames: usize,
+}
 
 pub struct StudioApp {
     pub(crate) session: Session,
@@ -197,6 +208,37 @@ pub struct StudioApp {
     /// The saved effects presets as last read from disk, and the time (egui seconds) it was
     /// read at: the folder is not read again on every repaint.
     pub(crate) preset_list: (f64, Vec<String>),
+    /// Receiver half of the channel the background stabilization analysis sends its result on
+    /// (desktop only): raw per-frame matrices, turned into `StabilizationSettings` on the main
+    /// thread.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[allow(clippy::type_complexity)]
+    pub(crate) stab_rx: Option<
+        std::sync::mpsc::Receiver<(picasso_core::ClipId, Result<Vec<[[f32; 3]; 3]>, String>)>,
+    >,
+    /// Receiver half of the channel the background match-move analysis sends its result on
+    /// (desktop only): raw per-frame matrices, turned into `TrackingData` on the main thread.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[allow(clippy::type_complexity)]
+    pub(crate) match_move_rx: Option<
+        std::sync::mpsc::Receiver<(
+            picasso_core::ClipId,
+            picasso_core::TrackPoint,
+            Result<Vec<picasso_core::Matrix3>, String>,
+        )>,
+    >,
+    /// Receiver half of the channel the background Color page window tracking sends its result
+    /// on (desktop only): the clip, the node, the window's index and what was tracked.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[allow(clippy::type_complexity)]
+    pub(crate) window_track_rx: Option<
+        std::sync::mpsc::Receiver<(
+            picasso_core::ClipId,
+            usize,
+            usize,
+            Result<WindowTrackResult, String>,
+        )>,
+    >,
 }
 
 /// What a video or sound file says about itself (its media id is filled in when it is added).
@@ -341,6 +383,12 @@ impl StudioApp {
             show_effect_preset_name_dialog: false,
             preset_name: String::new(),
             preset_list: (f64::NEG_INFINITY, Vec::new()),
+            #[cfg(not(target_arch = "wasm32"))]
+            stab_rx: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            match_move_rx: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            window_track_rx: None,
         };
         // A project opened at the start may already have copies of its files.
         app.refresh_proxies();
@@ -386,6 +434,13 @@ impl StudioApp {
         }
     }
 
+    /// Runs several commands as one undo step; a refusal is shown in the status line.
+    pub(crate) fn run_all(&mut self, commands: Vec<Command>) {
+        if let Err(e) = self.session.dispatch_all(commands) {
+            self.fail(e);
+        }
+    }
+
     /// Runs a command that is part of a drag: the whole drag is one undo step.
     pub(crate) fn run_gesture(&mut self, ctx: &Context, command: Command) {
         let dragging = ctx.input(|i| i.pointer.any_down() || i.pointer.any_released());
@@ -396,6 +451,251 @@ impl StudioApp {
         };
         if let Err(e) = result {
             self.fail(e);
+        }
+    }
+
+    /// Applies a background stabilization analysis result to the given clip as one undo step.
+    /// The measured camera path goes in; the settings the user has now (method, smoothness, crop)
+    /// stay as they are, including any change made while the analysis was running.
+    pub(crate) fn apply_stabilization_result(&mut self) {
+        let Some((clip_id, result)) = self.stab_rx.as_mut().and_then(|rx| rx.try_recv().ok()) else {
+            return;
+        };
+        let matrices = match result {
+            Ok(m) => m,
+            Err(e) => {
+                self.fail(e);
+                return;
+            }
+        };
+        let Some((_, clip)) = self.project().clip(clip_id) else {
+            return;
+        };
+        let mut settings = clip.stabilization.clone();
+        settings.enabled = true;
+        settings.analyzed_transforms = frame_transforms(matrices);
+        self.run(Command::SetStabilization {
+            clip: clip_id,
+            stabilization: settings,
+        });
+    }
+
+    /// Applies a background match-move result to the given clip as one undo step: the tracked
+    /// point and its position in every frame replace the clip's point track. Other tracks (the
+    /// Color page windows) are kept.
+    pub(crate) fn apply_match_move_result(&mut self) {
+        let Some((clip_id, point, result)) =
+            self.match_move_rx.as_mut().and_then(|rx| rx.try_recv().ok())
+        else {
+            return;
+        };
+        let matrices = match result {
+            Ok(m) => m,
+            Err(e) => {
+                self.fail(e);
+                return;
+            }
+        };
+        let Some((_, clip)) = self.project().clip(clip_id) else {
+            return;
+        };
+        let mut tracking_data: Vec<picasso_core::TrackData> = clip
+            .tracking_data
+            .iter()
+            .filter(|t| t.tracker_type != picasso_core::TrackerType::Point)
+            .cloned()
+            .collect();
+        tracking_data.push(picasso_core::TrackData {
+            track_id: clip_id.0,
+            tracker_type: picasso_core::TrackerType::Point,
+            points: vec![point],
+            analyzed_frames: frame_transforms(matrices),
+        });
+        self.run(Command::SetTrackingData {
+            clip: clip_id,
+            tracking_data,
+        });
+    }
+
+    /// Applies a background Color page window tracking result as one undo step: the window is
+    /// re-centred on the tracked region and the per-frame motion is stored with the clip.
+    pub(crate) fn apply_window_track_result(&mut self) {
+        let mut finished = false;
+        let received = self.window_track_rx.as_mut().and_then(|rx| match rx.try_recv() {
+            Ok(result) => {
+                finished = true;
+                Some(result)
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                finished = true;
+                None
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+        });
+        if finished {
+            self.window_track_rx = None;
+        }
+        let Some((clip_id, node, index, result)) = received else {
+            return;
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(e) => {
+                self.fail(format!("window tracking failed: {e}"));
+                return;
+            }
+        };
+        let Some((_, clip)) = self.project().clip(clip_id) else {
+            return;
+        };
+        let Some(mut grade) = clip.node(node).cloned() else {
+            return;
+        };
+        let Some(window) = grade.windows.get_mut(index) else {
+            return;
+        };
+        window.center = [
+            result.center[0].clamp(-1.0, 2.0),
+            result.center[1].clamp(-1.0, 2.0),
+        ];
+        let tracked = picasso_core::TrackData {
+            track_id: index as u64,
+            tracker_type: picasso_core::TrackerType::Planar,
+            points: vec![picasso_core::TrackPoint {
+                id: index as u32,
+                x: result.center[0],
+                y: result.center[1],
+                ..picasso_core::TrackPoint::default()
+            }],
+            analyzed_frames: result
+                .matrices
+                .into_iter()
+                .enumerate()
+                .map(|(i, m)| picasso_core::FrameTransform {
+                    frame_number: i as i64,
+                    matrix: m,
+                })
+                .collect(),
+        };
+        let mut tracking_data: Vec<_> = clip
+            .tracking_data
+            .iter()
+            .filter(|td| {
+                !(td.tracker_type == picasso_core::TrackerType::Planar
+                    && td.track_id == index as u64)
+            })
+            .cloned()
+            .collect();
+        tracking_data.push(tracked);
+        self.run_all(vec![
+            Command::SetGrade {
+                clip: clip_id,
+                grade,
+                node,
+            },
+            Command::SetTrackingData {
+                clip: clip_id,
+                tracking_data,
+            },
+        ]);
+        self.info(format!("Window tracked: {} frames", result.frames));
+    }
+
+    /// Measures the camera movement of clip `id` on a background thread, then stores it as one
+    /// undo step when it arrives. Desktop only.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_stabilization_analysis(
+        &mut self,
+        ctx: &Context,
+        id: picasso_core::ClipId,
+        media: String,
+        method: picasso_core::StabilizationMethod,
+    ) {
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let times = clip_frame_times_us(self.project(), clip);
+        let mode = match method {
+            picasso_core::StabilizationMethod::Translation => {
+                picasso_track::stabilize::Mode::Translation
+            }
+            picasso_core::StabilizationMethod::Similarity => {
+                picasso_track::stabilize::Mode::Similarity
+            }
+            picasso_core::StabilizationMethod::Perspective => {
+                picasso_track::stabilize::Mode::Perspective
+            }
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.stab_rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let result = analyse_camera(&media, &times, mode);
+            let _ = tx.send((id, result));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Tracks the point `point` of clip `id` through the clip on a background thread, then
+    /// stores the result as one undo step when it arrives. Desktop only.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_match_move_analysis(
+        &mut self,
+        ctx: &Context,
+        id: picasso_core::ClipId,
+        media: String,
+        point: picasso_core::TrackPoint,
+    ) {
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let times = clip_frame_times_us(self.project(), clip);
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.match_move_rx = Some(rx);
+        let ctx = ctx.clone();
+        let tracked = point.clone();
+        std::thread::spawn(move || {
+            let result = track_point(&media, &times, &tracked);
+            let _ = tx.send((id, point, result));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Tracks the chosen Color page window's region through the clip on a background thread, then
+    /// re-centres the window and stores the motion as one undo step. Desktop only.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn start_window_tracking(
+        &mut self,
+        ctx: &Context,
+        id: picasso_core::ClipId,
+        node: usize,
+        index: usize,
+        media: String,
+        window: picasso_color::PowerWindow,
+    ) {
+        let Some((_, clip)) = self.project().clip(id) else {
+            return;
+        };
+        let times = clip_frame_times_us(self.project(), clip);
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.window_track_rx = Some(rx);
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let result = track_window(&media, &times, &window);
+            let _ = tx.send((id, node, index, result));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Whether a Color page window is being tracked in the background (desktop only).
+    pub(crate) fn window_tracking(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.window_track_rx.is_some()
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            false
         }
     }
 
@@ -1433,6 +1733,9 @@ impl StudioApp {
             }
         }
         self.read_wanted_codecs();
+        self.apply_stabilization_result();
+        self.apply_match_move_result();
+        self.apply_window_track_result();
     }
 
     fn take_dropped_files(&mut self, ctx: &Context) {
@@ -1738,4 +2041,207 @@ impl StudioApp {
     }
 
     // ----- shared pieces of the pages -----
+}
+
+/// One matrix per clip frame, numbered by position.
+fn frame_transforms(matrices: Vec<picasso_core::Matrix3>) -> Vec<picasso_core::FrameTransform> {
+    matrices
+        .into_iter()
+        .enumerate()
+        .map(|(i, matrix)| picasso_core::FrameTransform {
+            frame_number: i as i64,
+            matrix,
+        })
+        .collect()
+}
+
+/// The presentation time, in microseconds, of each frame of `clip` as the renderer reads it, so
+/// the analyses measure exactly the pictures the clip shows.
+#[cfg(not(target_arch = "wasm32"))]
+fn clip_frame_times_us(project: &picasso_core::Project, clip: &picasso_core::Clip) -> Vec<i64> {
+    let fps = project.fps;
+    let media_length = project.media(clip.media).and_then(|m| m.length);
+    (0..clip.duration)
+        .map(|k| {
+            let mut frame = clip.source_frame_at(clip.start + k);
+            if media_length.is_some_and(|l| frame >= l) {
+                frame = clip.source_frame_at(clip.end().saturating_sub(1).max(clip.start));
+            }
+            let us =
+                u128::from(frame) * 1_000_000 * u128::from(fps.den) / u128::from(fps.num.max(1));
+            i64::try_from(us).unwrap_or(i64::MAX)
+        })
+        .collect()
+}
+
+/// The picture at `pts_us` as grey, or `None` when it cannot be read.
+#[cfg(not(target_arch = "wasm32"))]
+fn decode_gray(
+    decoder: &mut picasso_decode::VideoDecoder,
+    pts_us: i64,
+) -> Option<picasso_track::GrayImage> {
+    let frame = decoder.frame_at(pts_us).ok()?;
+    picasso_track::GrayImage::from_rgba8(frame.width as usize, frame.height as usize, &frame.rgba)
+}
+
+/// A measured map as the matrix a clip stores.
+#[cfg(not(target_arch = "wasm32"))]
+fn homography_matrix(h: &picasso_track::Homography) -> picasso_core::Matrix3 {
+    let m = &h.m;
+    [
+        [m[0] as f32, m[1] as f32, m[2] as f32],
+        [m[3] as f32, m[4] as f32, m[5] as f32],
+        [m[6] as f32, m[7] as f32, m[8] as f32],
+    ]
+}
+
+/// The camera path over the clip's frames (see `picasso_track::stabilize::analyse`). Frames are
+/// read one at a time, so a long clip does not have to fit in memory.
+#[cfg(not(target_arch = "wasm32"))]
+fn analyse_camera(
+    media: &str,
+    times: &[i64],
+    mode: picasso_track::stabilize::Mode,
+) -> Result<Vec<picasso_core::Matrix3>, String> {
+    if times.len() < 2 {
+        return Err("stabilization needs at least two frames".into());
+    }
+    let mut decoder = picasso_decode::VideoDecoder::open(Path::new(media))
+        .map_err(|e| format!("cannot open {media}: {e}"))?;
+    let path = picasso_track::stabilize::analyse(
+        mode,
+        times.len(),
+        &mut |i| decode_gray(&mut decoder, times[i]),
+        &mut |_, _| {},
+        None,
+    )
+    .map_err(|e| format!("stabilization analysis failed: {e:?}"))?;
+    Ok(path.frames.iter().map(homography_matrix).collect())
+}
+
+/// The position of one point in every frame, as translations from its first position (in
+/// normalized picture coordinates). A frame the point is lost in keeps the last position found.
+#[cfg(not(target_arch = "wasm32"))]
+fn track_point(
+    media: &str,
+    times: &[i64],
+    point: &picasso_core::TrackPoint,
+) -> Result<Vec<picasso_core::Matrix3>, String> {
+    if times.len() < 2 {
+        return Err("tracking needs at least two frames".into());
+    }
+    let mut decoder = picasso_decode::VideoDecoder::open(Path::new(media))
+        .map_err(|e| format!("cannot open {media}: {e}"))?;
+    let first = decode_gray(&mut decoder, times[0]).ok_or("cannot read the first frame")?;
+    let (w, h) = (first.width() as f64, first.height() as f64);
+    let start = picasso_track::Vec2::new(
+        (f64::from(point.x) * w).clamp(0.0, w - 1.0),
+        (f64::from(point.y) * h).clamp(0.0, h - 1.0),
+    );
+    let mut tracker = picasso_track::PointTracker::new(picasso_track::TrackerSettings::default());
+    if !tracker.reset(&first, start) {
+        return Err("the point has too little detail to track".into());
+    }
+    let mut matrices = vec![picasso_core::IDENTITY];
+    let mut at = start;
+    for &t in &times[1..] {
+        let frame = decode_gray(&mut decoder, t).ok_or("cannot read a frame")?;
+        let tracked = tracker.track(&frame);
+        if tracked.ok {
+            at = tracked.position;
+        }
+        let (dx, dy) = ((at.x - start.x) / w, (at.y - start.y) / w);
+        matrices.push([[1.0, 0.0, dx as f32], [0.0, 1.0, dy as f32], [0.0, 0.0, 1.0]]);
+    }
+    Ok(matrices)
+}
+
+/// Follows the region of a Color page window through the clip (a planar region when it has
+/// enough detail, else its centre point) and says where the window's motion took it.
+#[cfg(not(target_arch = "wasm32"))]
+fn track_window(
+    media: &str,
+    times: &[i64],
+    window: &picasso_color::PowerWindow,
+) -> Result<WindowTrackResult, String> {
+    if times.len() < 2 {
+        return Err("need at least two frames".into());
+    }
+    let mut decoder = picasso_decode::VideoDecoder::open(Path::new(media))
+        .map_err(|e| format!("cannot open {media}: {e}"))?;
+    let first = decode_gray(&mut decoder, times[0]).ok_or("cannot read the first frame")?;
+    let (w, h) = (first.width() as f64, first.height() as f64);
+    let (sin, cos) = (window.rotation as f64).to_radians().sin_cos();
+    let cx = window.center[0] as f64 * w;
+    let cy = window.center[1] as f64 * h;
+    let rx = (window.size[0] as f64 * w / 2.0).max(2.0);
+    let ry = (window.size[1] as f64 * h / 2.0).max(2.0);
+    let corner = |u: f64, v: f64| {
+        picasso_track::Vec2::new(cx + u * cos - v * sin, cy + u * sin + v * cos)
+    };
+    let quad = [
+        corner(-rx, -ry),
+        corner(rx, -ry),
+        corner(rx, ry),
+        corner(-rx, ry),
+    ];
+    let mut planar = picasso_track::PlanarTracker::new(picasso_track::PlanarSettings::default());
+    let use_planar = planar.reset(&first, &quad);
+    let mut point = picasso_track::PointTracker::new(picasso_track::TrackerSettings::default());
+    let use_point = !use_planar
+        && point.reset(
+            &first,
+            picasso_track::Vec2::new(cx.clamp(0.0, w - 1.0), cy.clamp(0.0, h - 1.0)),
+        );
+    if !use_planar && !use_point {
+        return Err("the window has too little detail to track".into());
+    }
+    // Pixels <-> normalized picture coordinates (origin at the centre, one unit = the width on
+    // both axes), the convention `FrameTransform` stores.
+    let to_px = picasso_track::Homography {
+        m: [w, 0.0, w / 2.0, 0.0, w, h / 2.0, 0.0, 0.0, 1.0],
+    };
+    let to_norm = to_px.inverse().unwrap_or_default();
+    let mut motion = picasso_track::Homography::default();
+    let mut matrices = vec![picasso_core::IDENTITY];
+    let mut center_sum = picasso_track::Vec2::new(cx, cy);
+    for &t in &times[1..] {
+        let frame = decode_gray(&mut decoder, t).ok_or("cannot read a frame")?;
+        motion = if use_planar {
+            planar.track(&frame).motion
+        } else {
+            let tracked = point.track(&frame);
+            if tracked.ok {
+                picasso_track::Homography {
+                    m: [
+                        1.0,
+                        0.0,
+                        tracked.position.x - cx,
+                        0.0,
+                        1.0,
+                        tracked.position.y - cy,
+                        0.0,
+                        0.0,
+                        1.0,
+                    ],
+                }
+            } else {
+                motion
+            }
+        };
+        let center = motion.map(picasso_track::Vec2::new(cx, cy));
+        center_sum.x += center.x;
+        center_sum.y += center.y;
+        let m = to_norm.after(&motion).after(&to_px);
+        matrices.push(homography_matrix(&m));
+    }
+    let count = matrices.len() as f64;
+    Ok(WindowTrackResult {
+        frames: matrices.len(),
+        center: [
+            (center_sum.x / count / w) as f32,
+            (center_sum.y / count / h) as f32,
+        ],
+        matrices,
+    })
 }

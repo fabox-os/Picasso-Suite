@@ -3,7 +3,7 @@
 use std::fmt;
 
 use image::{codecs::png::PngEncoder, ExtendedColorType, ImageEncoder};
-use picasso_core::{MediaItem, MediaSource, Project, TrackKind};
+use picasso_core::{MediaItem, MediaSource, PictureWarp, Project, TrackKind};
 
 use crate::cache::MediaCache;
 use crate::source;
@@ -205,9 +205,10 @@ fn compose_tracks(
                 project.fps.as_f64() as f32,
             );
             let placed = clip.transform_at(at);
-            if !placed.is_identity() {
+            let warp = clip_warp(clip, at, (w, h));
+            if !placed.is_identity() || warp.is_some() {
                 moved.resize(w * h * 4, 0);
-                transform::apply(&layer, &mut moved, (w, h), &placed);
+                transform::apply(&layer, &mut moved, (w, h), &placed, warp.as_ref());
                 layer.copy_from_slice(&moved);
             }
             // It replaces the composite below rather than painting over it, so a transform moves
@@ -245,6 +246,17 @@ fn compose_tracks(
         px[3] = (c * 255.0).round() as u8;
     }
     (out, exact)
+}
+
+/// The stabilization and match-move warp of `clip` at timeline frame `at`, on a picture of
+/// `(w, h)` pixels. The clip's frames are counted from its first frame.
+fn clip_warp(clip: &picasso_core::Clip, at: u64, (w, h): (usize, usize)) -> Option<PictureWarp> {
+    if clip.stabilization.analyzed_transforms.is_empty() && clip.tracking_data.is_empty() {
+        return None;
+    }
+    let frame = at.saturating_sub(clip.start) as i64;
+    let aspect = if w == 0 { 1.0 } else { h as f32 / w as f32 };
+    picasso_core::warp_for_frame(&clip.stabilization, &clip.tracking_data, frame, aspect)
 }
 
 /// Draws the picture of `clip` at timeline frame `at` into `layer`, with its grade and
@@ -293,9 +305,10 @@ fn draw_clip(
     clip.apply_nodes(layer, w, h);
     apply_clip_effects(project, clip, item, cache, at, (w, h), layer);
     let placed = clip.transform_at(at);
-    if !placed.is_identity() {
+    let warp = clip_warp(clip, at, (w, h));
+    if !placed.is_identity() || warp.is_some() {
         moved.resize(w * h * 4, 0);
-        transform::apply(layer, moved, (w, h), &placed);
+        transform::apply(layer, moved, (w, h), &placed, warp.as_ref());
         layer.copy_from_slice(moved);
     }
     exact
@@ -675,6 +688,30 @@ mod tests {
             px(&render_frame(&p, &cache, 15, 2, 2).unwrap(), 0, 0),
             [0, 0, 0, 255]
         );
+    }
+
+    #[test]
+    fn a_tracked_point_is_held_still_on_an_untransformed_clip() {
+        let (mut p, m) = project_with([10, 200, 30]);
+        let clip = place(&mut p, 0, m, 0);
+        // The point has moved half the picture width to the right by this frame, so the picture
+        // is drawn half a width to the left to hold it where it was: the left half shows the
+        // footage, the right half is empty.
+        Command::SetTrackingData {
+            clip,
+            tracking_data: vec![picasso_core::TrackData {
+                analyzed_frames: vec![picasso_core::FrameTransform {
+                    frame_number: 0,
+                    matrix: [[1.0, 0.0, 0.5], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                }],
+                ..Default::default()
+            }],
+        }
+        .apply(&mut p)
+        .unwrap();
+        let f = render_frame(&p, &MediaCache::new(), 0, 4, 2).unwrap();
+        assert_eq!(px(&f, 0, 0), [10, 200, 30, 255]);
+        assert_eq!(px(&f, 3, 0), [0, 0, 0, 255]);
     }
 
     #[test]

@@ -22,6 +22,7 @@ picasso-ui = { path = "crates/picasso-ui" }
 picasso-drp = { path = "crates/picasso-drp" }
 picasso-aaf = { path = "crates/picasso-aaf" }
 picasso-asr = { path = "crates/picasso-asr" }
+picasso-track = { path = "crates/picasso-track" }
 
 # external (pure Rust, GPLv3-compatible licences)
 ffmpeg-next = { version = "7.1", default-features = false, features = ["codec", "format", "software-scaling", "software-resampling"] }  # WTFPL; links FFmpeg (GPL build)

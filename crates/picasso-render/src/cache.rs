@@ -107,6 +107,13 @@ pub trait FrameSource: Send + Sync + std::fmt::Debug {
     fn generation(&self) -> u64 {
         0
     }
+
+    /// Whether the video of `media` is read on the processor instead of the graphics card (a
+    /// hardware read error, or the speed trial choosing the processor). False when the source
+    /// knows nothing about it.
+    fn fell_back(&self, _media: MediaId) -> bool {
+        false
+    }
 }
 
 /// How much smaller than the file the media pool's video thumbnails are decoded.
@@ -279,6 +286,13 @@ impl MediaCache {
         self.video.as_ref().map_or(0, |v| v.generation())
     }
 
+    /// Whether the video of `media` is read on the processor instead of the graphics card (a
+    /// hardware read error, or the speed trial choosing the processor). False without a video
+    /// source, and for a media that is read on the card.
+    pub fn fell_back(&self, media: MediaId) -> bool {
+        self.video.as_ref().is_some_and(|v| v.fell_back(media))
+    }
+
     pub fn insert(&mut self, media: MediaId, image: Decoded) {
         Arc::make_mut(&mut self.images).insert(media, Arc::new(image));
     }
@@ -385,6 +399,13 @@ mod tests {
         // An export waits for the exact picture and still reads the file.
         cache.blocking().video_frame(MediaId(1), "A001.mov", 0);
         assert_eq!(*source.0.lock().unwrap(), ["A001.mov", "A001-1a2b3c4d.mp4"]);
+    }
+
+    /// A cache without a video source has no media that fell back to the processor.
+    #[test]
+    fn a_cache_without_a_video_source_has_no_fell_back_media() {
+        let cache = MediaCache::new();
+        assert!(!cache.fell_back(MediaId(1)));
     }
 
     #[test]

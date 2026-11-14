@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="Menu entries 95.40% done (602 of 631); roadmap items 75.89% done (107 of 141)">
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="Menu entries 95.40% done (602 of 631); roadmap items 76.60% done (108 of 141)">
 <rect width="900" height="420" rx="8" fill="#16181d"/>
 <g transform="translate(12,12)" font-size="11" font-weight="600"><rect width="100" height="20" rx="3" fill="#555"/><rect x="100" width="56" height="20" rx="3" fill="#4c1"/><rect x="97" width="6" height="20" fill="#4c1"/><text x="8" y="14" fill="#fff">menu entries</text><text x="107" y="14" fill="#fff">95.40%</text></g>
-<g transform="translate(162,12)" font-size="11" font-weight="600"><rect width="65" height="20" rx="3" fill="#555"/><rect x="65" width="56" height="20" rx="3" fill="#97ca00"/><rect x="62" width="6" height="20" fill="#97ca00"/><text x="8" y="14" fill="#fff">roadmap</text><text x="72" y="14" fill="#fff">75.89%</text></g>
+<g transform="translate(162,12)" font-size="11" font-weight="600"><rect width="65" height="20" rx="3" fill="#555"/><rect x="65" width="56" height="20" rx="3" fill="#97ca00"/><rect x="62" width="6" height="20" fill="#97ca00"/><text x="8" y="14" fill="#fff">roadmap</text><text x="72" y="14" fill="#fff">76.60%</text></g>
 <text x="12" y="70" font-size="13" fill="#e6e6ea">Menu entries: 95.40% (602/631)</text>
-<text x="458.0" y="70" font-size="13" fill="#e6e6ea">Roadmap items: 75.89% (107/141)</text>
+<text x="458.0" y="70" font-size="13" fill="#e6e6ea">Roadmap items: 76.60% (108/141)</text>
 <rect x="12.0" y="78.0" width="14.7" height="15.3" fill="#2ea043" stroke="#1b7f32" stroke-width="1"/>
 <rect x="26.7" y="78.0" width="14.7" height="15.3" fill="#2ea043" stroke="#1b7f32" stroke-width="1"/>
 <rect x="41.5" y="78.0" width="14.7" height="15.3" fill="#2ea043" stroke="#1b7f32" stroke-width="1"/>
@@ -806,7 +806,7 @@
 <rect x="813.8" y="204.6" width="24.7" height="40.7" fill="#3a3d44" stroke="#2a2c31" stroke-width="1"/>
 <rect x="789.0" y="204.6" width="49.5" height="40.7" fill="none" stroke="#16181d" stroke-width="2"/>
 <rect x="838.5" y="204.6" width="24.7" height="40.7" fill="#2ea043" stroke="#1b7f32" stroke-width="1"/>
-<rect x="863.3" y="204.6" width="24.7" height="40.7" fill="#3a3d44" stroke="#2a2c31" stroke-width="1"/>
+<rect x="863.3" y="204.6" width="24.7" height="40.7" fill="#2ea043" stroke="#1b7f32" stroke-width="1"/>
 <rect x="838.5" y="204.6" width="49.5" height="40.7" fill="none" stroke="#16181d" stroke-width="2"/>
 <rect x="690.1" y="245.3" width="37.1" height="27.1" fill="#2ea043" stroke="#1b7f32" stroke-width="1"/>
 <rect x="690.1" y="272.4" width="37.1" height="27.1" fill="#3a3d44" stroke="#2a2c31" stroke-width="1"/>

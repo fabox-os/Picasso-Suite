@@ -24,6 +24,7 @@ picasso-export.workspace = true
 picasso-asr.workspace = true
 picasso-media.workspace = true
 picasso-drp.workspace = true
+picasso-track.workspace = true
 tracing.workspace = true
 # The session log (Help > Export Log File): the program's warnings and errors, and those of
 # eframe and wgpu (through `log`), written to a text file.

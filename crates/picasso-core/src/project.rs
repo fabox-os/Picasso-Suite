@@ -554,6 +554,12 @@ pub struct Clip {
     /// Video effects, applied in order after the grade.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<picasso_color::Effect>,
+    /// Stabilization: whether it is on, how it is modeled and the measured frame transforms.
+    #[serde(default)]
+    pub stabilization: crate::StabilizationSettings,
+    /// Tracked points/planes and their measured frames, used by Match Move and window tracking.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tracking_data: Vec<crate::TrackData>,
 }
 
 /// The colours a clip can be given (Mark > Set Clip Color), as names and sRGB.
@@ -1423,6 +1429,8 @@ impl Project {
                     color: None,
                     keyframes: Vec::new(),
                     effects: Vec::new(),
+                    stabilization: crate::StabilizationSettings::default(),
+                    tracking_data: Vec::new(),
                 });
             }
             at += fps * 4;

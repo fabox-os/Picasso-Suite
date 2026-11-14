@@ -378,6 +378,15 @@ impl Trial {
     }
 }
 
+/// Whether a card decoder for this codec is on this machine. It is asked on a context of its own,
+/// so the context the file is decoded with is left for the processor when the file stays there.
+fn card_decoder_exists(params: &ff::codec::parameters::Parameters) -> bool {
+    let Ok(mut probe) = ff::codec::context::Context::from_parameters(params.clone()) else {
+        return false;
+    };
+    hw::attach(&mut probe)
+}
+
 /// Decodes the pictures of one file, on request.
 pub struct VideoDecoder {
     path: PathBuf,
@@ -385,6 +394,10 @@ pub struct VideoDecoder {
     on_card: bool,
     /// Whether hardware decoding was asked for when the file was opened.
     asked: bool,
+    /// Whether this file fell back from the graphics card to the processor (a hardware read
+    /// error, or the speed trial choosing the processor). Stays false when the file was never
+    /// on the card (user switched hardware decoding off, or no card decoder available).
+    fell_back: bool,
     input: Input,
     stream: usize,
     decoder: ff::decoder::Video,
@@ -423,9 +436,14 @@ impl VideoDecoder {
                 .ok_or(DecodeError::NoVideo)?;
             (s.index(), s.parameters(), s.time_base())
         };
-        let mut context = ff::codec::context::Context::from_parameters(params)?;
         // A file found to decode faster on the processor stays there for the rest of the run.
         let learnt = if hardware { faster_way(path) } else { None };
+        // The file was found to decode faster on the processor, and a card decoder is on this
+        // machine: it is read on the processor although the card was asked for, and the caller
+        // is told so. A machine without a card decoder, and a user who turned hardware decoding
+        // off, are not a fallback: there the file was never on the card to begin with.
+        let fell_back = hardware && learnt == Some(false) && card_decoder_exists(&params);
+        let mut context = ff::codec::context::Context::from_parameters(params)?;
         let on_card = hardware && learnt != Some(false) && hw::attach(&mut context);
         // Decode on every core: pictures of a 1080p or 4K file do not arrive in time on one. The
         // card needs no threads, and each would hold more of its memory.
@@ -438,6 +456,7 @@ impl VideoDecoder {
             path: path.to_path_buf(),
             on_card,
             asked: hardware,
+            fell_back,
             input,
             stream,
             decoder,
@@ -605,6 +624,7 @@ impl VideoDecoder {
                 let trial = self.trial.take();
                 if let Ok(d) = reopen(self, false) {
                     *self = d;
+                    self.fell_back = true;
                 }
                 self.trial = trial;
             }
@@ -621,6 +641,7 @@ impl VideoDecoder {
                 if card != self.on_card {
                     if let Ok(d) = reopen(self, true) {
                         *self = d;
+                        self.fell_back = !card;
                     }
                 }
             }
@@ -643,6 +664,7 @@ impl VideoDecoder {
                 *self = Self::open_with(&self.path.clone(), false)?;
                 // Still counts as opened with the setting on, so it is not opened again for it.
                 self.asked = asked;
+                self.fell_back = true;
                 self.read(pts_us, reduce, scrub)
             }
             other => other,
@@ -671,6 +693,12 @@ impl VideoDecoder {
     /// be reopened to read the new one.
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Whether this file fell back from the graphics card to the processor (a hardware read
+    /// error, or the speed trial choosing the processor).
+    pub fn fell_back(&self) -> bool {
+        self.fell_back
     }
 
     fn read(

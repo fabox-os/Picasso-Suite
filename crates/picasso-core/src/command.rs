@@ -275,6 +275,16 @@ pub enum Command {
         clip: ClipId,
         param: crate::KeyParam,
     },
+    /// Sets how a clip is stabilized and what the analysis produced.
+    SetStabilization {
+        clip: ClipId,
+        stabilization: crate::StabilizationSettings,
+    },
+    /// Sets the tracked points/planes and their measured frames of a clip.
+    SetTrackingData {
+        clip: ClipId,
+        tracking_data: Vec<crate::TrackData>,
+    },
     /// A speed ramp: the clip (and the clips linked to it) is cut into `speeds.len()` pieces
     /// that each show an equal part of its media at their own speed, one after the other from
     /// the clip's start; the clips after it on its track move by the change in length.
@@ -560,6 +570,8 @@ impl Command {
             Self::RemoveEffect { .. } => "clip.remove_effect",
             Self::SetEffects { .. } => "clip.set_effects",
             Self::ClearKeyframes { .. } => "clip.clear_keyframes",
+            Self::SetStabilization { .. } => "clip.set_stabilization",
+            Self::SetTrackingData { .. } => "clip.set_tracking_data",
             Self::InsertClip { .. } => "clip.insert",
             Self::OverwriteClip { .. } => "clip.overwrite",
             Self::ReplaceClip { .. } => "clip.replace",
@@ -653,6 +665,8 @@ impl Command {
             Self::RemoveEffect { .. } => "Remove effect",
             Self::SetEffects { .. } => "Replace effects",
             Self::ClearKeyframes { .. } => "Clear keyframes",
+            Self::SetStabilization { .. } => "Stabilize clip",
+            Self::SetTrackingData { .. } => "Track clip",
             Self::InsertClip { .. } => "Insert clip",
             Self::OverwriteClip { .. } => "Overwrite clip",
             Self::ReplaceClip { .. } => "Replace clip",
@@ -1512,6 +1526,21 @@ impl Command {
                     .retain(|t| t.param != param);
                 Ok(Outcome::Clip(clip))
             }
+            Self::SetStabilization {
+                clip,
+                stabilization,
+            } => {
+                let (ti, ci) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+                let c = &mut p.tracks[ti].clips[ci];
+                c.stabilization = stabilization.sanitized();
+                Ok(Outcome::Clip(clip))
+            }
+            Self::SetTrackingData { clip, tracking_data } => {
+                let (ti, ci) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+                let c = &mut p.tracks[ti].clips[ci];
+                c.tracking_data = tracking_data.into_iter().map(crate::TrackData::sanitized).collect();
+                Ok(Outcome::Clip(clip))
+            }
             Self::SetClipAudio { clip, audio } => {
                 // Like a grade, a clip's sound can change on a locked track.
                 let (ti, ci) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
@@ -1632,6 +1661,8 @@ impl Command {
                     color: None,
                     keyframes: Vec::new(),
                     effects: Vec::new(),
+                    stabilization: crate::StabilizationSettings::default(),
+                    tracking_data: Vec::new(),
                 };
                 if let Some(t) = p.track_mut(track) {
                     t.clips.push(clip);
@@ -2006,6 +2037,8 @@ fn plain_clip(id: ClipId, media: MediaId, name: String, start: u64, duration: u6
         color: None,
         keyframes: Vec::new(),
         effects: Vec::new(),
+        stabilization: crate::StabilizationSettings::default(),
+        tracking_data: Vec::new(),
     }
 }
 
@@ -2099,6 +2132,8 @@ fn new_clip(
         color: None,
         keyframes: Vec::new(),
         effects: Vec::new(),
+        stabilization: crate::StabilizationSettings::default(),
+        tracking_data: Vec::new(),
     })
 }
 

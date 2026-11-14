@@ -1,10 +1,21 @@
 //! Moving, scaling, turning and cropping a layer, and mixing layers with a blend mode.
 
-use picasso_core::{BlendMode, Transform};
+use picasso_core::{BlendMode, PictureWarp, Transform};
 
 /// Draws `layer` (`w * h` RGBA) into `out` (the same size) with `t` applied. Where the moved
 /// picture does not reach, `out` is transparent.
-pub(crate) fn apply(layer: &[u8], out: &mut [u8], (w, h): (usize, usize), t: &Transform) {
+///
+/// With `warp` (stabilization or a tracked point), the picture is first zoomed about its centre
+/// and then sampled through `warp.matrix`: each output pixel takes the footage at
+/// `matrix * p` in normalized picture coordinates (see `picasso_core::tracking`). Edges the warp
+/// reveals stay transparent, unless the zoom has covered them.
+pub(crate) fn apply(
+    layer: &[u8],
+    out: &mut [u8],
+    (w, h): (usize, usize),
+    t: &Transform,
+    warp: Option<&PictureWarp>,
+) {
     out.fill(0);
     if w == 0 || h == 0 || layer.len() < w * h * 4 || out.len() < w * h * 4 {
         return;
@@ -22,8 +33,16 @@ pub(crate) fn apply(layer: &[u8], out: &mut [u8], (w, h): (usize, usize), t: &Tr
             // Undo the turn (clockwise on screen) and the scale to find the source pixel.
             let rx = dx * cos + dy * sin;
             let ry = -dx * sin + dy * cos;
-            let sx = rx / t.scale_x + wf * 0.5;
-            let sy = ry / t.scale_y + hf * 0.5;
+            let mut sx = rx / t.scale_x + wf * 0.5;
+            let mut sy = ry / t.scale_y + hf * 0.5;
+            if let Some(warp) = warp {
+                // Normalized picture coordinates: one unit is the picture width on both axes.
+                let nx = (sx - wf * 0.5) / wf / warp.zoom;
+                let ny = (sy - hf * 0.5) / wf / warp.zoom;
+                let (nx2, ny2) = homography_map(&warp.matrix, nx, ny);
+                sx = (nx2 + 0.5) * wf;
+                sy = ny2 * wf + hf * 0.5;
+            }
             if sx < left || sx >= right || sy < top || sy >= bottom {
                 continue;
             }
@@ -31,6 +50,17 @@ pub(crate) fn apply(layer: &[u8], out: &mut [u8], (w, h): (usize, usize), t: &Tr
             sample(layer, (w, h), sx - 0.5, sy - 0.5, &mut out[dst..dst + 4]);
         }
     }
+}
+
+/// Maps a normalized point through a 3x3 homography.
+fn homography_map(m: &[[f32; 3]; 3], x: f32, y: f32) -> (f32, f32) {
+    let w = m[2][0] * x + m[2][1] * y + m[2][2];
+    if w.abs() < 1e-6 {
+        return (x * 1e12, y * 1e12);
+    }
+    let nx = (m[0][0] * x + m[0][1] * y + m[0][2]) / w;
+    let ny = (m[1][0] * x + m[1][1] * y + m[1][2]) / w;
+    (nx, ny)
 }
 
 /// Bilinear sample of `layer` at (x, y), in pixel-centre coordinates; the edges repeat.
@@ -155,7 +185,7 @@ mod tests {
 
     fn run(t: Transform) -> Vec<u8> {
         let mut out = vec![9; 8 * 8 * 4];
-        apply(&halves(), &mut out, (8, 8), &t);
+        apply(&halves(), &mut out, (8, 8), &t, None);
         out
     }
 
