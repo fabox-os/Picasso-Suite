@@ -159,6 +159,9 @@ fn painted_boxes_of(language: crate::i18n::Language, demo: bool) -> Vec<(String,
     if demo {
         app.load_demo();
     }
+    // The pages are what is looked at, not the window that asks a new project for its video
+    // layout (it opens over them).
+    app.extra.video_layout_decided = true;
     crate::i18n::set(language);
     crate::i18n::sync_fonts(&ctx);
     let mut all = Vec::new();

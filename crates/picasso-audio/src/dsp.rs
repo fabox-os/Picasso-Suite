@@ -128,10 +128,13 @@ pub struct TrackDsp {
     envelope: f32,
     /// The deepest gain change in the last block, for a meter.
     pub reduction_db: f32,
+    /// The sound effects (reverb, echo, voice changers...), after the EQ and the compressor.
+    chain: crate::effects::EffectChain,
 }
 
 impl TrackDsp {
-    /// Runs `buf` (interleaved stereo) through the track's EQ, then its compressor.
+    /// Runs `buf` (interleaved stereo) through the track's EQ, then its compressor, then its
+    /// sound effects.
     pub fn process(&mut self, fx: &TrackFx, buf: &mut [f32]) {
         if fx.eq.is_active() {
             let coefficients = bands(&fx.eq);
@@ -149,6 +152,7 @@ impl TrackDsp {
         if fx.dynamics.enabled {
             self.compress(&fx.dynamics, buf);
         }
+        self.chain.process(&fx.chain, buf);
     }
 
     fn compress(&mut self, c: &Compressor, buf: &mut [f32]) {

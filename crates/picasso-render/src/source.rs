@@ -49,7 +49,7 @@ pub(crate) fn draw(
         MediaSource::Audio { .. } => fill(out, [30, 52, 56, 255]),
         MediaSource::Title(title) => {
             fill(out, [0, 0, 0, 0]);
-            crate::text::draw_title(out, w, h, title);
+            crate::text::draw_title_at(out, w, h, title, time_us);
         }
         // A compound clip is drawn from its timeline by the compositor, which knows the project.
         MediaSource::Compound { .. } => fill(out, [0, 0, 0, 0]),

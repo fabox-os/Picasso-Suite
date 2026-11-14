@@ -73,7 +73,7 @@ fn translation(dx: f64, dy: f64) -> Homography {
     }
 }
 
-/// `m` rebuilt inside the model of `mode`, so a chained path cannot drift off it.
+/// `m` rebuilt inside the model of `mode`, so a chained path cannot wander off it.
 pub fn project_to_model(mode: Mode, m: &Homography) -> Homography {
     let a = &m.m;
     match mode {
@@ -292,7 +292,7 @@ pub fn analyse(
         } else {
             lost += 1;
         }
-        camera = project_to_model(mode, &camera); // chain in the model (no drift off it)
+        camera = project_to_model(mode, &camera); // chain in the model (no wandering off it)
         path.push(camera);
         previous = next;
         progress(i + 1, frames);

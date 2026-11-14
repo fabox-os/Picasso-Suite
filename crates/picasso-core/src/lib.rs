@@ -7,9 +7,13 @@
 //! The crate does no I/O and never panics; numbers that come from a project file are checked by
 //! [`Project::validate`] before the project is used.
 
+pub mod audio_effect;
 pub mod audio_fx;
 pub mod base64;
+pub mod beats;
 mod command;
+pub mod easing;
+pub mod effect_looks;
 pub mod edl;
 pub mod error;
 pub mod generator;
@@ -20,11 +24,17 @@ pub mod project;
 pub mod session;
 pub mod sync;
 pub mod time;
+pub mod title_animation;
+pub mod video_layout;
 pub mod tracking;
 pub mod xmeml;
 
-pub use audio_fx::{Compressor, Equalizer, TrackFx, EQ_RANGE_DB};
+pub use audio_effect::{
+    AudioEffect, AudioEffectGroup, AudioEffectKind, AudioParam, MAX_PARAMS,
+};
+pub use audio_fx::{Compressor, Equalizer, TrackFx, EQ_RANGE_DB, MAX_CHAIN};
 pub use command::{Command, Outcome, MAX_RAMP_STEPS};
+pub use easing::{CurvePreset, KeyCurve};
 pub use error::EditError;
 pub use generator::GeneratorKind;
 pub use keyframe::{KeyParam, KeyTrack, Keyframe, MAX_KEYFRAMES};
@@ -39,6 +49,7 @@ pub use project::{
 };
 pub use session::Session;
 pub use time::Fps;
+pub use title_animation::TitleAnimation;
 pub use tracking::{
     fit_zoom, warp_for_frame, FrameTransform, Matrix3, PictureWarp, StabilizationCropMode, IDENTITY,
     StabilizationMethod, StabilizationSettings, TrackData, TrackPoint, TrackerType,

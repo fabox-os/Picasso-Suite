@@ -1,6 +1,6 @@
 # Roadmap
 
-Status at 0.7.0.
+Status at 0.8.0 and what was made since.
 
 ## Done
 
@@ -102,6 +102,15 @@ Status at 0.7.0.
 - [x] Playback: HDR video (HLG, PQ, BT.2020) is mapped to the SDR timeline when decoded
 - [x] Hardware: VA-API encoders and decoding try every graphics card and the low-power mode, not only the default card
 - [x] Tracking: `picasso-track` (point tracker, planar tracker, homographies, stabilisation analysis), the maths only
+- [x] Audio: 29 sound effects per track (**Effects > Audio FX**: Space, Texture, Transmission, Utility and Voice groups, up to eight in a chain after the EQ and compressor, switched, ordered and set in the track's Audio FX window)
+- [x] Effects: 22 more (**Picasso FX > Glitch**: Block, Digital and Scanline Glitch, RGB Split; **Film and Light**: Film Burn, Light Leak, Super 8, VHS and CRT, Star Filter, Bokeh Dream, Sparkle; **Zoom and Pulse**: Infinite Zoom, Shockwave, Zoom Punch; **Paint**: Oil Paint, Neon Edges; **Grade**: Cinematic Grade, Hue Shift, Brightness, Contrast, Gamma, Saturation)
+- [x] Transitions: 18 looks made of noise, cells and light (**Video Transitions > Looks**: Interference Blast, Bubbles, Zoom Swirl, Honeycomb, Ink Bleed, Kaleidoscope Spin, Lens Flare Wipe, Liquid Smudge, Luma Fade, Digital Rain, Particle Wind, Pixel Swap, Plasma Burn, Radial Zoom Blur, RGB Displacement, Triangle Mosaic, VHS Roll, Shatter)
+- [x] Subtitles: Timeline > Create Subtitles from Audio (Whisper run in pure Rust on the processor, six models from Tiny to Small downloaded and checked when first wanted, language chosen or heard, words per subtitle, a window with progress and a stop button; one undo step)
+- [x] Keyframes: 34 curves to the next keyframe (Straight, Jump, Smooth, Ease, Sine, Quad, Cubic, Quart, Quint, Expo, Circ, Back, Elastic and Bounce, each in, out and in-out), chosen from the ~ button beside a keyframe in the Inspector; the value stays inside what the property can be when a curve overshoots
+- [x] Effects: 12 Looks (**Picasso FX > Looks**: Cinematic, Dream, Neon Night, Retro Tape, Sunset Leak, Bling, Glitch Cut, Anime Punch, Beat Drop, RGB Rave, Slow-Mo Drop, Snap), stacks of effects added to a clip in one click
+- [x] Audio: Mark > Add Markers on Beats (spectral-flux onsets, tempo by autocorrelation, a beat grid with the first beat of each bar in another colour; hits only where there is no steady tempo)
+- [x] Project: Choose Video Layout (YouTube, Instagram, Facebook, TikTok and more: a platform, a template and a quality give the picture size; asked on a new project and from File)
+- [x] Titles: 17 ways to come in (fade, slides, rise, drop, zooms, pop, stamp, spin, blur, wipe, typewriter, flicker, glitch), set in the Inspector's Text+ section with a duration
 - [x] Tracking: use `picasso-track` in the interface: a Track button for Match Move and Stabilization in the Inspector on the Edit page, and window tracking on the Color page
 
 ## To do
@@ -114,22 +123,28 @@ Status at 0.7.0.
 - [ ] Match Move and Surface Tracker (the tracking maths is in; they need tracking controls and a track stored with the clip), collage settings (columns, rows, spacing, corner radius, fit)
 - [ ] Warper (a grid of points moved by hand) and a free Corner Pin with four draggable corners (needs controls in the viewer)
 - [ ] Generators: settings (sizes, line widths, noise scale, countdown start, angle of the linear gradient) and keyframes
-- [ ] Transitions: settings for the 29 more transitions and the 50 wipes (zoom amount, strength, direction, colour, border, feather, number of bands); a transition has only a kind and a length now
-- [ ] Effects: settings beyond the strength for the keys and the 119 effects (screen colour, softness, spill, radius, centre, dot size, colours, Tilt-Shift's band, Lens Blur's highlights), an HSL key and a 3D keyer
+- [ ] Transitions: settings for the 29 more transitions, the 50 wipes and the 18 looks (zoom amount, strength, direction, colour, border, feather, number of bands, cells); a transition has only a kind and a length now
+- [ ] Effects: settings beyond the strength for the keys and the 141 effects (screen colour, softness, spill, radius, centre, dot size, colours, Tilt-Shift's band, Lens Blur's highlights), an HSL key and a 3D keyer
 - [ ] Color: splitter/combiner nodes, viewer split/wipe, magic mask, polygon and B-spline masks, Paint and particle tools
 - [ ] Editing: Trim Editor window, JKL in dynamic trim, timeline in a new window, auto align by waveform for clips at another speed, reversed or frozen
 - [ ] Multicam: sync by timecode or waveform, live angle previews, switching sound
-- [ ] Audio: choosing the input device, the "Bus 1 -> Auto" output, ADR, audio effect cache, link groups
+- [ ] Audio: choosing the input device, the "Bus 1 -> Auto" output, ADR, audio effect cache, link groups; the 29 sound effects: keyframed knobs, saved presets, and the tail of an echo or reverb after the last clip
 - [ ] Performance: optimised media's menu items and Media Management section are translated (the Cancel button and the "Read as it is" state are done: a copy can be stopped, and a variable frame rate file is read as it is)
 - [ ] Project: libraries, metadata import/export, Lightbox, dual screen, clean feed
 - [ ] Help: tutorials (the Welcome dialog was removed); Check for Updates: the release workflow now updates the .deb, .rpm, macOS app, Windows folder and Flatpak in place on every build (`--update-from`), and its first run is still to come (0.6.0's Flatpak test failed because the build container has no `flatpak-session-helper`); the download from GitHub itself is only tried on Windows
 - [ ] Plugins: OpenFX (OFX) image effect plugins, the open standard: find and load plugins from the standard folders, show their parameters in the inspector, run them on a clip and in an export, on the processor first and then the graphics card
-- [ ] Effect bundles: `.drfx` files (a zip of effect templates, titles, transitions and LUTs) installed from the menu and offered in the effects library, read within size limits like every other file
+- [ ] Effect bundles: `.picef` files (a zip of effect templates, titles, transitions and LUTs) installed from the menu and offered in the effects library, read within size limits like every other file
 - [ ] Platforms: macOS (Metal), Linux (Vulkan), browser limits
 - [ ] Linux: native Wayland drag and drop: not possible yet. eframe 0.37 uses winit 0.30.13, which takes no files dropped on a Wayland window; winit's own work on it (rust-windowing/winit#4773 is open, #4009 was closed unmerged) is in no release, 0.31 is a beta. Until then the window opens through XWayland. Writing it here against Wayland's data device would be a second, untestable copy of what winit will do. Meanwhile the XWayland path is made sturdier (a copy of winit 0.30.13 with its X11 drop reader changed, `third_party/winit`: each file of a drag is read on its own, a drop that comes before the file manager's list waits for it, and every failure is a warning in the session log; File > Media Management says so on Wayland). It compiles for Linux and its list reading is tested, but it has not been tried on a Wayland desktop: a tester with Nautilus and a large batch is needed, and the session log says which cause it was if files are still lost
 - [ ] Linux: Flathub submission, for the project's owner: a pull request to flathub/flathub with the manifest. The linter's findings on it: the id `io.github.fabox_os.PicassoSuite` does not match the repository's name (`appid-url-not-reachable`: it looks for github.com/fabox-os/picassosuite, the repository is Picasso-Suite; changing the id would make it a new app for people with the current Flatpak, so the id stays and the request for an exception is written in `packaging/flathub/README.md`); the X11 + Wayland sockets (exception text in `packaging/flathub/README.md`); and a newer runtime (26.08)
 - [ ] Graphics: Vulkan on real cards: the check and the report form exist; the NVIDIA, Intel, AMD (Linux, Mesa), Apple and ARM GPUs need people to run `--graphics-check` and send it in
 - [ ] Hardware: try the NVIDIA, Intel, Apple and VA-API encoders and decoding on those cards (only AMD on Windows is tried)
+- [ ] Subtitles from speech: word-by-word times (a model with them, or aligning the words to the sound), speaker labels, the larger models and the graphics card, a retry at other temperatures for noisy recordings, subtitles from the sound of the whole timeline and not only one clip, and the window's text in the other languages
+- [ ] Keyframes: a curve editor (draw the two handles of a cubic, a graph of the value), curves that survive a cut in the middle of a segment, and curves on effect settings
+- [ ] Looks: beat-driven looks (a punch, a shake or a flash on every beat, from the markers or the sound), Looks you save yourself, and the picture-and-title templates that go with them
+- [ ] Beat: clips that snap to the beat, cutting on the beat, and the tempo and downbeats in the Fairlight page; reversed and frozen clips
+- [ ] Titles: letter-by-letter and word-by-word animation (a stagger), animations out as well as in, and a pack of styles (karaoke, neon, chrome, handwritten)
+- [ ] Project: video layout favourites and a custom size in the chooser
 - [ ] Interchange: try the AAF in Media Composer, Pro Tools and Premiere, and the XML in Final Cut Pro 7, Premiere and Resolve (CI checks every export with pyaaf2 and an XML parser, and the AAF reader reads an Avid-style file written by pyaaf2; the editors themselves need testers)
 - [ ] Interchange: speed changes, reverse and freeze in AAF (written at normal speed, read without them), markers in AAF, nested sequences in OTIO, XML and AAF imports; OTIO export from `picasso-bridge`
 - [ ] Interface: more translations: the text of dialogs, tooltips and status messages (the menus and about 190 pieces of text of the pages are done in all thirty-nine languages), right-to-left layout for Arabic (the pages are not mirrored, and a wrapped sentence reads in the wrong line order), and more languages

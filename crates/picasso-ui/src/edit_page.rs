@@ -1837,6 +1837,20 @@ fn text_plus_controls(ui: &mut Ui, st: &mut picasso_core::TextStyle) {
                     .suffix(" %"),
             );
             ui.separator();
+            egui::ComboBox::from_label("Animation")
+                .selected_text(st.animation.label())
+                .show_ui(ui, |ui| {
+                    for kind in picasso_core::TitleAnimation::ALL {
+                        ui.selectable_value(&mut st.animation, kind, kind.label());
+                    }
+                });
+            ui.add_enabled(
+                st.animation != picasso_core::TitleAnimation::None,
+                egui::Slider::new(&mut st.animation_ms, picasso_core::title_animation::ANIMATION_MS)
+                    .text("Duration")
+                    .suffix(" ms"),
+            );
+            ui.separator();
             ui.horizontal(|ui| {
                 ui.label("Outline");
                 ui.color_edit_button_srgb(&mut st.outline_color);

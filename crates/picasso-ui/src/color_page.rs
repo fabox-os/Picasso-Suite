@@ -677,6 +677,18 @@ struct Cv<'a> {
     fresh: bool,
 }
 
+/// How much bigger or smaller than usual a color wheel is drawn when its panel became `taller`
+/// and `wider` than usual: as much as the smaller of the two, so it stays round and inside the
+/// panel, and never so small it cannot be grabbed or so big it covers the values around it.
+fn wheel_fit(taller: f32, wider: f32) -> f32 {
+    let fit = taller.min(wider);
+    if fit.is_finite() {
+        fit.clamp(0.4, 1.4)
+    } else {
+        1.0
+    }
+}
+
 impl<'a> Cv<'a> {
     /// A point given in pixels of Resolve at 1080p, for the upper half: its rows from the second
     /// toolbar to the palette row fill the window's.
@@ -1138,8 +1150,9 @@ impl StudioApp {
     pub(crate) fn color_page(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen) {
         let painter = ui.painter().clone();
         // The dividers: the gallery, the viewer and the node area side by side; the clips
-        // strip under them; the scopes beside the curves. The palettes keep their size: the
-        // color wheels are drawn at a fixed size, so they are neither stretched nor squeezed.
+        // strip under them; the palettes under all of that; the scopes beside the curves. The
+        // color wheels are round: they grow and shrink with the panel they sit in (the smaller
+        // of its two stretches), so they are neither stretched nor squeezed out of shape.
         let splits = {
             let c = Cv::new(&painter, s);
             let f = c.fresh();
@@ -1171,6 +1184,18 @@ impl StudioApp {
                     top,
                     palettes,
                 ),
+                // Above the palettes: drag it to give the wheels and curves more room, or the
+                // viewer. The row with the palettes' names moves with it unstretched.
+                Split::row(
+                    "color palettes",
+                    s,
+                    f.at(0.0, 656.0),
+                    f.at(1919.0, 656.0),
+                    top,
+                    // Where the page bar under the palettes starts.
+                    f.at(0.0, 1004.0).y,
+                )
+                .keeping(37.0 * R),
                 Split::column(
                     "color scopes",
                     s,
@@ -2564,11 +2589,17 @@ impl StudioApp {
                 *wheel_channels(&mut grade, n) = [spec.neutral; 3];
             }
 
+            let fit = {
+                let (x0, y0) = c.at_points(cx - 89.0, 700.0);
+                let (x1, y1) = c.at_points(cx + 89.0, 990.0);
+                let (taller, wider) = c.s.grown(x0, y0, x1, y1);
+                wheel_fit(taller, wider)
+            };
             color_wheel(
                 ui,
                 ui.id().with(("color_wheel", n)),
                 c.at(cx, 836.0),
-                47.5 * R,
+                47.5 * R * fit,
                 wheel_channels(&mut grade, n),
                 spec.neutral,
                 spec.range,
@@ -3445,7 +3476,19 @@ fn ruler_ticks(ticks: impl IntoIterator<Item = (f32, u64)>) -> Vec<(f32, u64)> {
 
 #[cfg(test)]
 mod tests {
-    use super::ruler_ticks;
+    use super::{ruler_ticks, wheel_fit};
+
+    #[test]
+    fn a_wheel_follows_the_smaller_stretch_of_its_panel() {
+        assert_eq!(wheel_fit(1.0, 1.0), 1.0);
+        // Taller but not wider: it cannot grow past the width.
+        assert_eq!(wheel_fit(1.3, 1.0), 1.0);
+        assert_eq!(wheel_fit(0.7, 1.2), 0.7);
+        // Never vanishing, never huge; nonsense gives the usual size.
+        assert_eq!(wheel_fit(0.1, 0.1), 0.4);
+        assert_eq!(wheel_fit(3.0, 3.0), 1.4);
+        assert_eq!(wheel_fit(f32::NAN, 1.0), 1.0);
+    }
 
     /// The ticks the page draws for a timeline `duration` frames long: ten 200-point steps
     /// from 40 across the strip's 1873 points.

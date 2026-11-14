@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio_effect::AudioEffect;
+
 /// A three-band equaliser: a low shelf, a bell in the middle and a high shelf.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -113,23 +115,36 @@ impl Compressor {
     }
 }
 
+/// The most sound effects one track can carry.
+pub const MAX_CHAIN: usize = 8;
+
 /// The effects of one track.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TrackFx {
     pub eq: Equalizer,
     pub dynamics: Compressor,
+    /// The sound effects (reverb, echo, voice changers...), run in this order after the EQ and
+    /// the compressor.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<AudioEffect>,
 }
 
 impl TrackFx {
     pub fn is_plain(&self) -> bool {
-        !self.eq.is_active() && !self.dynamics.enabled
+        !self.eq.is_active() && !self.dynamics.enabled && self.chain.is_empty()
     }
 
     pub fn sanitized(self) -> Self {
         Self {
             eq: self.eq.sanitized(),
             dynamics: self.dynamics.sanitized(),
+            chain: self
+                .chain
+                .into_iter()
+                .take(MAX_CHAIN)
+                .map(AudioEffect::sanitized)
+                .collect(),
         }
     }
 }

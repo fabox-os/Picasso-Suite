@@ -41,7 +41,7 @@ pub enum GeneratorKind {
     Noise,
     /// Coloured noise; a new pattern every frame.
     ColorNoise,
-    /// Soft clouds that drift over time, between the first and second colour.
+    /// Soft clouds that move slowly over time, between the first and second colour.
     NoiseGradient,
     /// Lines on a background, with every fourth line heavier.
     Grid,

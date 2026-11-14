@@ -10,7 +10,9 @@
 //! - AppImage: the new file is downloaded beside the old one and renamed over it.
 //! - Debian/Ubuntu and Fedora/openSUSE (`/usr/bin`): the new package is installed with `pkexec`,
 //!   which asks for the password.
-//! - Anything else (a build from source): the release page is opened instead.
+//! - Anything else (a build from source, or a copy made by hand): the package for this computer
+//!   (the AppImage, or the Windows or macOS zip) is saved to the Downloads folder, to run from there.
+//!   The Flathub build is updated by Flathub, so nothing is downloaded for it.
 //!
 //! The network work goes through the system's `curl`, so the program carries no HTTP or TLS code
 //! of its own. Packages are only downloaded from this repository's release files.
@@ -29,6 +31,14 @@ pub(crate) const RELEASES_PAGE: &str = "https://github.com/fabox-os/Picasso-Suit
 const DOWNLOAD_PREFIX: &str = "https://github.com/fabox-os/Picasso-Suite/releases/download/";
 /// The longest release notes shown in the window.
 const MAX_NOTES: usize = 6000;
+/// What to do with a package saved to Downloads for a copy that was not installed (see
+/// [`Install::Downloads`]).
+#[cfg(windows)]
+const HOW_TO_RUN: &str = "Unzip it and start Picasso Suite from the new folder.";
+#[cfg(target_os = "macos")]
+const HOW_TO_RUN: &str = "Unzip it and move the app to Applications.";
+#[cfg(not(any(windows, target_os = "macos")))]
+const HOW_TO_RUN: &str = "Start the AppImage to open it.";
 
 /// How this copy of the program was installed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,7 +52,10 @@ pub(crate) enum Install {
     AppImage(PathBuf),
     Deb,
     Rpm,
-    /// Built from source or copied by hand: nothing to update in place.
+    /// Built from source or copied by hand: the package for this computer is saved to this folder
+    /// (Downloads), to run from there.
+    Downloads(PathBuf),
+    /// The Flathub build: Flathub updates it (`flatpak update`), so nothing is installed here.
     Unmanaged,
 }
 
@@ -51,7 +64,7 @@ impl Install {
     pub(crate) fn detect() -> Self {
         if std::env::var_os("FLATPAK_ID").is_some() || Path::new("/.flatpak-info").exists() {
             // The Flathub build is updated by Flathub (`flatpak update`), not by this program: it
-            // has no right to run the host's flatpak, and the release page is opened instead.
+            // has no right to run the host's flatpak.
             if Path::new("/app/share/picasso-suite/updates-by-flathub").exists() {
                 return Self::Unmanaged;
             }
@@ -66,20 +79,20 @@ impl Install {
             }
         }
         let Ok(exe) = std::env::current_exe() else {
-            return Self::Unmanaged;
+            return Self::by_hand();
         };
         if cfg!(windows) {
             // The release zip carries FFmpeg and its licence beside the program.
             return match exe.parent() {
                 Some(dir) if has_ffmpeg_beside(dir) => Self::WindowsZip(dir.into()),
-                _ => Self::Unmanaged,
+                _ => Self::by_hand(),
             };
         }
         if cfg!(target_os = "macos") {
             return exe
                 .ancestors()
                 .find(|p| p.extension().is_some_and(|e| e == "app"))
-                .map_or(Self::Unmanaged, |app| Self::MacApp(app.into()));
+                .map_or_else(Self::by_hand, |app| Self::MacApp(app.into()));
         }
         if exe.starts_with("/usr") {
             // dpkg's own list of the package's files, so an rpm install on a system that also
@@ -94,10 +107,15 @@ impl Install {
                 return Self::Deb;
             }
         }
-        Self::Unmanaged
+        Self::by_hand()
     }
 
-    /// Whether the new version can be installed from inside the program.
+    /// A copy that was not installed from a package: its packages go to Downloads.
+    fn by_hand() -> Self {
+        Self::Downloads(downloads_dir())
+    }
+
+    /// Whether the new version can be installed, or saved for the user to run, from inside the program.
     pub(crate) fn can_update(&self) -> bool {
         *self != Self::Unmanaged
     }
@@ -110,6 +128,13 @@ impl Install {
                 file.ends_with("-macos-universal.zip")
                     || (cfg!(target_arch = "aarch64") && file.ends_with("-macos-arm64.zip"))
             }
+            // A copy made by hand gets the package for the system it runs on.
+            Self::Downloads(_) if cfg!(windows) => file.ends_with("-windows.zip"),
+            Self::Downloads(_) if cfg!(target_os = "macos") => {
+                file.ends_with("-macos-universal.zip")
+                    || (cfg!(target_arch = "aarch64") && file.ends_with("-macos-arm64.zip"))
+            }
+            Self::Downloads(_) => file.ends_with(&format!("-{}.AppImage", std::env::consts::ARCH)),
             // The ARM64 bundle is `...-aarch64.flatpak`; the x86_64 one has no processor in its name.
             Self::Flatpak if cfg!(target_arch = "aarch64") => file.ends_with("-aarch64.flatpak"),
             Self::Flatpak => file.ends_with(".flatpak") && !file.ends_with("-aarch64.flatpak"),
@@ -120,6 +145,25 @@ impl Install {
             Self::Rpm => file.ends_with(&format!("{}.rpm", std::env::consts::ARCH)),
             Self::Unmanaged => false,
         }
+    }
+}
+
+/// The user's Downloads folder (the home folder when there is none, the temporary folder without one).
+fn downloads_dir() -> PathBuf {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty());
+    match home {
+        Some(home) => {
+            let downloads = home.join("Downloads");
+            if downloads.is_dir() {
+                downloads
+            } else {
+                home
+            }
+        }
+        None => std::env::temp_dir(),
     }
 }
 
@@ -335,6 +379,11 @@ fn package_path(install: &Install, file: &str, work: &Path) -> PathBuf {
         }
         // Beside the AppImage, so it can be renamed over it (a rename cannot cross drives).
         Install::AppImage(target) => target.with_file_name(format!(".{file}.download")),
+        // Saved to Downloads itself: the user keeps the package there.
+        Install::Downloads(dir) => {
+            let _ = std::fs::create_dir_all(dir);
+            dir.join(file)
+        }
         _ => work.join(file),
     }
 }
@@ -443,6 +492,23 @@ fn install_package(
         }
         Install::AppImage(target) => install_appimage(package, target, tag)?,
         Install::Deb | Install::Rpm => install_linux_package(install, package, tag)?,
+        Install::Downloads(dir) => {
+            let name = package
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if name.ends_with(".AppImage") {
+                make_runnable(package).map_err(|e| format!("{}: {e}", package.display()))?;
+            }
+            Installed {
+                message: format!(
+                    "Picasso Suite {tag} is saved as {name} in {}. {}",
+                    dir.display(),
+                    HOW_TO_RUN
+                ),
+                restart: false,
+            }
+        }
         Install::Unmanaged => return Err("this copy cannot update itself".into()),
     };
     if !matches!(install, Install::Flatpak | Install::Deb | Install::Rpm) {
@@ -810,18 +876,28 @@ impl Updater {
                             });
                         }
                         ui.add_space(6.0);
-                        if !install.can_update() {
+                        if let Install::Downloads(dir) = &install {
+                            ui.label(format!(
+                                "This copy was not installed from a package, so the new version \
+                                 is saved to {} for you to run.",
+                                dir.display()
+                            ));
+                        } else if !install.can_update() {
                             ui.label(
-                                "This copy was not installed from a release package, so it \
-                                 cannot update itself. Download the new version from the \
-                                 release page.",
+                                "This copy is updated by Flathub, so it cannot update itself. \
+                                 Download the new version from the release page.",
                             );
                         } else if release.package.is_none() {
                             ui.label("This release has no package for this kind of install.");
                         }
                         ui.horizontal(|ui| {
                             let can = install.can_update() && release.package.is_some();
-                            if can && ui.button("Update now").clicked() {
+                            let label = if matches!(install, Install::Downloads(_)) {
+                                "Download now"
+                            } else {
+                                "Update now"
+                            };
+                            if can && ui.button(label).clicked() {
                                 wanted = Some(release.clone());
                             }
                             if ui.button("Release page").clicked() {
@@ -949,6 +1025,22 @@ mod tests {
     }
 
     #[test]
+    fn a_copy_made_by_hand_gets_the_package_for_its_system() {
+        let arch = std::env::consts::ARCH;
+        let want = if cfg!(windows) {
+            "picasso-suite-0.2.0-hotfix-windows.zip".to_string()
+        } else if cfg!(target_os = "macos") {
+            "picasso-suite-0.2.0-hotfix-macos-universal.zip".to_string()
+        } else {
+            format!("picasso-suite-0.2.0-hotfix-{arch}.AppImage")
+        };
+        let r = parse_release(&answer(), &Install::Downloads(PathBuf::from("x")));
+        assert_eq!(r.map(|r| r.package.map(|(name, _)| name)), Ok(Some(want)));
+        assert!(Install::Downloads(PathBuf::from("x")).can_update());
+        assert!(!Install::Unmanaged.can_update());
+    }
+
+    #[test]
     fn the_answer_gives_the_tag_and_notes() {
         let r = parse_release(&answer(), &Install::Unmanaged);
         assert_eq!(r.as_ref().map(|r| r.tag.as_str()), Ok("v0.2.0-hotfix"));
@@ -987,9 +1079,10 @@ mod tests {
 
     #[test]
     fn a_copy_built_from_source_does_not_update_from_a_file() {
-        // The test program is not an installed release, so nothing is touched.
+        // The test program is not an installed release, so nothing is touched: a package for
+        // another system is refused.
         let r = update_from_file(Path::new("picasso-suite-9.9.9-windows.zip"));
-        assert!(r.is_err_and(|e| e.contains("cannot update itself")));
+        assert!(r.is_err());
         assert!(version_line().starts_with(&format!("picasso-suite {}", current_version())));
     }
 

@@ -218,7 +218,7 @@ pub fn plan(project: &Project) -> AudioPlan {
     }
     AudioPlan {
         clips,
-        tracks: project.tracks.iter().map(|t| t.fx).collect(),
+        tracks: project.tracks.iter().map(|t| t.fx.clone()).collect(),
     }
 }
 

@@ -238,6 +238,13 @@ pub enum Command {
         #[serde(default)]
         ease: bool,
     },
+    /// Sets how the value moves from the keyframe of `param` at clip frame `at` to the next one.
+    SetKeyCurve {
+        clip: ClipId,
+        param: crate::KeyParam,
+        at: u64,
+        curve: crate::KeyCurve,
+    },
     /// Sets a track's EQ and dynamics.
     SetTrackFx {
         track: TrackId,
@@ -556,6 +563,7 @@ impl Command {
             Self::SetClipSpeed { .. } => "clip.set_speed",
             Self::SpeedRamp { .. } => "clip.speed_ramp",
             Self::SetKeyframe { .. } => "clip.set_keyframe",
+            Self::SetKeyCurve { .. } => "clip.set_key_curve",
             Self::AddEffect { .. } => "clip.add_effect",
             Self::SetTrackFx { .. } => "track.set_fx",
             Self::SetEffect { .. } => "clip.set_effect",
@@ -650,6 +658,7 @@ impl Command {
             Self::SetClipSpeed { .. } => "Clip speed",
             Self::SpeedRamp { .. } => "Speed ramp",
             Self::SetKeyframe { .. } => "Keyframe",
+            Self::SetKeyCurve { .. } => "Keyframe curve",
             Self::AddEffect { .. } => "Add effect",
             Self::SetTrackFx { .. } => "Track EQ and dynamics",
             Self::SetEffect { .. } => "Change effect",
@@ -1418,15 +1427,49 @@ impl Command {
                     }
                 };
                 let track = &mut c.keyframes[index];
+                // A keyframe whose value changes keeps the curve it had.
+                let curve = track
+                    .keys
+                    .iter()
+                    .find(|k| k.at == at)
+                    .map(|k| k.curve)
+                    .unwrap_or_default();
                 track.keys.retain(|k| k.at != at);
                 if let Some(value) = value {
                     if track.keys.len() >= crate::MAX_KEYFRAMES {
                         return Err(EditError::Invalid("too many keyframes"));
                     }
-                    track.keys.push(crate::Keyframe { at, value, ease });
+                    track.keys.push(crate::Keyframe {
+                        at,
+                        value,
+                        ease,
+                        curve,
+                    });
                 }
                 *track = track.clone().sanitized();
                 c.keyframes.retain(|t| !t.keys.is_empty());
+                Ok(Outcome::Clip(clip))
+            }
+            Self::SetKeyCurve {
+                clip,
+                param,
+                at,
+                curve,
+            } => {
+                // Like the keyframes themselves, the curve can change on a locked track.
+                let (ti, ci) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+                let key = p.tracks[ti].clips[ci]
+                    .keyframes
+                    .iter_mut()
+                    .find(|t| t.param == param)
+                    .and_then(|t| t.keys.iter_mut().find(|k| k.at == at))
+                    .ok_or(EditError::Invalid("there is no keyframe there"))?;
+                if let crate::KeyCurve::Bezier(h) = curve {
+                    if h.iter().any(|v| !v.is_finite()) {
+                        return Err(EditError::Invalid("the curve"));
+                    }
+                }
+                key.curve = curve;
                 Ok(Outcome::Clip(clip))
             }
             Self::SetTrackFx { track, fx } => {
@@ -4804,6 +4847,64 @@ mod tests {
         .apply(&mut p)
         .unwrap();
         assert_eq!((at(&p, 1002), at(&p, 1011)), (27, 18));
+    }
+
+    #[test]
+    fn a_keyframe_curve_is_set_kept_when_the_value_changes_and_refused_without_a_keyframe() {
+        use crate::{KeyCurve, KeyParam};
+        let (mut p, _, _, [a, _, _]) = demo();
+        let start = p.clip(a).unwrap().1.start;
+        let key = |p: &mut Project, at, v| {
+            Command::SetKeyframe {
+                clip: a,
+                param: KeyParam::Opacity,
+                at,
+                value: Some(v),
+                ease: false,
+            }
+            .apply(p)
+            .unwrap();
+        };
+        key(&mut p, 0, 0.0);
+        key(&mut p, 80, 1.0);
+        // No keyframe at 40, or on another property: refused.
+        for (param, at) in [(KeyParam::Opacity, 40), (KeyParam::Zoom, 0)] {
+            assert!(Command::SetKeyCurve {
+                clip: a,
+                param,
+                at,
+                curve: KeyCurve::Hold
+            }
+            .apply(&mut p)
+            .is_err());
+        }
+        assert!(Command::SetKeyCurve {
+            clip: a,
+            param: KeyParam::Opacity,
+            at: 0,
+            curve: KeyCurve::Bezier([f32::NAN, 0.0, 0.0, 1.0])
+        }
+        .apply(&mut p)
+        .is_err());
+        // A jump holds the first value until the next keyframe.
+        Command::SetKeyCurve {
+            clip: a,
+            param: KeyParam::Opacity,
+            at: 0,
+            curve: KeyCurve::Hold,
+        }
+        .apply(&mut p)
+        .unwrap();
+        assert_eq!(p.clip(a).unwrap().1.opacity_at(start + 79), 0.0);
+        // Changing the value of that keyframe keeps its curve.
+        key(&mut p, 0, 0.2);
+        let c = p.clip(a).unwrap().1.clone();
+        assert_eq!(c.keys(KeyParam::Opacity).unwrap()[0].curve, KeyCurve::Hold);
+        assert_eq!(c.opacity_at(start + 79), 0.2);
+        // It is saved and loaded with the project.
+        assert_eq!(Project::from_json(&p.to_json().unwrap()).unwrap(), p);
+        // And one undo takes it back (the curve is a command like the others).
+        assert_eq!(Command::SetKeyCurve { clip: a, param: KeyParam::Opacity, at: 0, curve: KeyCurve::Linear }.id(), "clip.set_key_curve");
     }
 
     #[test]

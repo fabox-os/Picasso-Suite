@@ -21,6 +21,7 @@ rfd = "0.17"  # MIT
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 picasso-decode.workspace = true
 picasso-export.workspace = true
+picasso-asr.workspace = true
 picasso-media.workspace = true
 picasso-drp.workspace = true
 picasso-track.workspace = true
