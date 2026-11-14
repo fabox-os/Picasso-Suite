@@ -112,6 +112,7 @@ Status at 0.8.0 and what was made since.
 - [x] Project: Choose Video Layout (YouTube, Instagram, Facebook, TikTok and more: a platform, a template and a quality give the picture size; asked on a new project and from File)
 - [x] Titles: 17 ways to come in (fade, slides, rise, drop, zooms, pop, stamp, spin, blur, wipe, typewriter, flicker, glitch), set in the Inspector's Text+ section with a duration
 - [x] Tracking: use `picasso-track` in the interface: a Track button for Match Move and Stabilization in the Inspector on the Edit page, and window tracking on the Color page
+- [x] Interchange: speed changes, reverse and freeze in AAF (written with time-warp operation groups, read back with them), markers in AAF (written and read as locators), nested sequences in OTIO, XML and AAF imports (a nested stack, sequence or composition becomes a compound clip); OTIO export from `picasso-bridge` (`export-otio` command)
 
 ## To do
 
@@ -146,5 +147,4 @@ Status at 0.8.0 and what was made since.
 - [ ] Titles: letter-by-letter and word-by-word animation (a stagger), animations out as well as in, and a pack of styles (karaoke, neon, chrome, handwritten)
 - [ ] Project: video layout favourites and a custom size in the chooser
 - [ ] Interchange: try the AAF in Media Composer, Pro Tools and Premiere, and the XML in Final Cut Pro 7, Premiere and Resolve (CI checks every export with pyaaf2 and an XML parser, and the AAF reader reads an Avid-style file written by pyaaf2; the editors themselves need testers)
-- [ ] Interchange: speed changes, reverse and freeze in AAF (written at normal speed, read without them), markers in AAF, nested sequences in OTIO, XML and AAF imports; OTIO export from `picasso-bridge`
 - [ ] Interface: more translations: the text of dialogs, tooltips and status messages (the menus and about 190 pieces of text of the pages are done in all thirty-nine languages), right-to-left layout for Arabic (the pages are not mirrored, and a wrapped sentence reads in the wrong line order), and more languages
