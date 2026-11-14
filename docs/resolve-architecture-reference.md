@@ -68,7 +68,7 @@ The scripting API's object model (§3) is the clearest public view of that model
   - **`.dra`**: an archive that includes the media.
   - **`.drt`**: a timeline on its own.
   - **`.drx`**: a grade.
-  - **`.drfx`**: a bundle of Fusion templates (a renamed zip).
+  - **`.picef`**: a bundle of Fusion templates (a renamed zip).
 - **Saving:**
   - "Live Save" writes every change incrementally, so there is no explicit save step.
   - Separately, periodic full-project backups are kept on a grandfather-father-son rotation. Stills and LUTs are left out of backups to save space.
@@ -382,7 +382,7 @@ translating to Slang/SPIR-V.
   - `Process(req)` pulls values for the request time, calls image operations and sets the outputs.
 - **Library:** colour matrices, image channel operations, a shape library, text, pixel sampling, metadata, GPU paths (DCTL kernels and GLSL viewer LUTs) and modifier fuses.
 
-### 6.7 Fusion macros and templates (`.setting`, `.drfx`)
+### 6.7 Fusion macros and templates (`.setting`, `.picef`)
 
 - `.setting` files are **Lua-table text serialisations** of a Fusion node group (`MacroOperator` with
   `InstanceInput`/`InstanceOutput` that expose inner tool controls). The format is human-readable and diffable.
@@ -394,7 +394,7 @@ translating to Slang/SPIR-V.
 - **Assets and packaging:**
   - The `Setting:` path map resolves assets relative to the .setting file.
   - An icon is a `.png` with the same name (104×58).
-  - `.drfx` is a zip bundle of templates, icons and assets.
+  - `.picef` is a zip bundle of templates, icons and assets.
 
 **Takeaway:** "Templates that know their edit duration" is the key idea that makes compositor
 content usable as one-click NLE effects.
@@ -402,7 +402,7 @@ content usable as one-click NLE effects.
 ### 6.8 OGraf HTML graphics (EBU open standard)
 
 - A graphic is a manifest (`.ograf.json`) plus an ES module that exports a custom `HTMLElement`, plus assets.
-  The package is a `.ograf` file or part of a `.drfx`.
+  The package is a `.ograf` file or part of a `.picef`.
 - Resolve renders it inside Fusion's **OGrafLoader** tool using an offscreen browser (CEF on Windows,
   WebKit on Mac). It **renders non-real-time only**: the host calls `goToTime(ms)` for every frame and
   sends the whole action list with `setActionsSchedule()`.
@@ -411,7 +411,7 @@ content usable as one-click NLE effects.
 - **Limits:** 20 parameters, 10 custom actions and 20 scheduled actions per clip.
 - **Default clip length** is the larger of `v_bmd.duration` and the play+stop action durations; with neither declared it is 10 s.
   An automatic stop action follows the end of the clip.
-- Includes a linter (`lint-ograf.py`) and a packager (`prepare-drfx.py`).
+- Includes a linter (`lint-ograf.py`) and a packager (`prepare-picef.py`).
 
 **Takeaway:** Picasso Suite can **adopt OGraf directly** as its motion-graphics template format. It's
 an open spec, and rendering HTML through a deterministic offscreen browser with seek-per-frame is a
@@ -467,7 +467,7 @@ proven approach.
 | DCTL | Small shader DSL → SPIR-V/MSL/HLSL (e.g. via Slang) with declarative UI params |
 | Fuses / scripting | Embedded Lua or Python plus a reflective object API, also reachable over IPC |
 | Workflow Integrations | Web-panel plugin host (WebView2/CEF) with a sandboxed bridge |
-| `.setting` / `.drfx` templates | Text-serialised node groups plus a zip bundle; duration-relative animation |
+| `.setting` / `.picef` templates | Text-serialised node groups plus a zip bundle; duration-relative animation |
 | OGraf | Adopt OGraf as is |
 | `.cube` LUTs | Support .cube (plus CLF via OCIO) |
 | Codec plugin message ABI | C ABI using a message dispatcher, ref-counted handles and property bags |
