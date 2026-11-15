@@ -3443,6 +3443,12 @@ impl StudioApp {
                 return;
             }
         };
+        self.apply_lut_table(id, lut);
+    }
+
+    /// Puts a table that has already been read and checked (an installed one) on the clip being
+    /// graded, replacing any table it had.
+    pub(crate) fn apply_lut_table(&mut self, id: picasso_core::ClipId, lut: Lut) {
         let Some((_, clip)) = self.project().clip(id) else {
             return;
         };

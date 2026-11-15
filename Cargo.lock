@@ -2467,8 +2467,11 @@ name = "picasso-drp"
 version = "0.8.0"
 dependencies = [
  "flate2",
+ "picasso-color",
  "picasso-core",
  "quick-xml",
+ "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "zip 8.0.0",
 ]
@@ -2550,6 +2553,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasm-bindgen-futures",
+ "zip 8.0.0",
 ]
 
 [[package]]

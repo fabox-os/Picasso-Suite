@@ -40,7 +40,7 @@ Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, on Windows,
 
 Picasso Suite is a video editor in the shape of an editing suite: bring media in, cut it, grade it, mix the sound and render it, with every step on a page of its own and the pages in the order Resolve has them. Menus follow a written spec ([`Menu-Spec.md`](Menu-Spec.md)), and the status of every entry is listed ([`Menu-Status.md`](Menu-Status.md)).
 
-**NOTE: Picasso Suite is before 1.0. 602 of 631 menu entries work (95.40%) and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk.**
+**NOTE: Picasso Suite is before 1.0. 603 of 632 menu entries work (95.41%) and the rest are shown disabled. Keep copies of projects you care about and use it at your own risk.**
 
 ## Features
 
@@ -68,12 +68,12 @@ Picasso Suite is a video editor in the shape of an editing suite: bring media in
 ## Status
 
 <!-- status:start -->
-![Status: 95.40% of the menu entries work, 76.60% of the roadmap is done](docs/status.svg)
+![Status: 95.41% of the menu entries work, 77.30% of the roadmap is done](docs/status.svg)
 
 | | Done | Total | |
 |---|---|---|---|
-| Menu entries | 602 | 631 | 95.40% |
-| Roadmap items* | 108 | 141 | 76.60% |
+| Menu entries | 603 | 632 | 95.41% |
+| Roadmap items* | 109 | 141 | 77.30% |
 
 Green is made, grey is not. Menu entries: every entry of every menu ([`Menu-Status.md`](Menu-Status.md)); the rest are shown disabled. \* Roadmap items ([`ROADMAP.md`](ROADMAP.md)): the to-do items are bigger than the done ones, so this share looks better than the work left. Made by `python3 scripts/status.py`.
 <!-- status:end -->
