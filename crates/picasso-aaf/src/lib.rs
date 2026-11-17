@@ -20,7 +20,9 @@
 //! Mob ids are made from the file path, so the same file has the same master clip in every
 //! export. The meta-dictionary is left empty: the classes used are all in the AAF baseline,
 //! which readers know. Clips of generated media (titles, bars, solids) and compound clips have
-//! no file and are left out; speed changes, grades and effects stay in Picasso Suite.
+//! no file and are left out; speed changes and reverse are written as the Edit Protocol's Video
+//! Speed Control operation, a freeze as Video Repeat, and timeline markers as locators, while
+//! grades and effects stay in Picasso Suite.
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
@@ -37,7 +39,7 @@ pub struct Written {
     pub bytes: Vec<u8>,
     /// Clips left out: generated media and compound clips, which have no file.
     pub skipped: usize,
-    /// Clips with a speed change, reverse or freeze, written at normal speed.
+    /// Clips with a speed change, reverse or freeze, written as time warps.
     pub retimed: usize,
 }
 
@@ -72,6 +74,8 @@ mod class {
     pub const SOURCE_CLIP: Uuid = id("0d010101-0101-1100-060e-2b3402060101");
     pub const TRANSITION: Uuid = id("0d010101-0101-1700-060e-2b3402060101");
     pub const OPERATION_GROUP: Uuid = id("0d010101-0101-0a00-060e-2b3402060101");
+    pub const CONSTANT_VALUE: Uuid = id("0d010101-0101-3d00-060e-2b3402060101");
+    pub const PARAMETER_DEFINITION: Uuid = id("0d010101-0101-1d00-060e-2b3402060101");
     pub const TIMECODE: Uuid = id("0d010101-0101-1400-060e-2b3402060101");
     pub const CDCI_DESCRIPTOR: Uuid = id("0d010101-0101-2800-060e-2b3402060101");
     pub const PCM_DESCRIPTOR: Uuid = id("0d010101-0101-4800-060e-2b3402060101");
@@ -93,6 +97,8 @@ const AUDIO_DISSOLVE: Uuid = id("0c3bea41-fc05-11d2-8a29-0050040ef7d2");
 const EDIT_PROTOCOL: Uuid = id("0d011201-0100-0000-060e-2b3404010105");
 /// This program, in the identification list.
 const PRODUCT_ID: Uuid = id("5e0d6c3a-8f2b-4f4e-9a51-7c1d2e3f4a5b");
+/// A timeline marker (locator): position and name on the composition mob.
+const LOCATOR_CLASS: Uuid = id("0d010101-0101-2b00-060e-2b3402060101");
 
 /// Property ids of the AAF baseline.
 mod pid {
@@ -115,7 +121,9 @@ mod pid {
     pub const GENERATION_AUID: u16 = 0x3c09;
     pub const MOBS: u16 = 0x1901;
     pub const OPERATION_DEFINITIONS: u16 = 0x2603;
+    pub const PARAMETER_DEFINITIONS: u16 = 0x2604;
     pub const DATA_DEFINITIONS: u16 = 0x2605;
+    pub const TYPE_DEFINITIONS: u16 = 0x0004;
     pub const IDENTIFICATION: u16 = 0x1b01;
     pub const NAME: u16 = 0x1b02;
     pub const DESCRIPTION: u16 = 0x1b03;
@@ -123,6 +131,7 @@ mod pid {
     pub const IS_TIME_WARP: u16 = 0x1e02;
     pub const NUMBER_INPUTS: u16 = 0x1e07;
     pub const BYPASS: u16 = 0x1e08;
+    pub const PARAMETER_TYPE: u16 = 0x1f01;
     pub const MOB_ID: u16 = 0x4401;
     pub const MOB_NAME: u16 = 0x4402;
     pub const SLOTS: u16 = 0x4403;
@@ -144,6 +153,8 @@ mod pid {
     pub const OPERATION_GROUP: u16 = 0x1801;
     pub const CUT_POINT: u16 = 0x1802;
     pub const OPERATION: u16 = 0x0b01;
+    pub const INPUT_SEGMENTS: u16 = 0x0b02;
+    pub const PARAMETERS: u16 = 0x0b03;
     pub const TC_START: u16 = 0x1501;
     pub const TC_FPS: u16 = 0x1502;
     pub const TC_DROP: u16 = 0x1503;
@@ -165,11 +176,15 @@ mod pid {
     pub const BLOCK_ALIGN: u16 = 0x3d0a;
     pub const FILE_DESCRIPTORS: u16 = 0x3f01;
     pub const URL_STRING: u16 = 0x4001;
+    pub const PARAMETER_DEFINITION: u16 = 0x4c01;
+    pub const PARAMETER_VALUE: u16 = 0x4d01;
 }
 
 /// Tags of the `referenced properties` table: where weak references point.
 const TAG_DATA_DEFINITIONS: u16 = 0;
 const TAG_OPERATION_DEFINITIONS: u16 = 1;
+const TAG_PARAMETER_DEFINITIONS: u16 = 2;
+const TAG_TYPE_DEFINITIONS: u16 = 3;
 
 // --- The object model being written ---
 
@@ -451,12 +466,14 @@ fn write_obj(cf: &mut File, path: &str, obj: &Obj) -> std::io::Result<()> {
     write_stream(cf, &join(path, "properties"), &stream)
 }
 
-/// The root's table of where weak references point: Header > Dictionary > DataDefinitions, and
-/// Header > Dictionary > OperationDefinitions.
+/// The root's table of where weak references point: Header > Dictionary > DataDefinitions,
+/// OperationDefinitions and ParameterDefinitions, and Header > MetaDictionary > TypeDefinitions.
 fn referenced_properties() -> Vec<u8> {
-    let paths: [&[u16]; 2] = [
+    let paths: [&[u16]; 4] = [
         &[pid::HEADER, pid::DICTIONARY, pid::DATA_DEFINITIONS],
         &[pid::HEADER, pid::DICTIONARY, pid::OPERATION_DEFINITIONS],
+        &[pid::HEADER, pid::DICTIONARY, pid::PARAMETER_DEFINITIONS],
+        &[pid::HEADER, pid::META_DICTIONARY, pid::TYPE_DEFINITIONS],
     ];
     let total: usize = paths.iter().map(|p| p.len() + 1).sum();
     let mut out = vec![0x4c];
@@ -498,25 +515,54 @@ fn dictionary() -> Obj {
         .iter()
         .map(|(u, n, d)| (auid(*u), definition(class::DATA_DEFINITION, *u, n, d)))
         .collect();
+    // (identification, name, data definition, is a time warp, inputs)
     let ops = [
-        (VIDEO_DISSOLVE, "Video Dissolve", data::PICTURE),
-        (AUDIO_DISSOLVE, "Mono Audio Dissolve", data::SOUND),
+        (VIDEO_DISSOLVE, "Video Dissolve", data::PICTURE, false, 2u32),
+        (AUDIO_DISSOLVE, "Mono Audio Dissolve", data::SOUND, false, 2u32),
+        (
+            VIDEO_SPEED_CONTROL,
+            "Video Speed Control",
+            data::PICTURE,
+            true,
+            1u32,
+        ),
+        (VIDEO_REPEAT, "Video Repeat", data::PICTURE, true, 1u32),
     ];
     let op_defs = ops
         .iter()
-        .map(|(u, n, kind)| {
+        .map(|(u, n, kind, warp, inputs)| {
             let obj = definition(class::OPERATION_DEFINITION, *u, n, n)
                 .with(pid::OP_DATA_DEFINITION, "DataDefinition", data_def(*kind))
-                .data(pid::IS_TIME_WARP, "IsTimeWarp", vec![0])
+                .data(
+                    pid::IS_TIME_WARP,
+                    "IsTimeWarp",
+                    vec![u8::from(*warp)],
+                )
                 .data(
                     pid::NUMBER_INPUTS,
                     "NumberInputs",
-                    2i32.to_le_bytes().to_vec(),
+                    (*inputs).to_le_bytes().to_vec(),
                 )
                 .data(pid::BYPASS, "Bypass", 1u32.to_le_bytes().to_vec());
             (auid(*u), obj)
         })
         .collect();
+    // The Speed Ratio parameter, a rational: the output length over the input length.
+    let speed_ratio = definition(
+        class::PARAMETER_DEFINITION,
+        SPEED_RATIO,
+        "Speed Ratio",
+        "Speed Ratio",
+    )
+    .with(
+        pid::PARAMETER_TYPE,
+        "Type",
+        Value::Weak {
+            tag: TAG_TYPE_DEFINITIONS,
+            key_pid: pid::IDENTIFICATION,
+            key: auid(TYPE_RATIONAL),
+        },
+    );
     Obj::new(class::DICTIONARY)
         .with(
             pid::OPERATION_DEFINITIONS,
@@ -524,6 +570,14 @@ fn dictionary() -> Obj {
             Value::Set {
                 key_pid: pid::IDENTIFICATION,
                 items: op_defs,
+            },
+        )
+        .with(
+            pid::PARAMETER_DEFINITIONS,
+            "ParameterDefinitions",
+            Value::Set {
+                key_pid: pid::IDENTIFICATION,
+                items: vec![(auid(SPEED_RATIO), speed_ratio)],
             },
         )
         .with(
@@ -574,6 +628,106 @@ fn source_clip(kind: Uuid, length: u64, start: u64, source: &[u8], source_slot: 
             source_slot.to_le_bytes().to_vec(),
         )
 }
+
+/// A clip that plays faster or slower, backwards, or holds one frame: the source clip inside an
+/// operation group, as the AAF Edit Protocol lays a time warp out. The group's length is the
+/// clip's length on the timeline and the source clip's the frames it takes from its source; a
+/// speed change carries the Speed Ratio parameter (output length over input length, negative
+/// when reversed) and a freeze the Video Repeat operation.
+#[allow(clippy::too_many_arguments)]
+fn time_warped(
+    kind: Uuid,
+    length: u64,
+    start: u64,
+    source: &[u8],
+    source_slot: u32,
+    speed: f32,
+    reverse: bool,
+    freeze: bool,
+) -> Obj {
+    let speed = if speed.is_finite() {
+        speed.clamp(picasso_core::MIN_SPEED, picasso_core::MAX_SPEED)
+    } else {
+        1.0
+    };
+    // The frames of the source the clip uses: a freeze holds one.
+    let input = if freeze {
+        1
+    } else {
+        (length as f64 * f64::from(speed)).ceil().max(1.0) as u64
+    };
+    let mut group = Obj::new(class::OPERATION_GROUP)
+        .with(pid::DATA_DEFINITION, "DataDefinition", data_def(kind))
+        .data(pid::LENGTH, "Length", i64_of(length))
+        .with(
+            pid::OPERATION,
+            "Operation",
+            Value::Weak {
+                tag: TAG_OPERATION_DEFINITIONS,
+                key_pid: pid::IDENTIFICATION,
+                key: auid(if freeze { VIDEO_REPEAT } else { VIDEO_SPEED_CONTROL }),
+            },
+        )
+        .with(
+            pid::INPUT_SEGMENTS,
+            "InputSegments",
+            Value::Vector(vec![source_clip(kind, input, start, source, source_slot)]),
+        );
+    if !freeze {
+        let ratio = f64::from(speed).recip() * if reverse { -1.0 } else { 1.0 };
+        let parameter = Obj::new(class::CONSTANT_VALUE)
+            .with(
+                pid::PARAMETER_DEFINITION,
+                "Definition",
+                Value::Weak {
+                    tag: TAG_PARAMETER_DEFINITIONS,
+                    key_pid: pid::IDENTIFICATION,
+                    key: auid(SPEED_RATIO),
+                },
+            )
+            .data(pid::PARAMETER_VALUE, "Value", speed_ratio(ratio));
+        group = group.with(
+            pid::PARAMETERS,
+            "Parameters",
+            Value::Vector(vec![parameter]),
+        );
+    }
+    group
+}
+
+/// A speed ratio as the rational the parameter takes: the numerator and denominator reduced.
+fn speed_ratio(ratio: f64) -> Vec<u8> {
+    // Enough places that any speed a clip may have comes back as it was.
+    const DEN: i64 = 1_000_000;
+    let scaled = (ratio * DEN as f64).round();
+    let num = if scaled.is_finite() {
+        scaled.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i64
+    } else {
+        DEN
+    };
+    let g = gcd(num.unsigned_abs(), DEN as u64);
+    let (n, d) = ((num / g as i64) as i32, (DEN / g as i64) as i32);
+    [n.to_le_bytes(), d.to_le_bytes()].concat()
+}
+
+/// The greatest divisor of two numbers, never zero.
+fn gcd(mut a: u64, mut b: u64) -> u64 {
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a.max(1)
+}
+
+/// The Video Speed Control operation: a clip played faster, slower or backwards.
+const VIDEO_SPEED_CONTROL: Uuid = id("9d2ea890-0968-11d3-8a38-0050040ef7d2");
+/// The Video Repeat operation: a clip that holds one frame.
+const VIDEO_REPEAT: Uuid = id("9d2ea891-0968-11d3-8a38-0050040ef7d2");
+/// The Speed Ratio parameter definition: a rational, output length over input length.
+const SPEED_RATIO: Uuid = id("72559a80-24d7-11d3-8a50-0050040ef7d2");
+/// TypeID_Rational: two 32-bit integers, numerator then denominator.
+const TYPE_RATIONAL: Uuid = id("03010100-0000-0000-060e-2b3401040101");
 
 fn filler(kind: Uuid, length: u64) -> Obj {
     Obj::new(class::FILLER)
@@ -791,6 +945,9 @@ enum Piece {
         media: MediaId,
         start: u64,
         length: u64,
+        speed: f32,
+        reverse: bool,
+        freeze: bool,
     },
     Gap(u64),
     Dissolve(u64),
@@ -833,6 +990,9 @@ fn pieces(
                 length: prev_len,
                 start: prev_start,
                 media,
+                speed: _,
+                reverse: _,
+                freeze: _,
             }),
         ) = (dissolve, out.last_mut())
         {
@@ -851,6 +1011,9 @@ fn pieces(
             media: clip.media,
             start,
             length,
+            speed: clip.speed,
+            reverse: clip.reverse,
+            freeze: clip.freeze,
         });
         cursor = cursor.max(clip.end());
         last = Some(clip);
@@ -957,6 +1120,9 @@ pub fn to_aaf_at(project: &Project, now: Stamp) -> std::io::Result<Written> {
                         media,
                         start,
                         length: n,
+                        speed,
+                        reverse,
+                        freeze,
                     } => {
                         let Some(f) = files.get(&media) else { continue };
                         let source_slot = if kind == TrackKind::Video {
@@ -965,13 +1131,20 @@ pub fn to_aaf_at(project: &Project, now: Stamp) -> std::io::Result<Written> {
                             f.sound_slot()
                         };
                         length += n;
-                        components.push(source_clip(
-                            data_kind,
-                            n,
-                            start,
-                            &f.master_id(),
-                            source_slot,
-                        ));
+                        components.push(if (speed - 1.0).abs() > 1e-4 || reverse || freeze {
+                            time_warped(
+                                data_kind,
+                                n,
+                                start,
+                                &f.master_id(),
+                                source_slot,
+                                speed,
+                                reverse,
+                                freeze,
+                            )
+                        } else {
+                            source_clip(data_kind, n, start, &f.master_id(), source_slot)
+                        });
                     }
                 }
             }
@@ -996,6 +1169,16 @@ pub fn to_aaf_at(project: &Project, now: Stamp) -> std::io::Result<Written> {
         stamp.as_bytes(),
     ]));
     let mut mobs: Vec<(Vec<u8>, Obj)> = Vec::new();
+    // Markers become locator objects on the composition mob.
+    let locators: Vec<Obj> = project
+        .markers
+        .iter()
+        .map(|m| {
+            Obj::new(LOCATOR_CLASS)
+                .data(pid::START_TIME, "Position", i64_of(m.frame))
+                .data(pid::MOB_NAME, "Name", text(&m.name))
+        })
+        .collect();
     let composition = mob(
         class::COMPOSITION_MOB,
         &comp_id,
@@ -1003,6 +1186,15 @@ pub fn to_aaf_at(project: &Project, now: Stamp) -> std::io::Result<Written> {
         slots,
         now,
     );
+    let composition = if locators.is_empty() {
+        composition
+    } else {
+        composition.with(
+            pid::LOCATOR,
+            "Locators",
+            Value::Vector(locators),
+        )
+    };
     mobs.push((comp_id, composition));
     for f in files.values() {
         let [master, file] = media_mobs(project, f, now);
@@ -1189,6 +1381,30 @@ mod tests {
         out
     }
 
+    /// The bytes of property `pid` of the object at `path`.
+    fn prop(cf: &mut CompoundFile<Cursor<Vec<u8>>>, path: &str, pid: u16) -> Vec<u8> {
+        let b = stream(cf, &format!("{path}/properties"));
+        let count = usize::from(u16::from_le_bytes([b[2], b[3]]));
+        let mut at = 4 + count * 6;
+        for i in 0..count {
+            let e = 4 + i * 6;
+            let id = u16::from_le_bytes([b[e], b[e + 1]]);
+            let len = usize::from(u16::from_le_bytes([b[e + 4], b[e + 5]]));
+            if id == pid {
+                return b[at..at + len].to_vec();
+            }
+            at += len;
+        }
+        panic!("no property {pid:x} at {path}");
+    }
+
+    /// The definition a weak property of the object at `path` names.
+    fn weak(cf: &mut CompoundFile<Cursor<Vec<u8>>>, path: &str, pid: u16) -> Uuid {
+        let b = prop(cf, path, pid);
+        let key = b.get(5..).unwrap_or_else(|| panic!("{pid:x} is no weak reference"));
+        Uuid::from_slice_le(key).unwrap_or_else(|e| panic!("{e}"))
+    }
+
     #[test]
     fn the_file_is_a_compound_file_of_aaf_objects() {
         let w = to_aaf_at(&project(), stamp()).unwrap_or_else(|e| panic!("{e}"));
@@ -1230,6 +1446,66 @@ mod tests {
         // 48 + 6 frames of the first clip, a 12-frame dissolve, then the second from 6 frames
         // earlier: 54 + 54 - 12 is still 96 frames of timeline.
         assert_eq!(got, ["clip 24+54", "dissolve 12", "clip 18+54"]);
+    }
+
+    #[test]
+    fn a_speed_change_is_written_as_a_video_speed_control() {
+        let mut p = project();
+        p.tracks[0].clips[0].speed = 2.0;
+        let w = to_aaf_at(&p, stamp()).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(w.retimed, 1);
+        let mut cf = open(w.bytes);
+        // The clip is an operation group over the source clip, as the Edit Protocol lays a time
+        // warp out, and the group holds a parameter.
+        let at =
+            "/Header-2/Content-3b03/Mobs-1901{0}/Slots-4403{1}/Segment-4803/Components-1001{0}";
+        assert_eq!(
+            cf.entry(at).unwrap_or_else(|e| panic!("{e}")).clsid(),
+            &class::OPERATION_GROUP
+        );
+        assert_eq!(weak(&mut cf, at, pid::OPERATION), VIDEO_SPEED_CONTROL);
+        let input = format!("{at}/InputSegments-b02{{0}}");
+        assert_eq!(
+            cf.entry(&input).unwrap_or_else(|e| panic!("{e}")).clsid(),
+            &class::SOURCE_CLIP
+        );
+        let parameter = format!("{at}/Parameters-b03{{0}}");
+        assert_eq!(
+            cf.entry(&parameter).unwrap_or_else(|e| panic!("{e}")).clsid(),
+            &class::CONSTANT_VALUE
+        );
+        assert_eq!(
+            weak(&mut cf, &parameter, pid::PARAMETER_DEFINITION),
+            SPEED_RATIO
+        );
+        // Speed 2 is a ratio of 1/2: the output is half the input, and the source clip holds the
+        // frames the clip takes from its source.
+        assert_eq!(
+            prop(&mut cf, &parameter, pid::PARAMETER_VALUE),
+            [1, 0, 0, 0, 2, 0, 0, 0]
+        );
+        // The dissolve runs the clip 6 frames on: 54 frames on the timeline, 108 of the source.
+        assert_eq!(prop(&mut cf, at, pid::LENGTH), 54i64.to_le_bytes());
+        assert_eq!(prop(&mut cf, &input, pid::LENGTH), 108i64.to_le_bytes());
+        // The dictionary names the operation and the parameter it takes.
+        assert!(cf.is_storage("/Header-2/Dictionary-3b04/Paramete-nitions-2604{0}"));
+    }
+
+    #[test]
+    fn a_freeze_is_written_as_a_video_repeat() {
+        let mut p = project();
+        p.tracks[0].clips[0].freeze = true;
+        let w = to_aaf_at(&p, stamp()).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(w.retimed, 1);
+        let mut cf = open(w.bytes);
+        let at =
+            "/Header-2/Content-3b03/Mobs-1901{0}/Slots-4403{1}/Segment-4803/Components-1001{0}";
+        assert_eq!(weak(&mut cf, at, pid::OPERATION), VIDEO_REPEAT);
+        // The source clip is the one frame the freeze holds.
+        let input = format!("{at}/InputSegments-b02{{0}}");
+        assert_eq!(prop(&mut cf, &input, pid::LENGTH), 1i64.to_le_bytes());
+        // A frame repeat takes no parameter.
+        assert!(!cf.is_storage(&format!("{at}/Parameters-b03{{0}}")));
     }
 
     #[test]

@@ -29,9 +29,12 @@ fn an_edit_written_by_pyaaf2_is_read() {
 
     // Shot A ends at the dissolve's cut (5 frames into it) and shot B starts there, with the
     // dissolve's frames before the cut as its handle; after a 25-frame filler, shot A again from
-    // inside its effect. The nested composition is left out.
-    assert_eq!(places(v1), [(0, 45, 10), (45, 35, 5), (105, 30, 100)]);
-    assert_eq!(t.skipped, 1, "the nested composition");
+    // inside its effect, then the nested composition as a compound clip.
+    assert_eq!(
+        places(v1),
+        [(0, 45, 10), (45, 35, 5), (105, 30, 100), (135, 20, 0)]
+    );
+    assert_eq!(t.skipped, 0, "the nested composition is read");
     assert_eq!(v1.clips[0].transition, None);
     assert_eq!(
         v1.clips[1].transition,
@@ -48,6 +51,13 @@ fn an_edit_written_by_pyaaf2_is_read() {
     assert_eq!(v1.clips[0].available, Some(600));
     assert_eq!(v1.clips[1].media, file("/Volumes/Media/B.mxf"));
     assert_eq!(v1.clips[2].media, file("C:/Media/shot A.mov"));
+    // The nested composition is a compound clip: its own track, with shot B in it.
+    let nested = &v1.clips[3].nested;
+    assert_eq!(nested.len(), 1, "the nested composition's one track");
+    assert_eq!(nested[0].kind, TrackKind::Video);
+    assert_eq!(places(&nested[0]), [(0, 20, 0)]);
+    assert_eq!(nested[0].clips[0].media, file("/Volumes/Media/B.mxf"));
+    assert_eq!(nested[0].clips[0].name, "Shot B");
 
     // The sound's master counts 48 kHz samples: 19200 of them is frame 10 at 25 fps, and the
     // file's 60 seconds are 1500 frames.

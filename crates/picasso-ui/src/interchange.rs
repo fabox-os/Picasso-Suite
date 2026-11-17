@@ -6,9 +6,10 @@
 //! to the media pool by the path of their file, then by name; files that are not in the pool are
 //! imported first (videos and sounds are read on a thread of their own, as dropped files are),
 //! and files that are not on this computer are added as offline media, so the clips keep their
-//! place and can be relinked.
+//! place and can be relinked. A nested sequence in the file keeps its own tracks: it becomes a
+//! compound clip, as it would on the timeline.
 
-use picasso_core::otio::{OtioMedia, OtioTimeline};
+use picasso_core::otio::{OtioClip, OtioMedia, OtioTimeline, OtioTrack, MAX_NESTING_DEPTH};
 use picasso_core::{
     Command, ImportedClip, ImportedTrack, MediaId, MediaSource, Project, TrackKind,
 };
@@ -87,10 +88,20 @@ fn find_media(project: &Project, path: Option<&str>, names: &[&str]) -> Option<M
         .map(|m| m.id)
 }
 
-/// The files of a timeline that are not in the pool yet and can be read here, without repeats.
+/// The files of a timeline that are not in the pool yet and can be read here, without repeats,
+/// including the files of nested sequences.
 fn files_to_import(project: &Project, timeline: &OtioTimeline) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for clip in timeline.tracks.iter().flat_map(|t| &t.clips) {
+    collect_files(project, &timeline.tracks, &mut out, 0);
+    out
+}
+
+fn collect_files(project: &Project, tracks: &[OtioTrack], out: &mut Vec<String>, depth: usize) {
+    if depth > MAX_NESTING_DEPTH {
+        return;
+    }
+    for clip in tracks.iter().flat_map(|t| &t.clips) {
+        collect_files(project, &clip.nested, out, depth + 1);
         let OtioMedia::File { path } = &clip.media else {
             continue;
         };
@@ -100,7 +111,6 @@ fn files_to_import(project: &Project, timeline: &OtioTimeline) -> Vec<String> {
             out.push(path.clone());
         }
     }
-    out
 }
 
 /// Whether a file can be imported from here: on this computer, and not a network share or an
@@ -340,82 +350,7 @@ impl StudioApp {
 
         let fps = self.project().fps.nominal();
         let (mut offline, mut generated) = (0, 0);
-        let mut tracks = Vec::new();
-        for track in &timeline.tracks {
-            let mut clips = Vec::new();
-            for c in &track.clips {
-                let path = match &c.media {
-                    OtioMedia::File { path } => Some(path.as_str()),
-                    _ => None,
-                };
-                let found = match &c.media {
-                    OtioMedia::Generated(_) => None,
-                    _ => find_media(self.project(), path, &[&c.media_name, &c.name]),
-                };
-                let media = match found {
-                    Some(id) => Some(id),
-                    None => {
-                        // Kept as offline (or generated) media, so the clip keeps its place.
-                        let source = match &c.media {
-                            OtioMedia::Generated(source) => {
-                                generated += 1;
-                                source.clone()
-                            }
-                            other => {
-                                offline += 1;
-                                let path = match other {
-                                    OtioMedia::File { path } => path.clone(),
-                                    _ => c.media_name.clone(),
-                                };
-                                offline_source(path, track.kind)
-                            }
-                        };
-                        let shown = [&c.media_name, &c.name]
-                            .into_iter()
-                            .find(|n| !n.trim().is_empty())
-                            .map_or_else(|| "Offline".to_string(), |n| stem_keep_case(n));
-                        let length = match source {
-                            MediaSource::Video { .. } | MediaSource::Audio { .. } => c
-                                .available
-                                .filter(|l| *l > 0)
-                                .or(Some(c.source_in + c.duration * 4)),
-                            _ => None,
-                        };
-                        match self.run(Command::AddMedia {
-                            name: shown,
-                            source,
-                            length,
-                            default_duration: c.duration.max(1).min(fps * 3600),
-                        }) {
-                            Some(picasso_core::Outcome::Media(id)) => Some(id),
-                            _ => None,
-                        }
-                    }
-                };
-                let Some(media) = media else { continue };
-                clips.push(ImportedClip {
-                    media,
-                    name: if c.name.trim().is_empty() {
-                        stem_keep_case(&c.media_name)
-                    } else {
-                        c.name.clone()
-                    },
-                    start: c.record,
-                    source_in: c.source_in,
-                    duration: c.duration,
-                    speed: c.speed,
-                    reverse: c.reverse,
-                    freeze: c.freeze,
-                    enabled: c.enabled,
-                    transition: c.transition,
-                });
-            }
-            tracks.push(ImportedTrack {
-                kind: track.kind,
-                muted: !track.enabled,
-                clips,
-            });
-        }
+        let tracks = self.import_tracks(&timeline.tracks, &mut offline, &mut generated, fps, 0);
         let wanted: usize = tracks.iter().map(|t| t.clips.len()).sum();
         let title = if timeline.name.is_empty() {
             name.rsplit_once('.').map_or(name, |(s, _)| s).to_string()
@@ -440,10 +375,7 @@ impl StudioApp {
             notes.push(format!("{} could not be placed", wanted - placed));
         }
         if timeline.skipped > 0 {
-            notes.push(format!(
-                "{} nested or unknown item(s) left out",
-                timeline.skipped
-            ));
+            notes.push(format!("{} unknown item(s) left out", timeline.skipped));
         }
         if offline > 0 {
             notes.push(format!("{offline} media file(s) not found (shown offline)"));
@@ -456,6 +388,126 @@ impl StudioApp {
         } else {
             format!("Imported {placed} clips from {name}; {}", notes.join(", "))
         });
+    }
+
+    /// Converts the tracks of an OTIO timeline, and of any nested sequence in it, to the tracks a
+    /// new timeline is built from: each clip's media is matched to the pool by path then name,
+    /// and a nested sequence keeps its tracks for a compound clip.
+    fn import_tracks(
+        &mut self,
+        tracks: &[OtioTrack],
+        offline: &mut usize,
+        generated: &mut usize,
+        fps: u64,
+        depth: usize,
+    ) -> Vec<ImportedTrack> {
+        let mut out = Vec::new();
+        if depth > MAX_NESTING_DEPTH {
+            return out;
+        }
+        for track in tracks {
+            let mut clips = Vec::new();
+            for c in &track.clips {
+                let nested = if c.nested.is_empty() {
+                    Vec::new()
+                } else {
+                    self.import_tracks(&c.nested, offline, generated, fps, depth + 1)
+                };
+                let media = if c.nested.is_empty() {
+                    match self.media_for_clip(c, track.kind, offline, generated, fps) {
+                        Some(id) => Some(id),
+                        None => continue,
+                    }
+                } else if nested.iter().any(|t| !t.clips.is_empty()) {
+                    // A nested sequence becomes a compound clip: its tracks are the clip.
+                    None
+                } else {
+                    // A nested sequence with nothing to show (a loop, or nesting too deep).
+                    continue;
+                };
+                clips.push(ImportedClip {
+                    media,
+                    name: if c.name.trim().is_empty() {
+                        stem_keep_case(&c.media_name)
+                    } else {
+                        c.name.clone()
+                    },
+                    start: c.record,
+                    source_in: c.source_in,
+                    duration: c.duration,
+                    speed: c.speed,
+                    reverse: c.reverse,
+                    freeze: c.freeze,
+                    enabled: c.enabled,
+                    transition: c.transition,
+                    nested,
+                });
+            }
+            out.push(ImportedTrack {
+                kind: track.kind,
+                muted: !track.enabled,
+                clips,
+            });
+        }
+        out
+    }
+
+    /// The media of a clip of an imported timeline: one already in the pool, or one added as
+    /// offline (or generated) media so the clip keeps its place.
+    fn media_for_clip(
+        &mut self,
+        c: &OtioClip,
+        kind: TrackKind,
+        offline: &mut usize,
+        generated: &mut usize,
+        fps: u64,
+    ) -> Option<MediaId> {
+        let path = match &c.media {
+            OtioMedia::File { path } => Some(path.as_str()),
+            _ => None,
+        };
+        let found = match &c.media {
+            OtioMedia::Generated(_) => None,
+            _ => find_media(self.project(), path, &[&c.media_name, &c.name]),
+        };
+        if let Some(id) = found {
+            return Some(id);
+        }
+        // Kept as offline (or generated) media, so the clip keeps its place.
+        let source = match &c.media {
+            OtioMedia::Generated(source) => {
+                *generated += 1;
+                source.clone()
+            }
+            other => {
+                *offline += 1;
+                let path = match other {
+                    OtioMedia::File { path } => path.clone(),
+                    _ => c.media_name.clone(),
+                };
+                offline_source(path, kind)
+            }
+        };
+        let shown = [&c.media_name, &c.name]
+            .into_iter()
+            .find(|n| !n.trim().is_empty())
+            .map_or_else(|| "Offline".to_string(), |n| stem_keep_case(n));
+        let length = match source {
+            MediaSource::Video { .. } | MediaSource::Audio { .. } => c
+                .available
+                .filter(|l| *l > 0)
+                .or(Some(c.source_in + c.duration * 4)),
+            _ => None,
+        };
+        match self.run(Command::AddMedia {
+            name: shown,
+            source,
+            length,
+            default_duration: c.duration.max(1).min(fps * 3600),
+        }) {
+            Some(picasso_core::Outcome::Media(id)) => Some(id),
+            _ => None,
+        }
     }
 }
 

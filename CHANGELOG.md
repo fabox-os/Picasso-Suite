@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### ✨ New
+- ✅ **Interchange: speed changes, reverse and freeze in AAF:** written as the Edit Protocol's Video Speed Control operation group (a Speed Ratio, negative when reversed) and a freeze as Video Repeat, and read back from them. Markers in AAF are written and read as locators on the composition. **Nested sequences** in OTIO, Final Cut Pro 7 / Premiere XML and AAF imports become compound clips (a stack, sequence or composition inside another), up to eight levels deep. **File > Export > Timeline: OpenTimelineIO** is also available from `picasso-bridge` (`export-otio`).
+
+### ⚠️ Known limitations
+- The AAF speed, reverse, freeze and marker forms follow the Edit Protocol and are checked against Picasso's own reader and `pyaaf2`, but they have not been tried in Media Composer, Pro Tools or Premiere yet.
+
 ## 0.8.0
 
 More of the editor's own tools: 29 sound effects for tracks, 22 more picture effects (141 in all), 18 look transitions (115 transitions), 17 ways for a title to come in, 34 keyframe curves, 12 one-click Looks, markers on the beat, a video layout chooser for new projects and subtitles made from speech (Whisper, run in pure Rust on this computer).
