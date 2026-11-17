@@ -294,6 +294,65 @@ pub(crate) fn is_lut_name(name: &str) -> bool {
     name.to_ascii_lowercase().ends_with(".cube")
 }
 
+/// Effect bundles: `.picef` (the roadmap's name).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use picasso_drp::bundle::is_bundle_name;
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) const BUNDLE_EXTENSIONS: [&str; 1] = ["picef"];
+
+/// Whether a file name is an effect bundle (the browser cannot install one, but says so).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn is_bundle_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    BUNDLE_EXTENSIONS
+        .iter()
+        .any(|e| lower.ends_with(&format!(".{e}")))
+}
+
+/// Whether a file on disk is bigger than an effect bundle may be. The browser has no path to ask
+/// about, so nothing is refused here.
+fn bundle_is_too_big(path: &std::path::Path) -> bool {
+    std::fs::metadata(path)
+        .map(|m| m.len() > picasso_drp::bundle::MAX_BUNDLE_BYTES)
+        .unwrap_or(false)
+}
+
+/// Lets the user pick an effect bundle (`.picef`) to install.
+pub(crate) fn pick_bundle(inbox: Inbox, ctx: egui::Context) {
+    spawn(async move {
+        let Some(handle) = rfd::AsyncFileDialog::new()
+            .set_title("Install Effect Bundle")
+            .add_filter("Effect bundle", &["picef"])
+            .pick_file()
+            .await
+        else {
+            return;
+        };
+        // Refuse an oversized bundle before reading it into memory (desktop only: the browser has
+        // no path to ask about).
+        if path_of(&handle).is_some_and(|p| bundle_is_too_big(std::path::Path::new(&p))) {
+            inbox.push(
+                &ctx,
+                Incoming::Error(format!(
+                    "{}: the bundle is too big to read",
+                    handle.file_name()
+                )),
+            );
+            return;
+        }
+        let bytes = handle.read().await;
+        inbox.push(
+            &ctx,
+            Incoming::Media(vec![ImportedFile {
+                name: handle.file_name(),
+                path: path_of(&handle),
+                bytes,
+            }]),
+        );
+    });
+}
+
 /// Lets the user pick a project to open.
 pub(crate) fn pick_project(inbox: Inbox, ctx: egui::Context) {
     spawn(async move {
@@ -495,21 +554,27 @@ pub(crate) fn queue_dropped(files: Vec<egui::DroppedFileHandle>, inbox: Inbox, c
     {
         let mut read = Vec::new();
         for file in &files {
-            let bytes = if is_path_media(&name_of(file.path())) {
+            let name = name_of(file.path());
+            // Refuse an oversized bundle before reading it into memory.
+            if is_bundle_name(&name) && bundle_is_too_big(file.path()) {
+                inbox.push(
+                    &ctx,
+                    Incoming::Error(format!("{name}: the bundle is too big to read")),
+                );
+                continue;
+            }
+            let bytes = if is_path_media(&name) {
                 Ok(Vec::new())
             } else {
                 file.bytes()
             };
             match bytes {
                 Ok(bytes) => read.push(ImportedFile {
-                    name: name_of(file.path()),
+                    name,
                     path: Some(file.path().to_string_lossy().into_owned()),
                     bytes,
                 }),
-                Err(e) => inbox.push(
-                    &ctx,
-                    Incoming::Error(format!("{}: {e}", name_of(file.path()))),
-                ),
+                Err(e) => inbox.push(&ctx, Incoming::Error(format!("{name}: {e}"))),
             }
         }
         if !read.is_empty() {

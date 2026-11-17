@@ -57,6 +57,8 @@ mod render_presets;
 #[cfg(not(target_arch = "wasm32"))]
 mod effect_presets;
 #[cfg(not(target_arch = "wasm32"))]
+mod effect_bundle;
+#[cfg(not(target_arch = "wasm32"))]
 mod resolve;
 mod sound;
 mod source_viewer;

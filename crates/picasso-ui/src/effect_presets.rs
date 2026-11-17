@@ -29,6 +29,13 @@ pub(crate) fn preset_dir() -> Option<PathBuf> {
 /// The file name a preset with `name` is saved under (`<name>.json`, the form `list_in` looks
 /// for). `None` when the name leaves nothing to name a file by.
 fn file_name(name: &str) -> Option<String> {
+    file_name_with(name, "json")
+}
+
+/// The file name a library item with `name` is saved under, `<name>.<ext>`; `None` when the name
+/// leaves nothing to name a file by. Everything installed from a bundle is named through this, so
+/// nothing a bundle says can name a place outside the folder it is installed in.
+pub(crate) fn file_name_with(name: &str, ext: &str) -> Option<String> {
     let stem = sanitize_for_filename(name.trim());
     if stem.chars().all(|c| matches!(c, '-' | '.')) || stem.len() > MAX_NAME_BYTES {
         return None;
@@ -42,7 +49,7 @@ fn file_name(name: &str) -> Option<String> {
     if reserved {
         return None;
     }
-    Some(format!("{stem}.json"))
+    Some(format!("{stem}.{ext}"))
 }
 
 /// The longest preset name that is saved (as a file name stem, in bytes).
@@ -78,7 +85,7 @@ pub(crate) fn load_preset(name: &str) -> Option<EffectPreset> {
     load_in(&preset_dir()?, name)
 }
 
-fn list_in(dir: &Path) -> Vec<String> {
+pub(crate) fn list_in(dir: &Path) -> Vec<String> {
     let mut names = Vec::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for e in entries.flatten() {
@@ -95,7 +102,7 @@ fn list_in(dir: &Path) -> Vec<String> {
     names
 }
 
-fn save_in(dir: &Path, name: &str, effects: &[Effect]) -> bool {
+pub(crate) fn save_in(dir: &Path, name: &str, effects: &[Effect]) -> bool {
     let Some(file) = file_name(name) else {
         return false;
     };
@@ -109,7 +116,7 @@ fn save_in(dir: &Path, name: &str, effects: &[Effect]) -> bool {
     std::fs::create_dir_all(dir).is_ok() && std::fs::write(dir.join(file), json).is_ok()
 }
 
-fn load_in(dir: &Path, name: &str) -> Option<EffectPreset> {
+pub(crate) fn load_in(dir: &Path, name: &str) -> Option<EffectPreset> {
     let path = dir.join(file_name(name)?);
     // A regular file of a sane size: not a device, a link to one, or a huge file.
     let meta = std::fs::metadata(&path).ok()?;

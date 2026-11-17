@@ -42,3 +42,5 @@ workspace = true
 
 [dev-dependencies]
 image.workspace = true
+# The tests of effect bundles build a ZIP the way a real `.picef` is packed.
+zip = { version = "8", default-features = false, features = ["deflate-flate2"] }  # MIT
