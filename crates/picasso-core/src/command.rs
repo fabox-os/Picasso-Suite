@@ -1864,7 +1864,25 @@ fn shifted(at: u64, from: u64, to: u64) -> Option<u64> {
     u64::try_from(moved).ok()
 }
 
-/// Moves a clip, and its linked clips by the same time on their own tracks.
+/// The 0-based index of `track` among tracks of the same kind.
+fn same_kind_index(p: &Project, track: TrackId) -> Option<usize> {
+    let kind = p.track(track)?.kind;
+    p.tracks.iter()
+        .filter(|t| t.kind == kind)
+        .position(|t| t.id == track)
+}
+
+/// The track at 0-based `index` among tracks of `kind`, or `None` when it does not exist yet.
+fn track_at_kind_index(p: &Project, kind: TrackKind, index: usize) -> Option<TrackId> {
+    p.tracks.iter()
+        .filter(|t| t.kind == kind)
+        .nth(index)
+        .map(|t| t.id)
+}
+
+/// Moves a clip, and its linked clips by the same time and by the same same-kind track delta.
+/// A linked partner whose target track does not exist yet gets one created atomically, so one
+/// Undo moves both clips back and removes the auto-created track.
 fn linked_move(
     p: &mut Project,
     clip: ClipId,
@@ -1876,15 +1894,31 @@ fn linked_move(
         return move_clip(p, clip, track, start);
     }
     let from = p.clip(clip).ok_or(EditError::NoSuchClip)?.1.start;
+    let (src_ti, _) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+    let src_kind_index = same_kind_index(p, p.tracks[src_ti].id).unwrap_or(0);
+    let dst_kind_index = same_kind_index(p, track).unwrap_or(0);
+    let delta = dst_kind_index as i64 - src_kind_index as i64;
     let mut q = p.clone();
     let out = move_clip(&mut q, clip, track, start)?;
     for id in partners {
-        let (t, c) = q.clip(id).ok_or(EditError::NoSuchClip)?;
-        let (own_track, to) = (
-            t.id,
-            shifted(c.start, from, start).ok_or(EditError::OutOfRange)?,
-        );
-        move_clip(&mut q, id, own_track, to)?;
+        // Copy the values needed before the mutable borrow of AddTrack.
+        let (partner_kind, partner_kind_index, clip_start) = {
+            let (t, c) = q.clip(id).ok_or(EditError::NoSuchClip)?;
+            (
+                t.kind,
+                same_kind_index(&q, t.id).unwrap_or(0),
+                c.start,
+            )
+        };
+        let target_kind_index = (partner_kind_index as i64 + delta).max(0) as usize;
+        let mut target_track = track_at_kind_index(&q, partner_kind, target_kind_index);
+        if target_track.is_none() {
+            Command::AddTrack { kind: partner_kind }.apply(&mut q)?;
+            target_track = track_at_kind_index(&q, partner_kind, target_kind_index);
+        }
+        let target_track = target_track.ok_or(EditError::NoSuchTrack)?;
+        let to = shifted(clip_start, from, start).ok_or(EditError::OutOfRange)?;
+        move_clip(&mut q, id, target_track, to)?;
     }
     *p = q;
     Ok(out)
@@ -5905,6 +5939,179 @@ mod tests {
                 start: 10,
             },
         );
+    }
+
+    #[test]
+    fn moving_linked_video_down_auto_creates_audio_track_and_moves_sound() {
+        let (p, picture, sound) = linked();
+        let v1 = p.tracks[0].id;
+        let v2 = p.tracks[1].id;
+        let mut session = crate::session::Session::new(p);
+        session
+            .dispatch(Command::MoveClip {
+                clip: picture,
+                track: v2,
+                start: 10,
+            })
+            .unwrap();
+        let p = session.project();
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            v2,
+            "picture on V2"
+        );
+        let a2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.kind == TrackKind::Audio && t.name == "A2")
+            .expect("A2 was created");
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a2_idx].id,
+            "sound on A2"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 10, "sound at same start");
+        assert_eq!(p.tracks.len(), 4, "V1, V2, A1, A2");
+
+        // One undo restores both clips to V1/A1 and removes A2.
+        assert!(session.undo());
+        let p = session.project();
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            v1,
+            "picture back on V1"
+        );
+        assert_eq!(p.clip(picture).unwrap().1.start, 0, "picture at original start");
+        let a1_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.kind == TrackKind::Audio && t.name == "A1")
+            .expect("A1 still exists");
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a1_idx].id,
+            "sound back on A1"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 0, "sound at original start");
+        assert!(!p.tracks.iter().any(|t| t.name == "A2"), "A2 removed");
+        assert_eq!(p.tracks.len(), 3, "V1, V2, A1");
+    }
+
+    #[test]
+    fn moving_linked_video_up_moves_sound_to_same_relative_track() {
+        let (p, picture, sound) = linked();
+        let v1 = p.tracks[0].id;
+        let v2 = p.tracks[1].id;
+        let mut session = crate::session::Session::new(p);
+        // First move V1 -> V2: A2 created, sound A1 -> A2.
+        session
+            .dispatch(Command::MoveClip {
+                clip: picture,
+                track: v2,
+                start: 10,
+            })
+            .unwrap();
+        let p = session.project();
+        let a2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "A2")
+            .unwrap();
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a2_idx].id,
+            "sound on A2"
+        );
+        // Now move V2 -> V1: sound A2 -> A1.
+        session
+            .dispatch(Command::MoveClip {
+                clip: picture,
+                track: v1,
+                start: 20,
+            })
+            .unwrap();
+        let p = session.project();
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            v1,
+            "picture back on V1"
+        );
+        assert_eq!(p.clip(picture).unwrap().1.start, 20);
+        let a1_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "A1")
+            .unwrap();
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a1_idx].id,
+            "sound on A1"
+        );
+        assert_eq!(
+            p.clip(sound).unwrap().1.start,
+            20,
+            "sound at same start"
+        );
+        // A2 still exists as an empty track.
+        assert!(p.tracks.iter().any(|t| t.name == "A2"), "A2 still exists");
+        assert_eq!(p.tracks.len(), 4);
+    }
+
+    #[test]
+    fn linked_selection_off_moves_only_the_dragged_clip() {
+        let (mut p, picture, sound) = linked();
+        Command::SetLinkedSelection { on: false }
+            .apply(&mut p)
+            .unwrap();
+        let v2 = p.tracks[1].id;
+        Command::MoveClip {
+            clip: picture,
+            track: v2,
+            start: 10,
+        }
+        .apply(&mut p)
+        .unwrap();
+        assert_eq!(p.clip(picture).unwrap().0.id, v2, "picture on V2");
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[2].id,
+            "sound still on A1"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 0, "sound at original start");
+        assert_eq!(p.tracks.len(), 3, "no A2 created");
+    }
+
+    #[test]
+    fn locked_audio_track_refuses_linked_move_without_creating_tracks() {
+        let (mut p, picture, sound) = linked();
+        let a1 = p.clip(sound).unwrap().0.id;
+        Command::SetTrackLocked {
+            track: a1,
+            locked: true,
+        }
+        .apply(&mut p)
+        .unwrap();
+        let v2 = p.tracks[1].id;
+        let before = p.clone();
+        refused(
+            &mut p,
+            Command::MoveClip {
+                clip: picture,
+                track: v2,
+                start: 10,
+            },
+        );
+        // Nothing changed: no A2 created, clips stay put.
+        assert_eq!(p.tracks.len(), before.tracks.len());
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            before.clip(picture).unwrap().0.id
+        );
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            before.clip(sound).unwrap().0.id
+        );
+        assert!(!p.tracks.iter().any(|t| t.name == "A2"), "no A2 created");
     }
 
     #[test]

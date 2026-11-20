@@ -16,6 +16,9 @@ use picasso_core::{
     Clip, ClipId, Command, MediaId, MediaSource, Outcome, Project, TrackId, TrackKind,
 };
 
+#[cfg(test)]
+use egui::{Event, RawInput};
+
 use crate::app::StudioApp;
 use crate::theme::{self, regular};
 
@@ -92,13 +95,16 @@ enum Drag {
     Scrub {
         scroll: f32,
     },
-    /// `track` is an index; `ok` says whether releasing here would work.
+    /// `track` is an index; `ok` says whether releasing here would work. `new_track` is set when
+    /// the pointer is above the top video track or below the bottom audio track, meaning a new
+    /// track of that kind must be created on drop.
     Move {
         clip: ClipId,
         grab: i64,
         track: usize,
         start: u64,
         ok: bool,
+        new_track: bool,
     },
     TrimStart {
         clip: ClipId,
@@ -1033,6 +1039,7 @@ impl StudioApp {
                         track,
                         start,
                         ok: true,
+                        new_track: false,
                     },
                     Part::Start => Drag::TrimStart {
                         clip,
@@ -1120,27 +1127,54 @@ impl StudioApp {
                     start = (start + d).max(0);
                 }
                 // Stay on the same row when the pointer leaves the tracks of this kind (a
-                // video clip stays on video tracks, a sound on audio tracks).
-                let own_kind = self.project().tracks.get(track).map(|t| t.kind);
-                let track = geo
-                    .track_at(p.y)
-                    .filter(|t| self.project().tracks.get(*t).map(|t| t.kind) == own_kind)
-                    .unwrap_or(track);
-                let ok = self.project().tracks.get(track).is_some_and(|t| !t.locked)
-                    && self.would_work(
-                        view,
-                        Command::MoveClip {
-                            clip,
-                            track: self.project().tracks[track].id,
-                            start: start as u64,
-                        },
-                    );
+                // video clip stays on video tracks, a sound on audio tracks). When the pointer is
+                // above the top video track (video clip) or below the bottom audio track (audio
+                // clip), target a new track of that kind to be created on drop.
+                // The clip's own track kind is used (not drag.track, which may point past the
+                // last track when new_track is true).
+                let own_kind = self.project().clip(clip).map(|(t, _)| t.kind);
+                let n_tracks = self.project().tracks.len();
+                let above_top = geo.tracks > 0 && p.y < geo.top_of_row(0);
+                let below_bottom = geo.tracks > 0 && {
+                    let last = geo.tracks - 1;
+                    p.y >= geo.top_of_row(last) + geo.height_of_row(last)
+                };
+                let (target_track, new_track) = match geo.track_at(p.y) {
+                    Some(t)
+                        if self
+                            .project()
+                            .tracks
+                            .get(t)
+                            .map(|t| t.kind) == own_kind =>
+                    {
+                        (t, false)
+                    }
+                    _ if own_kind == Some(TrackKind::Video) && above_top => (n_tracks, true),
+                    _ if own_kind == Some(TrackKind::Audio) && below_bottom => (n_tracks, true),
+                    _ => (track, false),
+                };
+                let ok = if new_track {
+                    // A new track is unlocked and empty, so the move works whenever the source
+                    // track and clip are not locked.
+                    self.project().clip(clip).is_some_and(|(t, c)| !t.locked && !c.locked)
+                } else {
+                    self.project().tracks.get(target_track).is_some_and(|t| !t.locked)
+                        && self.would_work(
+                            view,
+                            Command::MoveClip {
+                                clip,
+                                track: self.project().tracks[target_track].id,
+                                start: start as u64,
+                            },
+                        )
+                };
                 view.drag = Drag::Move {
                     clip,
                     grab,
-                    track,
+                    track: target_track,
                     start: start as u64,
                     ok,
+                    new_track,
                 };
             }
             Drag::TrimStart { clip, .. } => {
@@ -1232,8 +1266,34 @@ impl StudioApp {
                 track,
                 start,
                 ok,
+                new_track,
                 ..
             } => {
+                if new_track {
+                    // Create the track first, then move the clip onto it, as one undo step.
+                    let kind = self
+                        .project()
+                        .clip(clip)
+                        .map(|(t, _)| t.kind)
+                        .unwrap_or(TrackKind::Video);
+                    if let Err(e) = self.session.dispatch_all_then(
+                        vec![Command::AddTrack { kind }],
+                        |outcomes| {
+                            let new_track_id = match outcomes.first() {
+                                Some(Outcome::Track(id)) => *id,
+                                _ => return Vec::new(),
+                            };
+                            vec![Command::MoveClip {
+                                clip,
+                                track: new_track_id,
+                                start,
+                            }]
+                        },
+                    ) {
+                        self.fail(e);
+                    }
+                    return;
+                }
                 let Some(track_id) = self.project().tracks.get(track).map(|t| t.id) else {
                     return;
                 };
@@ -2588,6 +2648,7 @@ mod detail_tests {
             track: 0,
             start: 10,
             ok: true,
+            new_track: false,
         };
         assert!(!view.scrubbing());
     }
@@ -2741,5 +2802,620 @@ mod drop_tests {
         assert_eq!(geo.nearest_track(550.0), Some(0));
         assert_eq!(geo.nearest_track(615.0), Some(1));
         assert_eq!(geo.nearest_track(900.0), Some(1));
+    }
+
+    #[test]
+    fn dragging_a_clip_above_v1_creates_v2_and_moves_linked_sound_to_a2() {
+        let ctx = Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.manager.open = false;
+
+        // V1 + A1 only (Project::start), no clips yet.
+        let Some(Outcome::Media(m)) = app.run(Command::AddMedia {
+            name: "v".into(),
+            source: picasso_core::MediaSource::Video { path: "v.mp4".into() },
+            length: Some(1000),
+            default_duration: 96,
+        }) else {
+            panic!();
+        };
+        let v1 = app.project().tracks[0].id;
+        let Some(Outcome::Clip(picture)) = app.run(Command::AddClip {
+            track: v1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: true,
+        }) else {
+            panic!();
+        };
+        let sound = app.project().linked_to(picture)[0];
+
+        // Set up a drag of the picture clip starting on V1.
+        let mut view = TimelineView::new(Mode::Edit);
+        view.drag = Drag::Move {
+            clip: picture,
+            grab: 0,
+            track: 0,
+            start: 0,
+            ok: true,
+            new_track: false,
+        };
+
+        // Geo: V1 row starts at body_top = 100.0, pointer above it at y = 50.0.
+        let mut order = [0u8; MAX_ROWS];
+        let mut row_of = [HIDDEN_ROW; MAX_ROWS];
+        order[0] = 0;
+        order[1] = 1;
+        row_of[0] = 0;
+        row_of[1] = 1;
+        let geo = Geo {
+            left: 0.0,
+            top: 0.0,
+            zoom: 1.0,
+            scroll: 0.0,
+            tracks: 2,
+            ruler_h: 20.0,
+            row_h: 100.0,
+            order,
+            row_of,
+            videos: 1,
+            body_top: 100.0,
+            audio_h: 30.0,
+            vscroll: 0.0,
+        };
+
+        // Drag pointer above V1: update_drag must flag new_track.
+        app.update_drag(&mut view, &geo, pos2(50.0, 50.0));
+        assert!(
+            matches!(view.drag, Drag::Move { new_track: true, .. }),
+            "dragging above V1 must set new_track"
+        );
+
+        // Finish the drag: should create V2 and move linked sound to A2.
+        app.finish_drag_inner(&mut view);
+
+        let p = app.project();
+        let v2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "V2")
+            .expect("V2 was created");
+        let a2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "A2")
+            .expect("A2 was created");
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            p.tracks[v2_idx].id,
+            "picture on V2"
+        );
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a2_idx].id,
+            "linked sound on A2"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 50, "sound at same start as picture");
+        assert_eq!(p.tracks.len(), 4, "V1, V2, A1, A2");
+
+        // Undo restores both clips to V1/A1 and removes V2/A2.
+        assert!(app.session.undo());
+        let p = app.project();
+        assert!(!p.tracks.iter().any(|t| t.name == "V2"), "V2 removed");
+        assert!(!p.tracks.iter().any(|t| t.name == "A2"), "A2 removed");
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            v1,
+            "picture back on V1"
+        );
+        assert_eq!(p.clip(picture).unwrap().1.start, 0, "picture at original start");
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[1].id,
+            "sound back on A1"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 0, "sound at original start");
+        assert_eq!(p.tracks.len(), 2, "back to V1, A1");
+    }
+
+    #[test]
+    fn headless_drag_above_v1_creates_v2_and_a2() {
+        let ctx = Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.manager.open = false;
+        app.page = crate::app::Page::Edit;
+
+        // V1 + A1 only (Project::start), no clips yet.
+        let outcome = app.run(Command::AddMedia {
+            name: "v".into(),
+            source: picasso_core::MediaSource::Video { path: "v.mp4".into() },
+            length: Some(1000),
+            default_duration: 96,
+        });
+        let m = match outcome {
+            Some(Outcome::Media(m)) => m,
+            _ => MediaId(u64::MAX),
+        };
+
+        let v1 = app.project().tracks[0].id;
+        let outcome = app.run(Command::AddClip {
+            track: v1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: true,
+        });
+        let picture = match outcome {
+            Some(Outcome::Clip(id)) => id,
+            _ => ClipId(0),
+        };
+        let sound = app
+            .project()
+            .linked_to(picture)
+            .into_iter()
+            .next()
+            .unwrap_or(ClipId(0));
+
+        let size = vec2(1920.0, 1080.0);
+        let mut t = 0.0f64;
+        let mut run = |app: &mut StudioApp, events: Vec<egui::Event>| {
+            t += 0.016;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+                events,
+                time: Some(t),
+                ..RawInput::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.ui(ui));
+            out.textures_delta.clear();
+        };
+
+        // Initialize the UI layout.
+        for _ in 0..4 {
+            run(&mut app, vec![]);
+        }
+
+        // Press primary on the V1 clip (approximate screen coordinates).
+        run(
+            &mut app,
+            vec![Event::PointerButton {
+                pos: pos2(750.0, 800.0),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            }],
+        );
+
+        // Drag the pointer upward above V1's top edge.
+        run(
+            &mut app,
+            vec![Event::PointerMoved(pos2(750.0, 700.0))],
+        );
+
+        // Release the primary button.
+        run(
+            &mut app,
+            vec![Event::PointerButton {
+                pos: pos2(750.0, 700.0),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            }],
+        );
+
+        // V2 and A2 should have been created, and both clips moved onto them.
+        let p = app.project();
+        assert!(p.tracks.iter().any(|t| t.name == "V2"), "V2 was created");
+        assert!(p.tracks.iter().any(|t| t.name == "A2"), "A2 was created");
+        assert_eq!(p.tracks.len(), 4, "V1, V2, A1, A2");
+        let v2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "V2")
+            .unwrap_or(usize::MAX);
+        let a2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "A2")
+            .unwrap_or(usize::MAX);
+        assert_ne!(v2_idx, usize::MAX, "V2 index found");
+        assert_ne!(a2_idx, usize::MAX, "A2 index found");
+        assert_eq!(
+            p.clip(picture).map(|(t, _)| t.id),
+            Some(p.tracks[v2_idx].id),
+            "picture on V2"
+        );
+        assert_eq!(
+            p.clip(sound).map(|(t, _)| t.id),
+            Some(p.tracks[a2_idx].id),
+            "linked sound on A2"
+        );
+
+        // Undo restores both clips to V1/A1 and removes V2/A2.
+        assert!(app.session.undo());
+        let p = app.project();
+        assert!(!p.tracks.iter().any(|t| t.name == "V2"), "V2 removed");
+        assert!(!p.tracks.iter().any(|t| t.name == "A2"), "A2 removed");
+        assert_eq!(p.tracks.len(), 2, "back to V1, A1");
+    }
+
+    fn click_at(app: &mut StudioApp, ctx: &Context, run: &mut impl FnMut(&mut StudioApp, Vec<egui::Event>), x: f32, y: f32) {
+        run(
+            app,
+            vec![
+                egui::Event::PointerButton {
+                    pos: pos2(x, y),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+        run(
+            app,
+            vec![
+                egui::Event::PointerButton {
+                    pos: pos2(x, y),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn headless_click_selects_standalone_video_clip() {
+        let ctx = Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.manager.open = false;
+        app.page = crate::app::Page::Edit;
+
+        let outcome = app.run(Command::AddMedia {
+            name: "v".into(),
+            source: picasso_core::MediaSource::Video { path: "v.mp4".into() },
+            length: Some(1000),
+            default_duration: 96,
+        });
+        let m = match outcome {
+            Some(Outcome::Media(m)) => m,
+            _ => MediaId(u64::MAX),
+        };
+
+        let v1 = app.project().tracks[0].id;
+        let outcome = app.run(Command::AddClip {
+            track: v1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: false,
+        });
+        let picture = match outcome {
+            Some(Outcome::Clip(id)) => id,
+            _ => ClipId(0),
+        };
+
+        let size = vec2(1920.0, 1080.0);
+        let mut t = 0.0f64;
+        let mut run = |app: &mut StudioApp, events: Vec<egui::Event>| {
+            t += 0.016;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events,
+                time: Some(t),
+                ..egui::RawInput::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.ui(ui));
+            out.textures_delta.clear();
+        };
+
+        for _ in 0..4 {
+            run(&mut app, vec![]);
+        }
+
+        click_at(&mut app, &ctx, &mut run, 750.0, 800.0);
+
+        let p = app.project();
+        assert_eq!(p.clip(picture).map(|(_, c)| c.enabled), Some(true));
+        assert_eq!(app.selection, Some(picture), "clicking a video clip selects it");
+    }
+
+    #[test]
+    fn headless_click_selects_standalone_audio_clip() {
+        let ctx = Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.manager.open = false;
+        app.page = crate::app::Page::Edit;
+
+        // Project::start already has V1 and A1.
+        let outcome = app.run(Command::AddMedia {
+            name: "a".into(),
+            source: picasso_core::MediaSource::Audio { path: "a.mp3".into() },
+            length: Some(1000),
+            default_duration: 96,
+        });
+        let m = match outcome {
+            Some(Outcome::Media(m)) => m,
+            _ => MediaId(u64::MAX),
+        };
+
+        let a1 = match app
+            .project()
+            .tracks
+            .iter()
+            .find(|t| t.kind == picasso_core::TrackKind::Audio)
+        {
+            Some(t) => t.id,
+            None => return, // Project::start always has A1
+        };
+        let outcome = app.run(Command::AddClip {
+            track: a1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: false,
+        });
+        let sound = match outcome {
+            Some(Outcome::Clip(id)) => id,
+            _ => ClipId(0),
+        };
+
+        let size = vec2(1920.0, 1080.0);
+        let mut t = 0.0f64;
+        let mut run = |app: &mut StudioApp, events: Vec<egui::Event>| {
+            t += 0.016;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events,
+                time: Some(t),
+                ..egui::RawInput::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.ui(ui));
+            out.textures_delta.clear();
+        };
+
+        for _ in 0..4 {
+            run(&mut app, vec![]);
+        }
+
+        click_at(&mut app, &ctx, &mut run, 750.0, 870.0);
+
+        let p = app.project();
+        assert_eq!(app.selection, Some(sound), "clicking an audio clip selects it");
+    }
+
+    #[test]
+    fn headless_click_after_unlink_selects_only_clicked_clip() {
+        let ctx = Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.manager.open = false;
+        app.page = crate::app::Page::Edit;
+
+        let outcome = app.run(Command::AddMedia {
+            name: "v".into(),
+            source: picasso_core::MediaSource::Video { path: "v.mp4".into() },
+            length: Some(1000),
+            default_duration: 96,
+        });
+        let m = match outcome {
+            Some(Outcome::Media(m)) => m,
+            _ => MediaId(u64::MAX),
+        };
+
+        let v1 = app.project().tracks[0].id;
+        let outcome = app.run(Command::AddClip {
+            track: v1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: true,
+        });
+        let picture = match outcome {
+            Some(Outcome::Clip(id)) => id,
+            _ => ClipId(0),
+        };
+        let sound = app
+            .project()
+            .linked_to(picture)
+            .into_iter()
+            .next()
+            .unwrap_or(ClipId(0));
+
+        app.run(Command::UnlinkClips {
+            clips: vec![picture, sound],
+        });
+
+        let size = vec2(1920.0, 1080.0);
+        let mut t = 0.0f64;
+        let mut run = |app: &mut StudioApp, events: Vec<egui::Event>| {
+            t += 0.016;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events,
+                time: Some(t),
+                ..egui::RawInput::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.ui(ui));
+            out.textures_delta.clear();
+        };
+
+        for _ in 0..4 {
+            run(&mut app, vec![]);
+        }
+
+        // Clicking the video clip after unlink selects only the video.
+        click_at(&mut app, &ctx, &mut run, 750.0, 800.0);
+        assert_eq!(
+            app.selection,
+            Some(picture),
+            "clicking video after unlink selects only video"
+        );
+
+        // Clicking the audio clip after unlink selects only the audio.
+        click_at(&mut app, &ctx, &mut run, 750.0, 870.0);
+        assert_eq!(
+            app.selection,
+            Some(sound),
+            "clicking audio after unlink selects only audio"
+        );
+    }
+
+    #[test]
+    fn headless_click_with_linked_selection_off_selects_only_clicked_clip() {
+        let ctx = Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.manager.open = false;
+        app.page = crate::app::Page::Edit;
+
+        let outcome = app.run(Command::AddMedia {
+            name: "v".into(),
+            source: picasso_core::MediaSource::Video { path: "v.mp4".into() },
+            length: Some(1000),
+            default_duration: 96,
+        });
+        let m = match outcome {
+            Some(Outcome::Media(m)) => m,
+            _ => MediaId(u64::MAX),
+        };
+
+        let v1 = app.project().tracks[0].id;
+        let outcome = app.run(Command::AddClip {
+            track: v1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: true,
+        });
+        let picture = match outcome {
+            Some(Outcome::Clip(id)) => id,
+            _ => ClipId(0),
+        };
+        let sound = app
+            .project()
+            .linked_to(picture)
+            .into_iter()
+            .next()
+            .unwrap_or(ClipId(0));
+
+        app.run(Command::SetLinkedSelection { on: false });
+
+        let size = vec2(1920.0, 1080.0);
+        let mut t = 0.0f64;
+        let mut run = |app: &mut StudioApp, events: Vec<egui::Event>| {
+            t += 0.016;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events,
+                time: Some(t),
+                ..egui::RawInput::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.ui(ui));
+            out.textures_delta.clear();
+        };
+
+        for _ in 0..4 {
+            run(&mut app, vec![]);
+        }
+
+        click_at(&mut app, &ctx, &mut run, 750.0, 800.0);
+        assert_eq!(
+            app.selection,
+            Some(picture),
+            "clicking video with linked selection off selects only video"
+        );
+        assert_ne!(app.selection, Some(sound), "sound is not selected");
+    }
+
+    #[test]
+    fn headless_click_after_auto_create_track_selects_on_new_track() {
+        let ctx = Context::default();
+        let mut app = StudioApp::new(&ctx);
+        app.manager.open = false;
+        app.page = crate::app::Page::Edit;
+
+        let outcome = app.run(Command::AddMedia {
+            name: "v".into(),
+            source: picasso_core::MediaSource::Video { path: "v.mp4".into() },
+            length: Some(1000),
+            default_duration: 96,
+        });
+        let m = match outcome {
+            Some(Outcome::Media(m)) => m,
+            _ => MediaId(u64::MAX),
+        };
+
+        let v1 = app.project().tracks[0].id;
+        let outcome = app.run(Command::AddClip {
+            track: v1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: true,
+        });
+        let picture = match outcome {
+            Some(Outcome::Clip(id)) => id,
+            _ => ClipId(0),
+        };
+        let sound = app
+            .project()
+            .linked_to(picture)
+            .into_iter()
+            .next()
+            .unwrap_or(ClipId(0));
+
+        let size = vec2(1920.0, 1080.0);
+        let mut t = 0.0f64;
+        let mut run = |app: &mut StudioApp, events: Vec<egui::Event>| {
+            t += 0.016;
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events,
+                time: Some(t),
+                ..egui::RawInput::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.ui(ui));
+            out.textures_delta.clear();
+        };
+
+        for _ in 0..4 {
+            run(&mut app, vec![]);
+        }
+
+        // Drag above V1 to create V2/A2.
+        run(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: pos2(750.0, 800.0),
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            }],
+        );
+        run(
+            &mut app,
+            vec![egui::Event::PointerMoved(pos2(750.0, 700.0))],
+        );
+        run(
+            &mut app,
+            vec![egui::Event::PointerButton {
+                pos: pos2(750.0, 700.0),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            }],
+        );
+
+        let p = app.project();
+        assert!(p.tracks.iter().any(|t| t.name == "V2"), "V2 created");
+        assert!(p.tracks.iter().any(|t| t.name == "A2"), "A2 created");
+
+        // Click the video clip on V2.
+        click_at(&mut app, &ctx, &mut run, 750.0, 700.0);
+        assert_eq!(
+            app.selection,
+            Some(picture),
+            "clicking clip on V2 selects it"
+        );
     }
 }
