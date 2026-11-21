@@ -1,7 +1,8 @@
 //! The Edit page (the timeline tab), laid out like the reference screen: the bins and the media
 //! pool on the left, the source viewer and the timeline viewer side by side, their transport
-//! rows, the timeline's tool row, and the timeline with its column of track headers. The
-//! inspector takes the timeline viewer's place when it is open.
+//! rows, the timeline's tool row, and the timeline with its column of track headers. When the
+//! inspector is open it takes the whole right column and the timeline viewer moves to the center
+//! one, where the source viewer was; the source viewer is not drawn while it is hidden.
 //!
 //! Positions are written in pixels of the 2000-pixel-wide reference and scaled to the
 //! 1872-point window (`K`). The bars keep their reference heights; the viewers and the tracks
@@ -79,6 +80,19 @@ const VIEW_TOP: f32 = 186.0;
 const VIEW_BOTTOM: f32 = 497.0;
 const TRACKS_TOP: f32 = 735.0;
 const PAGE_BAR: f32 = 1080.0;
+
+/// The viewers' columns in reference pixels: the center one (the source viewer, or the timeline
+/// viewer while the inspector is open) and the right one (the timeline viewer, or the inspector).
+const VIEWER_CENTER: (f32, f32) = (690.0, 1348.0);
+const VIEWER_RIGHT: (f32, f32) = (1350.0, 2000.0);
+
+/// An x of the timeline viewer's usual column ([`VIEWER_RIGHT`]) as an x of `column`: the viewer
+/// draws the same way in the center column when the inspector takes the right one.
+fn slot_x(x: f32, column: (f32, f32)) -> f32 {
+    let (x0, x1) = column;
+    let (u0, u1) = VIEWER_RIGHT;
+    x0 + (x - u0) * (x1 - x0) / (u1 - u0)
+}
 
 /// A drawing surface that takes reference pixels.
 struct Ed<'a> {
@@ -211,13 +225,18 @@ impl<'a> Ed<'a> {
 
 /// A click area over an icon; returns whether it was clicked.
 fn hit(ui: &mut Ui, e: &Ed, id: &str, x: f32, y: f32, half: f32, hint: &str) -> bool {
-    ui.interact(
+    let response = ui.interact(
         e.rect(x - half * 1.5, y - 18.0, x + half * 1.5, y + 18.0),
         ui.id().with((id, x as i32, y as i32)),
         Sense::click(),
-    )
-    .on_hover_text(hint)
-    .clicked()
+    );
+    // An empty hint would show an empty tooltip box, so only ask for one when there is text.
+    let response = if hint.is_empty() {
+        response
+    } else {
+        response.on_hover_text(hint)
+    };
+    response.clicked()
 }
 
 impl StudioApp {
@@ -274,8 +293,10 @@ impl StudioApp {
         self.edit_toolbar2(ui, &e);
         self.edit_bins(ui, &e);
         self.edit_pool(ui, ctx, &e);
-        self.edit_source_viewer(ui, ctx, &e);
         if self.inspector_open {
+            // The inspector takes the right column: the timeline viewer moves to the center one
+            // and the source viewer is not drawn, nor decodes, while it is hidden.
+            self.edit_timeline_viewer(ui, ctx, &e, VIEWER_CENTER);
             e.band(1349.0, TOOLBAR2_END + 1.0, 2000.0, 590.0, BG);
             ui.scope_builder(
                 UiBuilder::new().max_rect(e.rect(1362.0, 150.0, 1990.0, 586.0)),
@@ -290,7 +311,8 @@ impl StudioApp {
                 },
             );
         } else {
-            self.edit_timeline_viewer(ui, ctx, &e);
+            self.edit_source_viewer(ui, ctx, &e);
+            self.edit_timeline_viewer(ui, ctx, &e, VIEWER_RIGHT);
         }
         e.vline(1348.0, TOOLBAR2_END, 590.0);
         e.vline(1349.0, TOOLBAR2_END, 590.0);
@@ -374,56 +396,20 @@ impl StudioApp {
         for x in [85.0, 165.0, 215.0, 305.0, 360.0, 430.0, 515.0, 570.0, 628.0] {
             e.vline(x, 100.0, TOOLBAR2_END);
         }
-        // The viewers' headers.
-        e.icon(717.0, y, Icon::Photo, ICON, 0.85);
-        e.icon(761.0, y, Icon::FilmView, ICON, 0.85);
-        e.icon(806.0, y, Icon::StripView, ICON, 0.85);
-        e.vline(832.0, 100.0, TOOLBAR2_END);
-        let (source_zoom, timeline_zoom) = (self.edit_zoom(e, false), self.edit_zoom(e, true));
-        e.label(
-            878.0,
-            y,
-            Align2::CENTER_CENTER,
-            &format!("{source_zoom}%"),
-            17.5,
-            TEXT,
-            true,
-        );
-        e.chevron(921.0, y, GREY);
-        e.vline(945.0, 100.0, TOOLBAR2_END);
-        e.p.circle_stroke(e.at(961.0, y - 2.0), 2.5, Stroke::new(1.0, DIM));
-        e.dots(1320.0, y, GREY);
-        e.vline(1294.0, 100.0, TOOLBAR2_END);
+        // The viewers' headers. The inspector takes the right column, so the timeline viewer's
+        // header moves to the center one and the source viewer's is not drawn at all.
         e.vline(1348.0, 100.0, TOOLBAR2_END);
-        e.label(
-            1388.0,
-            y,
-            Align2::CENTER_CENTER,
-            &format!("{timeline_zoom}%"),
-            17.5,
-            TEXT,
-            true,
-        );
-        e.chevron(1432.0, y, GREY);
-        e.vline(1455.0, 100.0, TOOLBAR2_END);
-        e.p.circle_stroke(e.at(1472.0, y - 2.0), 2.5, Stroke::new(1.0, DIM));
-        e.icon(1635.0, y, Icon::ViewerFrame, ICON, 0.85);
-        e.chevron(1670.0, y, GREY);
-        e.icon(1715.0, y, Icon::Hq, ICON, 0.85);
-        e.chevron(1749.0, y, GREY);
-        e.icon(1795.0, y, Icon::SparkleFrame, ICON, 0.85);
-        e.chevron(1828.0, y, GREY);
-        e.icon(1878.0, y, Icon::ColorWipe, theme::WHITE, 0.9);
-        e.icon(1930.0, y, Icon::ViewerFrame, theme::WHITE, 0.85);
-        e.dots(1980.0, y, GREY);
-        for x in [1685.0, 1770.0, 1850.0, 1905.0, 1955.0] {
-            e.vline(x, 100.0, TOOLBAR2_END);
+        if self.inspector_open {
+            self.timeline_viewer_header(ui, e, VIEWER_CENTER);
+        } else {
+            self.source_viewer_header(ui, e);
+            self.timeline_viewer_header(ui, e, VIEWER_RIGHT);
         }
 
         if hit(ui, e, "edit_tb2", 248.0, y, 20.0, "Import media") {
             self.import_dialog(&self.ctx.clone());
         }
-        let planned: [(f32, &str); 16] = [
+        let planned: [(f32, &str); 10] = [
             (26.0, "Bins sidebar"),
             (106.0, "Previous bin"),
             (140.0, "Next bin"),
@@ -434,19 +420,10 @@ impl StudioApp {
             (543.0, "Search media"),
             (601.0, "Sort media"),
             (659.0, "Media pool options"),
-            (717.0, "Source viewer mode"),
-            (1320.0, "Source viewer options"),
-            (1635.0, "Safe area"),
-            (1715.0, "Playback quality"),
-            (1795.0, "Transform overlay"),
-            (1878.0, "Split screen wipe"),
         ];
-        let ctx = self.ctx.clone();
         for (x, name) in planned {
             if hit(ui, e, "edit_tb2", x, y, 20.0, name) {
                 match name {
-                    "Safe area" => self.do_act(&ctx, Act::OverlaySafeArea),
-                    "Playback quality" => self.set_proxy(if self.proxy > 1 { 1 } else { 2 }),
                     "Media pool view" | "Search media" | "Sort media" | "Thumbnail view" => {
                         self.pool_tool(name);
                     }
@@ -454,18 +431,88 @@ impl StudioApp {
                 }
             }
         }
-        if hit(ui, e, "edit_tb2", 1980.0, y, 20.0, "Viewer options") {
-            self.do_act(&ctx, Act::OverlayAll);
+    }
+
+    /// The source viewer's header: its view modes, its zoom and its options.
+    fn source_viewer_header(&mut self, ui: &mut Ui, e: &Ed) {
+        let y = 120.0;
+        e.icon(717.0, y, Icon::Photo, ICON, 0.85);
+        e.icon(761.0, y, Icon::FilmView, ICON, 0.85);
+        e.icon(806.0, y, Icon::StripView, ICON, 0.85);
+        e.vline(832.0, 100.0, TOOLBAR2_END);
+        let area = e.rect(VIEWER_CENTER.0, VIEW_TOP, VIEWER_CENTER.1, VIEW_BOTTOM);
+        e.label(
+            878.0,
+            y,
+            Align2::CENTER_CENTER,
+            &format!("{}%", self.edit_zoom(area)),
+            17.5,
+            TEXT,
+            true,
+        );
+        e.chevron(921.0, y, GREY);
+        e.vline(945.0, 100.0, TOOLBAR2_END);
+        e.p.circle_stroke(e.at(961.0, y - 2.0), 2.5, Stroke::new(1.0, DIM));
+        e.dots(1320.0, y, GREY);
+        e.vline(1294.0, 100.0, TOOLBAR2_END);
+        for (x, name) in [(717.0, "Source viewer mode"), (1320.0, "Source viewer options")] {
+            if hit(ui, e, "edit_tb2", x, y, 20.0, name) {
+                self.planned(name);
+            }
+        }
+    }
+
+    /// The timeline viewer's header: its zoom, framing, playback quality and overlay options,
+    /// drawn in `column` (the right one, or the center one when the inspector is open).
+    fn timeline_viewer_header(&mut self, ui: &mut Ui, e: &Ed, column: (f32, f32)) {
+        let y = 120.0;
+        let sx = |x: f32| slot_x(x, column);
+        let area = e.rect(sx(1350.0), VIEW_TOP, sx(2000.0), VIEW_BOTTOM);
+        e.label(
+            sx(1388.0),
+            y,
+            Align2::CENTER_CENTER,
+            &format!("{}%", self.edit_zoom(area)),
+            17.5,
+            TEXT,
+            true,
+        );
+        e.chevron(sx(1432.0), y, GREY);
+        e.vline(sx(1455.0), 100.0, TOOLBAR2_END);
+        e.p.circle_stroke(e.at(sx(1472.0), y - 2.0), 2.5, Stroke::new(1.0, DIM));
+        e.icon(sx(1635.0), y, Icon::ViewerFrame, ICON, 0.85);
+        e.chevron(sx(1670.0), y, GREY);
+        e.icon(sx(1715.0), y, Icon::Hq, ICON, 0.85);
+        e.chevron(sx(1749.0), y, GREY);
+        e.icon(sx(1795.0), y, Icon::SparkleFrame, ICON, 0.85);
+        e.chevron(sx(1828.0), y, GREY);
+        e.icon(sx(1878.0), y, Icon::ColorWipe, theme::WHITE, 0.9);
+        e.icon(sx(1930.0), y, Icon::ViewerFrame, theme::WHITE, 0.85);
+        e.dots(sx(1980.0), y, GREY);
+        for x in [1685.0, 1770.0, 1850.0, 1905.0, 1955.0] {
+            e.vline(sx(x), 100.0, TOOLBAR2_END);
+        }
+        let ctx = self.ctx.clone();
+        for (x, name) in [
+            (1635.0, "Safe area"),
+            (1715.0, "Playback quality"),
+            (1795.0, "Transform overlay"),
+            (1878.0, "Split screen wipe"),
+            (1980.0, "Viewer options"),
+        ] {
+            if hit(ui, e, "edit_tb2", sx(x), y, 20.0, name) {
+                match name {
+                    "Safe area" => self.do_act(&ctx, Act::OverlaySafeArea),
+                    "Playback quality" => self.set_proxy(if self.proxy > 1 { 1 } else { 2 }),
+                    "Viewer options" => self.do_act(&ctx, Act::OverlayAll),
+                    _ => self.planned(name),
+                }
+            }
         }
     }
 
     /// The zoom a viewer shows the picture at, in percent of its full size.
-    fn edit_zoom(&self, e: &Ed, timeline: bool) -> u32 {
-        let area = if timeline {
-            e.rect(1350.0, VIEW_TOP, 2000.0, VIEW_BOTTOM)
-        } else {
-            e.rect(690.0, VIEW_TOP, 1348.0, VIEW_BOTTOM)
-        };
+    fn edit_zoom(&self, area: Rect) -> u32 {
         let (w, h) = (self.project().width as f32, self.project().height as f32);
         if w < 1.0 || h < 1.0 {
             return 100;
@@ -830,12 +877,14 @@ impl StudioApp {
     }
 
     /// The timeline viewer: the picture at the playhead, a scrub line over the whole timeline
-    /// and the transport.
-    fn edit_timeline_viewer(&mut self, ui: &mut Ui, ctx: &Context, e: &Ed) {
+    /// and the transport, drawn in `column` (the right one, or the center one when the inspector
+    /// is open).
+    fn edit_timeline_viewer(&mut self, ui: &mut Ui, ctx: &Context, e: &Ed, column: (f32, f32)) {
+        let sx = |x: f32| slot_x(x, column);
         let fps = self.project().fps;
         let duration = self.project().duration();
         e.label(
-            1362.0,
+            sx(1362.0),
             162.0,
             Align2::LEFT_CENTER,
             &fps.timecode(duration),
@@ -848,7 +897,7 @@ impl StudioApp {
             // The timeline being edited, in red, as in the reference.
             let name = self.project().timeline_name.clone();
             e.label(
-                1672.0,
+                sx(1672.0),
                 162.0,
                 Align2::CENTER_CENTER,
                 &name,
@@ -856,14 +905,14 @@ impl StudioApp {
                 Color32::from_rgb(232, 76, 62),
                 false,
             );
-            e.chevron(1740.0, 162.0, GREY);
+            e.chevron(sx(1740.0), 162.0, GREY);
         } else {
-            e.chevron(1708.0, 162.0, GREY);
+            e.chevron(sx(1708.0), 162.0, GREY);
         }
         // A click on the name lists the project's timelines.
         let picker = ui
             .interact(
-                e.rect(1560.0, 140.0, 1760.0, 184.0),
+                e.rect(sx(1560.0), 140.0, sx(1760.0), 184.0),
                 ui.id().with("edit_timeline_picker"),
                 Sense::click(),
             )
@@ -887,7 +936,7 @@ impl StudioApp {
             None => {}
         }
         e.label(
-            1988.0,
+            sx(1988.0),
             162.0,
             Align2::RIGHT_CENTER,
             &self.tc(self.playhead as i64),
@@ -895,20 +944,20 @@ impl StudioApp {
             TEXT,
             true,
         );
-        let area = e.rect(1350.0, VIEW_TOP, 2000.0, VIEW_BOTTOM);
+        let area = e.rect(sx(1350.0), VIEW_TOP, sx(2000.0), VIEW_BOTTOM);
         let aspect = self.project().width as f32 / self.project().height.max(1) as f32;
         self.viewer
             .paint(ui, area, aspect, BG, duration > 0, self.overlays);
 
-        e.band(1350.0, VIEW_BOTTOM, 2000.0, 590.0, BG);
-        let bar = e.rect(1381.0, 515.0, 1975.0, 519.0);
+        e.band(sx(1350.0), VIEW_BOTTOM, sx(2000.0), 590.0, BG);
+        let bar = e.rect(sx(1381.0), 515.0, sx(1975.0), 519.0);
         e.p.rect_filled(bar, 1.0, Color32::from_rgb(22, 22, 25));
         let frac = (self.playhead as f32 / duration.max(1) as f32).clamp(0.0, 1.0);
-        let x = 1381.0 + (1975.0 - 1381.0) * frac;
+        let x = sx(1381.0 + (1975.0 - 1381.0) * frac);
         e.flag(x, 508.0);
         for hx in [1381.0, 1975.0] {
             e.p.rect_filled(
-                Rect::from_center_size(e.at(hx, 532.0), vec2(6.0, 8.0)),
+                Rect::from_center_size(e.at(sx(hx), 532.0), vec2(6.0, 8.0)),
                 1.0,
                 Color32::from_rgb(150, 150, 154),
             );
@@ -926,30 +975,30 @@ impl StudioApp {
             }
         }
         let y = 566.0;
-        e.icon(1395.0, y, Icon::ViewerFrame, ICON, 0.85);
-        e.chevron(1435.0, y, GREY);
-        e.icon(1488.0, y, Icon::Grid2, ICON, 0.85);
-        let buttons: [(f32, Icon, Act); 6] = [
-            (1540.0, Icon::ToStart, Act::GoFirst),
-            (1592.0, Icon::PlayReverse, Act::PreviousFrame),
-            (1641.0, Icon::Stop, Act::Stop),
-            (1689.0, Icon::Play, Act::TogglePlay),
-            (1742.0, Icon::ToEnd, Act::GoLast),
-            (1802.0, Icon::Loop, Act::ToggleLoop),
+        e.icon(sx(1395.0), y, Icon::ViewerFrame, ICON, 0.85);
+        e.chevron(sx(1435.0), y, GREY);
+        e.icon(sx(1488.0), y, Icon::Grid2, ICON, 0.85);
+        let buttons: [(f32, Icon, Act, &str); 6] = [
+            (1540.0, Icon::ToStart, Act::GoFirst, "Go to the first frame"),
+            (1592.0, Icon::PlayReverse, Act::PreviousFrame, "Previous frame"),
+            (1641.0, Icon::Stop, Act::Stop, "Stop"),
+            (1689.0, Icon::Play, Act::TogglePlay, "Play"),
+            (1742.0, Icon::ToEnd, Act::GoLast, "Go to the last frame"),
+            (1802.0, Icon::Loop, Act::ToggleLoop, "Loop playback"),
         ];
-        for (x, icon, act) in buttons {
+        for (x, icon, act, tip) in buttons {
             let lit = (icon == Icon::Play && self.playing) || (icon == Icon::Loop && self.looping);
-            e.icon(x, y, icon, if lit { theme::WHITE } else { GREY }, 0.9);
-            if hit(ui, e, "edit_transport", x, y, 22.0, "") {
+            e.icon(sx(x), y, icon, if lit { theme::WHITE } else { GREY }, 0.9);
+            if hit(ui, e, "edit_transport", sx(x), y, 22.0, tip) {
                 self.do_act(ctx, act);
             }
         }
-        e.icon(1950.0, y, Icon::FilmPlay, ICON, 0.85);
+        e.icon(sx(1950.0), y, Icon::FilmPlay, ICON, 0.85);
         if hit(
             ui,
             e,
             "edit_tv",
-            1950.0,
+            sx(1950.0),
             y,
             24.0,
             "Match frame: show this frame's source (F)",
@@ -957,7 +1006,7 @@ impl StudioApp {
             self.match_frame_to_source();
         }
         for (x, name) in [(1395.0, "Viewer framing"), (1488.0, "Multicam")] {
-            if hit(ui, e, "edit_tv", x, y, 24.0, name) {
+            if hit(ui, e, "edit_tv", sx(x), y, 24.0, name) {
                 if name == "Viewer framing" {
                     self.do_act(ctx, Act::OverlaySafeArea);
                 } else {
@@ -1888,4 +1937,387 @@ fn text_plus_controls(ui: &mut Ui, st: &mut picasso_core::TextStyle) {
                 *st = picasso_core::TextStyle::default();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::Page;
+    use egui::{Context, Event, LayerId, Pos2, RawInput, Shape};
+
+    /// Every text the frame painted, with where its top left corner is.
+    fn texts_at(shape: &Shape, out: &mut Vec<(String, Pos2)>) {
+        match shape {
+            Shape::Text(t) => {
+                let text = t.galley.job.text.trim();
+                if !text.is_empty() {
+                    out.push((text.to_string(), t.pos));
+                }
+            }
+            Shape::Vec(shapes) => shapes.iter().for_each(|s| texts_at(s, out)),
+            _ => {}
+        }
+    }
+
+    /// Where `text` is painted, if it is.
+    fn at(texts: &[(String, Pos2)], text: &str) -> Option<Pos2> {
+        texts.iter().find(|(t, _)| t == text).map(|(_, p)| *p)
+    }
+
+    /// The tests compare English labels; no other test changes the language while this guard is
+    /// held.
+    fn english() -> std::sync::MutexGuard<'static, ()> {
+        let guard = crate::i18n::CHANGING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::i18n::set(crate::i18n::Language::English);
+        guard
+    }
+
+    struct Frames {
+        time: f64,
+    }
+
+    impl Frames {
+        fn run(
+            &mut self,
+            app: &mut StudioApp,
+            ctx: &Context,
+            events: Vec<Event>,
+        ) -> Vec<(String, Pos2)> {
+            self.time += 0.016;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(1920.0, 1080.0))),
+                events,
+                time: Some(self.time),
+                ..RawInput::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.ui(ui));
+            out.textures_delta.clear();
+            let mut found = Vec::new();
+            for clipped in &out.shapes {
+                texts_at(&clipped.shape, &mut found);
+            }
+            found
+        }
+
+        /// The texts of a frame once the layout has settled (the window is scaled to its
+        /// reference width over the first frames).
+        fn settle(&mut self, app: &mut StudioApp, ctx: &Context) -> Vec<(String, Pos2)> {
+            let mut texts = Vec::new();
+            for _ in 0..4 {
+                texts = self.run(app, ctx, vec![]);
+            }
+            texts
+        }
+    }
+
+    /// An Edit page showing the demo (or an empty project) with a clip selected.
+    fn edit_app(ctx: &Context, demo: bool) -> StudioApp {
+        let mut app = StudioApp::new(ctx);
+        app.manager.open = false;
+        if demo {
+            app.load_demo();
+        }
+        app.page = Page::Edit;
+        let first = app
+            .project()
+            .tracks
+            .iter()
+            .flat_map(|t| t.clips.first())
+            .next()
+            .map(|c| c.id);
+        app.selection = first;
+        if demo {
+            let media = app.project().media.first().map(|m| m.id);
+            app.selected_media = media;
+            app.source.media = media;
+            app.source.frame = 42;
+            app.playhead = 100;
+        }
+        app
+    }
+
+    /// The Edit page's divider between its two viewer columns, in window points.
+    fn divider_x(app: &StudioApp) -> f32 {
+        let mut columns = COLUMNS;
+        for (column, x) in columns[1..4]
+            .iter_mut()
+            .zip(app.extra.prefs.panels.edit_columns)
+        {
+            column.1 = f32::from(x);
+        }
+        map_x(1348.0, &columns) * crate::chrome::R
+    }
+
+    /// The Edit page's geometry, to find where a reference point lands on screen.
+    fn edit_point(app: &StudioApp, ctx: &Context, x: f32, y: f32) -> Pos2 {
+        let shift = 92.0 - (40.0 + 40.0 * crate::chrome::R);
+        let height = ctx.input(|i| i.viewport_rect().height());
+        let s = crate::chrome::Screen {
+            o: Pos2::new(0.0, -shift),
+            h: height + shift,
+            warp: Default::default(),
+        };
+        let painter = Painter::new(ctx.clone(), LayerId::background(), Rect::EVERYTHING);
+        let e = Ed::new(&painter, &s, &app.extra.prefs.panels);
+        e.at(x, y)
+    }
+
+    #[test]
+    fn the_edit_page_shows_both_viewers_until_the_inspector_opens() {
+        let _only = english();
+        let ctx = Context::default();
+        let mut frames = Frames { time: 0.0 };
+        let mut app = edit_app(&ctx, true);
+        app.inspector_open = false;
+        let texts = frames.settle(&mut app, &ctx);
+        let divider = divider_x(&app);
+
+        assert!(
+            at(&texts, "INSPECTOR").is_none(),
+            "the inspector is not drawn while it is closed"
+        );
+        assert_eq!(app.source.frame, 42, "the source viewer keeps its frame");
+        let source_tc = app.project().fps.timecode(app.source.frame);
+        let source_at = at(&texts, &source_tc);
+        assert!(
+            source_at.is_some_and(|p| p.x < divider),
+            "the source viewer draws its frame in the center column: {source_at:?}"
+        );
+        let playhead_tc = app.tc(app.playhead as i64);
+        let timeline_at = at(&texts, &playhead_tc);
+        assert!(
+            timeline_at.is_some_and(|p| p.x > divider),
+            "the timeline viewer draws its playhead in the right column: {timeline_at:?}"
+        );
+        let length_tc = app.project().fps.timecode(app.project().duration());
+        assert!(
+            at(&texts, &length_tc).is_some(),
+            "the timeline viewer draws the timeline's length"
+        );
+    }
+
+    #[test]
+    fn the_inspector_takes_the_right_column_and_the_timeline_viewer_the_center() {
+        let _only = english();
+        let ctx = Context::default();
+        let mut frames = Frames { time: 0.0 };
+        let mut app = edit_app(&ctx, true);
+        app.inspector_open = true;
+        let texts = frames.settle(&mut app, &ctx);
+        let divider = divider_x(&app);
+
+        let inspector = at(&texts, "INSPECTOR");
+        assert!(
+            inspector.is_some_and(|p| p.x > divider),
+            "the inspector is drawn in the right column: {inspector:?}"
+        );
+        assert!(
+            inspector.is_some_and(|p| p.y < 200.0),
+            "the inspector starts at the top of its column: {inspector:?}"
+        );
+
+        let playhead_tc = app.tc(app.playhead as i64);
+        let timeline_at = at(&texts, &playhead_tc);
+        assert!(
+            timeline_at.is_some_and(|p| p.x < divider),
+            "the timeline viewer moved to the center column: {timeline_at:?}"
+        );
+        let length_tc = app.project().fps.timecode(app.project().duration());
+        let length_at = at(&texts, &length_tc);
+        assert!(
+            length_at.is_some_and(|p| p.x < divider),
+            "the timeline viewer's length moved to the center column: {length_at:?}"
+        );
+
+        let source_tc = app.project().fps.timecode(42);
+        assert!(
+            at(&texts, &source_tc).is_none(),
+            "the source viewer is not drawn while the inspector is open"
+        );
+
+        let zoom_right: Vec<&(String, Pos2)> = texts
+            .iter()
+            .filter(|(t, p)| t.ends_with('%') && p.y < 110.0 && p.x > divider)
+            .collect();
+        assert!(
+            zoom_right.is_empty(),
+            "no viewer zoom toolbar is left above the inspector: {zoom_right:?}"
+        );
+        assert!(
+            texts
+                .iter()
+                .any(|(t, p)| t.ends_with('%') && p.y < 110.0 && p.x < divider),
+            "the timeline viewer's zoom is drawn in the center column"
+        );
+
+        let lowest = texts
+            .iter()
+            .filter(|(_, p)| p.x > divider)
+            .map(|(_, p)| p.y)
+            .fold(0.0f32, f32::max);
+        assert!(
+            lowest > 400.0,
+            "the inspector fills the right column down past the picture: lowest text at {lowest}"
+        );
+    }
+
+    #[test]
+    fn the_edit_page_uses_no_widget_id_twice_in_either_viewer_state() {
+        let _only = english();
+        for demo in [false, true] {
+            for inspector in [false, true] {
+                let ctx = Context::default();
+                let mut frames = Frames { time: 0.0 };
+                let mut app = edit_app(&ctx, demo);
+                app.inspector_open = inspector;
+                for _ in 0..4 {
+                    let texts = frames.run(&mut app, &ctx, vec![]);
+                    let bad: Vec<&String> = texts
+                        .iter()
+                        .filter(|(t, _)| t.contains("use of") && t.contains("ID"))
+                        .map(|(t, _)| t)
+                        .collect();
+                    assert!(
+                        bad.is_empty(),
+                        "demo={demo} inspector={inspector}: ids used twice: {bad:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn closing_the_inspector_brings_the_source_viewer_back_unchanged() {
+        let _only = english();
+        let ctx = Context::default();
+        let mut frames = Frames { time: 0.0 };
+        let mut app = edit_app(&ctx, true);
+        let divider = divider_x(&app);
+
+        app.inspector_open = false;
+        let texts = frames.settle(&mut app, &ctx);
+        let source_tc = app.project().fps.timecode(app.source.frame);
+        assert!(
+            at(&texts, &source_tc).is_some_and(|p| p.x < divider),
+            "the source viewer is drawn first"
+        );
+
+        let media = app.source.media;
+        app.inspector_open = true;
+        let texts = frames.settle(&mut app, &ctx);
+        assert!(
+            at(&texts, &source_tc).is_none(),
+            "the source viewer is hidden while the inspector is open"
+        );
+        assert_eq!(
+            app.source.media, media,
+            "the source viewer keeps its media while hidden"
+        );
+        assert_eq!(
+            app.source.frame, 42,
+            "the source viewer keeps its frame while hidden"
+        );
+
+        app.inspector_open = false;
+        let texts = frames.settle(&mut app, &ctx);
+        assert!(
+            at(&texts, &source_tc).is_some_and(|p| p.x < divider),
+            "the source viewer is back where it was"
+        );
+        assert_eq!(
+            app.source.media, media,
+            "the source viewer still shows its media"
+        );
+    }
+
+    #[test]
+    fn the_center_viewers_scrub_moves_the_timeline_not_the_hidden_source() {
+        let _only = english();
+        let ctx = Context::default();
+        let mut frames = Frames { time: 0.0 };
+        let mut app = edit_app(&ctx, true);
+        app.inspector_open = true;
+        frames.settle(&mut app, &ctx);
+        let before = app.source.frame;
+
+        let p = edit_point(&app, &ctx, slot_x(1678.0, VIEWER_CENTER), 517.0);
+        let button = |pressed: bool| Event::PointerButton {
+            pos: p,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        frames.run(&mut app, &ctx, vec![button(true)]);
+        frames.run(&mut app, &ctx, vec![button(false)]);
+        frames.run(&mut app, &ctx, vec![]);
+
+        assert!(
+            app.playhead > 0,
+            "a click on the center viewer's scrub bar moved the timeline: {}",
+            app.playhead
+        );
+        assert_eq!(
+            app.source.frame, before,
+            "the hidden source viewer did not scrub"
+        );
+    }
+
+    #[test]
+    fn the_timeline_viewer_transport_shows_named_tooltips() {
+        let _only = english();
+        let buttons = [
+            (1540.0, "Go to the first frame"),
+            (1592.0, "Previous frame"),
+            (1641.0, "Stop"),
+            (1689.0, "Play"),
+            (1742.0, "Go to the last frame"),
+            (1802.0, "Loop playback"),
+        ];
+        for inspector in [false, true] {
+            let ctx = Context::default();
+            // Show tooltips at once instead of waiting half a second in the test.
+            ctx.all_styles_mut(|style| {
+                style.interaction.tooltip_delay = 0.0;
+                style.interaction.show_tooltips_only_when_still = false;
+            });
+            let mut frames = Frames { time: 0.0 };
+            let mut app = edit_app(&ctx, true);
+            app.inspector_open = inspector;
+            frames.settle(&mut app, &ctx);
+            let column = if inspector { VIEWER_CENTER } else { VIEWER_RIGHT };
+
+            for (x, tip) in buttons {
+                let p = edit_point(&app, &ctx, slot_x(x, column), 566.0);
+                frames.run(&mut app, &ctx, vec![Event::PointerMoved(p)]);
+                // The first hovered frame opens the tooltip; the next one paints it.
+                frames.run(&mut app, &ctx, vec![]);
+                let texts = frames.run(&mut app, &ctx, vec![]);
+                assert!(
+                    at(&texts, tip).is_some(),
+                    "inspector={inspector}: hovering the transport at {x} shows the {tip:?} tooltip"
+                );
+                frames.run(
+                    &mut app,
+                    &ctx,
+                    vec![Event::PointerMoved(Pos2::new(5.0, 1075.0))],
+                );
+                frames.run(&mut app, &ctx, vec![]);
+                frames.run(&mut app, &ctx, vec![]);
+            }
+
+            // The text comes from the tooltip, not a label: it goes away with the pointer.
+            let away = Pos2::new(5.0, 1075.0);
+            frames.run(&mut app, &ctx, vec![Event::PointerMoved(away)]);
+            frames.run(&mut app, &ctx, vec![]);
+            let texts = frames.run(&mut app, &ctx, vec![]);
+            for (_, tip) in buttons {
+                assert!(
+                    at(&texts, tip).is_none(),
+                    "inspector={inspector}: the {tip:?} tooltip closes when the pointer leaves"
+                );
+            }
+        }
+    }
 }
