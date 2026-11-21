@@ -45,6 +45,7 @@ mod native {
     use crate::app::StudioApp;
     use crate::chrome::Screen;
     use crate::deliver::{Tab, BAR, LEFT, LEFT_RIGHT, RESOLUTIONS};
+    use crate::fps_prompt::fps_text;
     use crate::icons::{paint, Icon};
     use crate::platform;
     use crate::theme::{self, regular, semibold};
@@ -1038,7 +1039,7 @@ mod native {
             rates.extend(
                 picasso_core::Fps::PRESETS
                     .iter()
-                    .map(|f| (fps_label(*f), true)),
+                    .map(|f| (fps_text(*f), true)),
             );
             let fps_now = self.deliver_ui.fps_choice.min(rates.len() - 1);
             if let Some(i) = combo(
@@ -1064,7 +1065,7 @@ mod native {
             crate::i18n::paint_text(&p,
                 pos2(r.left() + geo().control_left + 4.0, r.center().y),
                 Align2::LEFT_CENTER,
-                format!("{} frames per second", fps_label(shown)),
+                format!("{} frames per second", fps_text(shown)),
                 regular(18.0),
                 Color32::from_rgb(160, 160, 166),
             );
@@ -1835,14 +1836,6 @@ mod native {
             ) {
                 self.set_range_whole(false);
             }
-        }
-    }
-
-    fn fps_label(f: picasso_core::Fps) -> String {
-        if f == picasso_core::Fps::FPS_2997 {
-            "29.97".to_string()
-        } else {
-            format!("{}", f.as_f64())
         }
     }
 }

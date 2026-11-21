@@ -1342,6 +1342,8 @@ mod deliver_page {
 
     #[test]
     fn the_form_sets_the_size_frame_rate_and_key_frames_of_the_render() {
+        use picasso_core::Fps;
+
         let mut app = app();
         let o = app.export_options();
         // A render starts at 60 frames per second.
@@ -1350,12 +1352,15 @@ mod deliver_page {
             (None, Some(picasso_core::Fps::FPS_60), None)
         );
         app.deliver_ui.res_mode = 4; // 4K UHD
-        app.deliver_ui.fps_choice = 3; // the third preset: 30
+        app.deliver_ui.fps_choice = Fps::PRESETS
+            .iter()
+            .position(|&fps| fps == Fps::FPS_30)
+            .map_or(0, |i| i + 1);
         app.deliver_ui.key_auto = false;
         app.deliver_ui.every = 12;
         let o = app.export_options();
         assert_eq!(o.size, Some((3840, 2160)));
-        assert_eq!(o.fps, picasso_core::Fps::PRESETS.get(2).copied());
+        assert_eq!(o.fps, Some(Fps::FPS_30));
         assert_eq!(o.keyframes, Some(12));
         // A custom size, and a custom vertical resolution that keeps the timeline's shape.
         app.deliver_ui.res_mode = crate::deliver::RESOLUTIONS.len() + 1;
@@ -1365,6 +1370,29 @@ mod deliver_page {
         assert_eq!(app.export_options().size, Some((800, 450)));
         app.deliver_ui.custom = (0, 720);
         assert_eq!(app.export_options().size, Some((1280, 720)));
+    }
+
+    #[test]
+    fn deliver_exports_at_the_exact_preset_rates() {
+        use picasso_core::Fps;
+
+        let mut app = app();
+        for (rate, label) in [
+            (Fps::FPS_23976, "23.976"),
+            (Fps::FPS_48, "48"),
+            (Fps::FPS_5994, "59.94"),
+            (Fps::FPS_11988, "119.88"),
+            (Fps::FPS_120, "120"),
+        ] {
+            app.deliver_ui.fps_choice = Fps::PRESETS
+                .iter()
+                .position(|&preset| preset == rate)
+                .map_or(0, |i| i + 1);
+            assert_eq!(app.export_options().fps, Some(rate));
+            assert_eq!(crate::fps_prompt::fps_text(rate), label);
+        }
+        app.deliver_ui.fps_choice = 0;
+        assert_eq!(app.export_options().fps, None);
     }
 
     #[test]
