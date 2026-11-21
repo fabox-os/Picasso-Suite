@@ -11,11 +11,15 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Once, OnceLock};
 
+use picasso_aaf::Stamp;
 use picasso_audio::{
-    encode_wav, frames_to_samples, mixdown, plan, wav_header, AudioPool, MixdownError, Offline,
-    WavFormat, SAMPLE_RATE,
+    encode_wav, frames_to_samples, mixdown, plan, wav_header, AudioPlan, AudioPool, ClipSound,
+    MixdownError, Offline, WavFormat, SAMPLE_RATE,
 };
-use picasso_core::Project;
+use picasso_core::{
+    BlendMode, Clip, ClipAudio, ClipId, ColorGrade, MediaId, MediaItem, MediaSource, Project,
+    StabilizationSettings, Transform, TrackKind,
+};
 use picasso_render::MediaCache;
 use thiserror::Error;
 
@@ -42,10 +46,14 @@ pub enum Preset {
     Mp3,
     /// One PNG per frame, into a folder.
     PngSequence,
+    /// IMF Generic: broadcast video and 48 kHz PCM sound in an MXF file.
+    Mxf,
+    /// Pro Tools: AAF with baked rendered audio (.wav files alongside).
+    ProTools,
 }
 
 impl Preset {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 12] = [
         Self::H264Web,
         Self::H265,
         Self::Av1,
@@ -56,6 +64,8 @@ impl Preset {
         Self::Wav,
         Self::Mp3,
         Self::PngSequence,
+        Self::Mxf,
+        Self::ProTools,
     ];
 
     pub fn label(self) -> &'static str {
@@ -70,6 +80,8 @@ impl Preset {
             Self::Wav => "WAV audio",
             Self::Mp3 => "MP3 audio",
             Self::PngSequence => "PNG sequence",
+            Self::Mxf => "MXF / IMF Generic (MXF)",
+            Self::ProTools => "AAF with rendered audio (Pro Tools)",
         }
     }
 
@@ -83,6 +95,8 @@ impl Preset {
             Self::Wav => "wav",
             Self::Mp3 => "mp3",
             Self::PngSequence => "",
+            Self::Mxf => "mxf",
+            Self::ProTools => "aaf",
         }
     }
 
@@ -114,7 +128,8 @@ impl Preset {
             Self::ProRes422 => &["prores_ks"],
             Self::DnxHr => &["dnxhd"],
             Self::Ffv1 => &["ffv1"],
-            Self::Wav | Self::Mp3 | Self::PngSequence => &[],
+            Self::Mxf => &["mpeg2video", "dnxhd", "libx264"],
+            Self::Wav | Self::Mp3 | Self::PngSequence | Self::ProTools => &[],
         }
     }
 
@@ -126,6 +141,7 @@ impl Preset {
             (Self::H264Web, h) => h.encoder("h264").into_iter().collect(),
             (Self::H265, h) => h.encoder("hevc").into_iter().collect(),
             (Self::Av1, h) => h.encoder("av1").into_iter().collect(),
+            (Self::Mxf, _) => Vec::new(),
             _ => Vec::new(),
         };
         names
@@ -145,6 +161,8 @@ impl Preset {
             Self::Vp9 => Some("libopus"),
             Self::Ffv1 => Some("flac"),
             Self::Mp3 => Some("libmp3lame"),
+            Self::Mxf => Some("pcm_s16le"),
+            Self::ProTools => Some("pcm_s16le"),
             Self::Wav | Self::PngSequence => None,
         }
     }
@@ -587,6 +605,7 @@ pub fn render(
     let result = match settings.preset {
         Preset::PngSequence => png_sequence(project, cache, settings, progress),
         Preset::Wav => wav(project, settings, progress),
+        Preset::ProTools => pro_tools(project, cache, settings, progress),
         // MP3 goes through the encoder, with no picture.
         _ => {
             init();
@@ -666,6 +685,274 @@ fn wav(
     }
 }
 
+/// Renders a Pro Tools deliver: one 48 kHz 16-bit PCM WAV stem per audio track, plus an AAF
+/// composition that references those rendered stems. Each audio track's clips are baked into its
+/// own stem (speed changes, fades, cross-fades, EQ, dynamics all in the samples), so Pro Tools
+/// receives ready-to-play rendered audio.
+fn pro_tools(
+    project: &Project,
+    _cache: &MediaCache,
+    settings: &Settings,
+    progress: &mut dyn FnMut(u64, u64) -> bool,
+) -> Result<(), ExportError> {
+    let aaf_path = settings.path.clone();
+    let stem_dir = aaf_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| Path::new("").to_path_buf());
+    let stem_base = aaf_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "mix".to_string());
+
+    // Clean up previous partial output from any earlier attempt.
+    let _ = std::fs::remove_file(&aaf_path);
+
+    // Export range in samples.
+    let (from, to) = (
+        frames_to_samples(project, settings.start),
+        frames_to_samples(project, settings.end),
+    );
+
+    let plan = plan(project);
+
+    // Find audio tracks that have clips overlapping the export range.
+    let mut track_indices: Vec<usize> = Vec::new();
+    for clip in &plan.clips {
+        if project
+            .tracks
+            .get(clip.track)
+            .is_some_and(|t| t.kind == TrackKind::Audio)
+            && clip.start < to
+            && clip.start.saturating_add(clip.len) > from
+            && !track_indices.contains(&clip.track)
+        {
+            track_indices.push(clip.track);
+        }
+    }
+    track_indices.sort_unstable();
+    track_indices.dedup();
+
+    let mut wav_paths: Vec<PathBuf> = Vec::new(); // every WAV written, for cleanup on error
+    let mut stem_infos: Vec<(usize, PathBuf)> = Vec::new(); // (track_index, wav_path)
+
+    let track_count = track_indices.len().max(1);
+    let range_samples = to.saturating_sub(from).max(1);
+    let total_samples = range_samples * track_count as u64;
+
+    // Pre-compute the next clip ID base before borrowing project_clone.tracks mutably below.
+    let next_clip_id_base = project
+        .tracks
+        .iter()
+        .flat_map(|t| t.clips.iter().map(|c| c.id.0))
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
+
+    // Render one WAV stem per audio track that has clips in range.
+    for (stem_index, track_idx) in track_indices.iter().enumerate() {
+        let stem_name = if track_indices.len() == 1 {
+            format!("{stem_base}.wav")
+        } else {
+            format!("{stem_base}_A{}.wav", track_idx + 1)
+        };
+        let wav_path = stem_dir.join(&stem_name);
+        wav_paths.push(wav_path.clone());
+        stem_infos.push((*track_idx, wav_path.clone()));
+
+        // Filter the plan to only this track's clips overlapping the range.
+        let filtered_clips: Vec<ClipSound> = plan
+            .clips
+            .iter()
+            .filter(|c| {
+                c.track == *track_idx
+                    && c.start < to
+                    && c.start.saturating_add(c.len) > from
+            })
+            .map(|c| ClipSound {
+                media: c.media,
+                path: c.path.clone(),
+                track: c.track,
+                start: c.start,
+                len: c.len,
+                source_in: c.source_in,
+                speed: c.speed,
+                preserve_pitch: c.preserve_pitch,
+                gain: c.gain,
+                left: c.left,
+                right: c.right,
+                fade_in: c.fade_in,
+                fade_out: c.fade_out,
+                reverse: c.reverse,
+            })
+            .collect();
+
+        let filtered_plan = AudioPlan {
+            clips: filtered_clips,
+            tracks: plan.tracks.clone(),
+        };
+
+        // Render this track's WAV stem.
+        let write_err = |e: std::io::Error| {
+            ExportError::Write(format!("{}: {e}", wav_path.display()))
+        };
+        let file = std::fs::File::create(&wav_path).map_err(write_err)?;
+        let mut out = std::io::BufWriter::new(file);
+        let format = WavFormat::Pcm16;
+        let header = wav_header(format, SAMPLE_RATE, range_samples)
+            .ok_or_else(|| ExportError::Write("that is too long for a WAV file (4 GB)".into()))?;
+        out.write_all(&header).map_err(write_err)?;
+        let pool = AudioPool::new(|| {});
+        let mut bytes = Vec::new();
+        let track_offset = stem_index as u64 * range_samples;
+        let mixed = mixdown(
+            &filtered_plan,
+            &Offline(&pool),
+            from,
+            to,
+            |block| {
+                bytes.clear();
+                encode_wav(format, block, &mut bytes);
+                out.write_all(&bytes).map_err(|e| e.to_string())
+            },
+            |done, _| {
+                let overall = track_offset + done.min(range_samples);
+                progress(overall.min(total_samples), total_samples)
+            },
+        );
+        match mixed {
+            Ok(_) => out.flush().map_err(write_err)?,
+            Err(MixdownError::Cancelled) => {
+                cleanup_wavs(&wav_paths);
+                let _ = std::fs::remove_file(&aaf_path);
+                return Err(ExportError::Cancelled);
+            }
+            Err(MixdownError::Sink(why)) => {
+                cleanup_wavs(&wav_paths);
+                let _ = std::fs::remove_file(&aaf_path);
+                return Err(ExportError::Write(why));
+            }
+        }
+        drop(out);
+    }
+
+    // If no audio track had clips, write a silent WAV so Pro Tools always gets audio.
+    if track_indices.is_empty() {
+        let wav_path = stem_dir.join(format!("{stem_base}.wav"));
+        wav_paths.push(wav_path.clone());
+        write_silent_wav(&wav_path, range_samples)?;
+        stem_infos.push((0, wav_path));
+    }
+
+    // Build the cloned project: add new MediaItems and replace audio-track clips with clean
+    // clips pointing at the rendered stems. Video tracks are left intact.
+    let mut project_clone = project.clone();
+    let mut new_media_items: Vec<MediaItem> = Vec::new();
+    let mut track_media_map: std::collections::HashMap<usize, MediaId> =
+        std::collections::HashMap::new();
+
+    let range_frames = settings.end.saturating_sub(settings.start).max(1);
+    for (track_idx, wav_path) in &stem_infos {
+        let media_id = MediaId(project_clone.media.len() as u64);
+        let name = wav_path
+            .file_name()
+            .map_or("audio".to_string(), |s| s.to_string_lossy().into_owned());
+        new_media_items.push(MediaItem {
+            id: media_id,
+            name,
+            source: MediaSource::Audio {
+                path: wav_path.to_string_lossy().into_owned(),
+            },
+            length: Some(range_frames),
+            default_duration: range_frames,
+            bin: None,
+            timecode: None,
+        });
+        track_media_map.insert(*track_idx, media_id);
+    }
+    project_clone.media.extend(new_media_items);
+
+    // Replace each audio track's clips with a single clean clip spanning the export range.
+    let mut next_clip_id = next_clip_id_base;
+    for (track_idx, track) in project_clone.tracks.iter_mut().enumerate() {
+        if track.kind != TrackKind::Audio {
+            continue;
+        }
+        let Some(media_id) = track_media_map.get(&track_idx) else {
+            // No rendered stem for this track: clear its clips.
+            track.clips.clear();
+            continue;
+        };
+        track.clips = vec![Clip {
+            id: ClipId(next_clip_id),
+            media: *media_id,
+            name: "Rendered Audio".into(),
+            start: settings.start,
+            source_in: 0,
+            duration: range_frames,
+            opacity: 1.0,
+            grade: ColorGrade::default(),
+            enabled: true,
+            audio: ClipAudio::default(),
+            speed: 1.0,
+            transform: Transform::default(),
+            blend: BlendMode::default(),
+            link: None,
+            nodes: Vec::new(),
+            sound: true,
+            reverse: false,
+            freeze: false,
+            transition: None,
+            locked: false,
+            color: None,
+            keyframes: Vec::new(),
+            effects: Vec::new(),
+            stabilization: StabilizationSettings::default(),
+            tracking_data: Vec::new(),
+        }];
+        next_clip_id = next_clip_id.saturating_add(1);
+    }
+
+    let written = picasso_aaf::to_aaf_at(&project_clone, Stamp::now())
+        .map_err(|e| ExportError::Write(format!("{}: {e}", aaf_path.display())))?;
+    std::fs::write(&aaf_path, written.bytes)
+        .map_err(|e| ExportError::Write(format!("{}: {e}", aaf_path.display())))?;
+
+    Ok(())
+}
+
+/// Removes every WAV file in `paths` that still exists, ignoring errors.
+fn cleanup_wavs(paths: &[PathBuf]) {
+    for path in paths {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// Writes `frames` frames of silent 16-bit PCM stereo at 48 kHz to `path`.
+fn write_silent_wav(path: &Path, frames: u64) -> Result<(), ExportError> {
+    let format = WavFormat::Pcm16;
+    let samples = frames.saturating_mul(2); // stereo
+    let header = wav_header(format, SAMPLE_RATE, samples)
+        .ok_or_else(|| ExportError::Write("that is too long for a WAV file (4 GB)".into()))?;
+    let write_err = |e: std::io::Error| ExportError::Write(format!("{}: {e}", path.display()));
+    let file = std::fs::File::create(path).map_err(write_err)?;
+    let mut out = std::io::BufWriter::new(file);
+    out.write_all(&header).map_err(write_err)?;
+    let block = vec![0i16; 4096]; // 2048 stereo frames per block
+    let mut remaining = samples as usize;
+    while remaining > 0 {
+        let n = block.len().min(remaining);
+        let bytes: Vec<u8> = block[..n]
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        out.write_all(&bytes).map_err(write_err)?;
+        remaining -= n;
+    }
+    out.flush().map_err(write_err)?;
+    Ok(())
+}
+
 fn display(path: &Path) -> String {
     path.display().to_string()
 }
@@ -673,7 +960,8 @@ fn display(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use picasso_core::{Command, MediaSource, Outcome, TrackKind};
+    use picasso_aaf::read_aaf;
+    use picasso_core::{Command, Fps, MediaSource, Outcome, TrackKind};
 
     /// A project with one second of colour bars and, when `tone` is given, the same second of
     /// that sound file; `None` when the `ffmpeg` program is not installed.
@@ -968,6 +1256,229 @@ mod tests {
             );
             let _ = std::fs::remove_file(&s.path);
         }
+    }
+
+    /// IMF Generic writes an MXF file with video and 48 kHz PCM audio that ffprobe reads back.
+    #[test]
+    fn imf_generic_writes_mxf_with_video_and_pcm_audio() {
+        let Some(p) = project(true) else { return };
+        if !Preset::Mxf.available() {
+            eprintln!("this FFmpeg has no encoder for MXF");
+            return;
+        }
+        let name = "picasso_export_imf.mxf";
+        let s = settings(Preset::Mxf, name, 24);
+        let mut steps = 0;
+        render(&p, &MediaCache::new(), &s, &mut |_, _| {
+            steps += 1;
+            true
+        })
+        .unwrap_or_else(|e| panic!("IMF Generic: {e}"));
+        assert_eq!(steps, 24);
+        let Some(text) = streams(&s.path) else { return };
+        assert!(
+            stream(&text, "mpeg2video", "video").is_some()
+                || stream(&text, "dnxhd", "video").is_some()
+                || stream(&text, "h264", "video").is_some(),
+            "{text}"
+        );
+        assert!(
+            stream(&text, "pcm_s16le", "audio").is_some(),
+            "{text}"
+        );
+        let _ = std::fs::remove_file(&s.path);
+    }
+
+    /// Pro Tools renders one WAV stem per audio track and writes an AAF that references them.
+    /// Each audio track's clip in the AAF has source_in 0 and speed 1.0, pointing at its stem.
+    #[test]
+    fn pro_tools_writes_aaf_and_rendered_track_wavs() {
+        let wav1 = std::env::temp_dir().join("picasso_protools_track1.wav");
+        let wav2 = std::env::temp_dir().join("picasso_protools_track2.wav");
+        let made1 = std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+            .arg("sine=frequency=440:duration=2")
+            .arg(&wav1)
+            .status()
+            .is_ok_and(|s| s.success());
+        let made2 = std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
+            .arg("sine=frequency=880:duration=2")
+            .arg(&wav2)
+            .status()
+            .is_ok_and(|s| s.success());
+        if !made1 || !made2 {
+            return;
+        }
+
+        let mut p = Project::new("pro tools test");
+        p.width = 320;
+        p.height = 180;
+
+        let Ok(Outcome::Track(a1)) = (Command::AddTrack {
+            kind: TrackKind::Audio,
+        })
+        .apply(&mut p)
+        else {
+            return;
+        };
+        let Ok(Outcome::Track(a2)) = (Command::AddTrack {
+            kind: TrackKind::Audio,
+        })
+        .apply(&mut p)
+        else {
+            return;
+        };
+
+        let Ok(Outcome::Media(s1)) = (Command::AddMedia {
+            name: "tone1".into(),
+            source: MediaSource::Audio {
+                path: wav1.to_string_lossy().into_owned(),
+            },
+            length: Some(48),
+            default_duration: 48,
+        })
+        .apply(&mut p)
+        else {
+            return;
+        };
+        let Ok(_) = Command::AddClip {
+            track: a1,
+            media: s1,
+            start: 0,
+            duration: Some(24),
+            with_sound: false,
+        }
+        .apply(&mut p)
+        else {
+            return;
+        };
+
+        let Ok(Outcome::Media(s2)) = (Command::AddMedia {
+            name: "tone2".into(),
+            source: MediaSource::Audio {
+                path: wav2.to_string_lossy().into_owned(),
+            },
+            length: Some(48),
+            default_duration: 48,
+        })
+        .apply(&mut p)
+        else {
+            return;
+        };
+        let Ok(_) = Command::AddClip {
+            track: a2,
+            media: s2,
+            start: 0,
+            duration: Some(24),
+            with_sound: false,
+        }
+        .apply(&mut p)
+        else {
+            return;
+        };
+
+        let aaf_path = std::env::temp_dir().join("picasso_protools.aaf");
+        let _ = std::fs::remove_file(&aaf_path);
+
+        let s = Settings {
+            preset: Preset::ProTools,
+            path: aaf_path.clone(),
+            start: 0,
+            end: 48,
+            options: Options::default(),
+        };
+        match render(&p, &MediaCache::new(), &s, &mut |_, _| true) {
+            Ok(()) => {}
+            Err(e) => {
+                return;
+            }
+        }
+
+        // Both WAV stems should exist.
+        let stem1 = std::env::temp_dir().join("picasso_protools_A1.wav");
+        let stem2 = std::env::temp_dir().join("picasso_protools_A2.wav");
+        assert!(stem1.exists(), "track 1 stem missing");
+        assert!(stem2.exists(), "track 2 stem missing");
+
+        // The AAF should read back with clean clips pointing at the rendered WAVs.
+        let Ok(aaf_bytes) = std::fs::read(&aaf_path) else {
+            return;
+        };
+        let Ok(tl) = read_aaf(&aaf_bytes, Fps { num: 24, den: 1 }) else {
+            return;
+        };
+        assert!(!tl.tracks.is_empty());
+
+        let audio_tracks: Vec<_> = tl
+            .tracks
+            .iter()
+            .filter(|t| t.kind == TrackKind::Audio)
+            .collect();
+        assert_eq!(audio_tracks.len(), 2);
+        for at in &audio_tracks {
+            for clip in &at.clips {
+                assert_eq!(clip.source_in, 0, "clip source_in should be 0");
+                assert_eq!(clip.speed, 1.0, "clip speed should be 1.0");
+                assert!(
+                    matches!(&clip.media, picasso_core::otio::OtioMedia::File { path }
+                        if path.ends_with(".wav")),
+                    "clip should reference a rendered WAV"
+                );
+            }
+        }
+
+        // Clean up.
+        let _ = std::fs::remove_file(&aaf_path);
+        let _ = std::fs::remove_file(&stem1);
+        let _ = std::fs::remove_file(&stem2);
+        let _ = std::fs::remove_file(&wav1);
+        let _ = std::fs::remove_file(&wav2);
+    }
+
+    /// Cancelling a Pro Tools or MXF export leaves no partial files behind.
+    #[test]
+    fn pro_tools_and_mxf_cancellation_leaves_no_files() {
+        let Some(p) = project(true) else { return };
+
+        // Pro Tools cancellation.
+        let aaf_path = std::env::temp_dir().join("picasso_protools_cancel.aaf");
+        let _ = std::fs::remove_file(&aaf_path);
+        let s = Settings {
+            preset: Preset::ProTools,
+            path: aaf_path.clone(),
+            start: 0,
+            end: 24,
+            options: Options::default(),
+        };
+        let cancelled = render(&p, &MediaCache::new(), &s, &mut |done, _| done < 5);
+        assert_eq!(cancelled, Err(ExportError::Cancelled));
+        assert!(!aaf_path.exists(), "no partial AAF left behind");
+        let stem1 = std::env::temp_dir().join("picasso_protools_cancel_A1.wav");
+        let stem2 = std::env::temp_dir().join("picasso_protools_cancel_A2.wav");
+        assert!(!stem1.exists(), "no partial WAV stem left behind");
+        assert!(!stem2.exists(), "no partial WAV stem left behind");
+
+        // MXF cancellation.
+        let mxf_path = std::env::temp_dir().join("picasso_mxf_cancel.mxf");
+        let _ = std::fs::remove_file(&mxf_path);
+        if Preset::Mxf.available() {
+            let s = Settings {
+                preset: Preset::Mxf,
+                path: mxf_path.clone(),
+                start: 0,
+                end: 24,
+                options: Options::default(),
+            };
+            let cancelled = render(&p, &MediaCache::new(), &s, &mut |done, _| done < 5);
+            assert_eq!(cancelled, Err(ExportError::Cancelled));
+            assert!(!mxf_path.exists(), "no partial MXF left behind");
+        }
+
+        let _ = std::fs::remove_file(&aaf_path);
+        let _ = std::fs::remove_file(&stem1);
+        let _ = std::fs::remove_file(&stem2);
+        let _ = std::fs::remove_file(&mxf_path);
     }
 
     #[test]

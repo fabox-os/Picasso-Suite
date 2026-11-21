@@ -11,6 +11,7 @@ picasso-core.workspace = true
 picasso-render.workspace = true
 picasso-decode.workspace = true
 picasso-audio.workspace = true
+picasso-aaf.workspace = true
 ffmpeg-next.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

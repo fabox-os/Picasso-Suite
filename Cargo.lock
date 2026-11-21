@@ -2478,6 +2478,7 @@ name = "picasso-export"
 version = "0.8.0"
 dependencies = [
  "ffmpeg-next",
+ "picasso-aaf",
  "picasso-audio",
  "picasso-core",
  "picasso-decode",

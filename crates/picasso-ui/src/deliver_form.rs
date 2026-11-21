@@ -47,6 +47,7 @@ mod native {
     use crate::deliver::{Tab, BAR, LEFT, LEFT_RIGHT, RESOLUTIONS};
     use crate::icons::{paint, Icon};
     use crate::platform;
+    use crate::queue::native::fixed_pcm_audio;
     use crate::theme::{self, regular, semibold};
 
     /// How wide the form has to be for labels beside their controls: the widest row (the
@@ -156,11 +157,13 @@ mod native {
     const OFF: Color32 = Color32::from_rgb(86, 86, 92);
 
     /// The formats and the presets (codecs) each holds.
-    const FORMATS: [(&str, &[Preset]); 7] = [
+    const FORMATS: [(&str, &[Preset]); 9] = [
         ("MP4", &[Preset::H264Web, Preset::H265, Preset::Av1]),
         ("QuickTime", &[Preset::ProRes422, Preset::DnxHr]),
         ("WebM", &[Preset::Vp9]),
         ("Matroska", &[Preset::Ffv1]),
+        ("MXF", &[Preset::Mxf]),
+        ("AAF", &[Preset::ProTools]),
         ("WAV", &[Preset::Wav]),
         ("MP3", &[Preset::Mp3]),
         ("Image Sequence", &[Preset::PngSequence]),
@@ -175,15 +178,17 @@ mod native {
             Preset::ProRes422 => "Apple ProRes",
             Preset::DnxHr => "DNxHR",
             Preset::Ffv1 => "FFV1",
+            Preset::Mxf => "MPEG-2",
+            Preset::ProTools => "AAF",
             Preset::Wav => "Linear PCM",
             Preset::Mp3 => "MP3",
             Preset::PngSequence => "PNG",
         }
     }
 
-    /// Whether a preset makes a video file (not sound only, not a folder of pictures).
+    /// Whether a preset makes a video file (not sound only, not a folder of pictures, not AAF).
     fn video_file(preset: Preset) -> bool {
-        !matches!(preset, Preset::Wav | Preset::Mp3 | Preset::PngSequence)
+        !matches!(preset, Preset::Wav | Preset::Mp3 | Preset::PngSequence | Preset::ProTools)
     }
 
     fn enabled_text(on: bool) -> Color32 {
@@ -204,7 +209,7 @@ mod native {
         if g.stacked {
             // Above its control, at the control's left edge.
             crate::i18n::paint_text(
-                &p,
+                p,
                 pos2(row.left() + g.control_left, row.top() + 12.0),
                 Align2::LEFT_CENTER,
                 ellipsis(text, g.room(g.control_left)),
@@ -213,7 +218,7 @@ mod native {
             );
         } else {
             crate::i18n::paint_text(
-                &p,
+                p,
                 pos2(row.left() + g.label_right, row.center().y),
                 Align2::RIGHT_CENTER,
                 text,
@@ -352,7 +357,7 @@ mod native {
         );
         let r = box_at(ui, id, rect, on, value);
         let shown = fitted(text, row.right() - (rect.right() + 14.0));
-        crate::i18n::paint_text(&ui.painter(),
+        crate::i18n::paint_text(ui.painter(),
             pos2(rect.right() + 14.0, row.center().y),
             Align2::LEFT_CENTER,
             shown,
@@ -450,7 +455,7 @@ mod native {
         }
 
         /// The form in `pane`.
-        fn render_form_in(&mut self, ui: &mut Ui, ctx: &Context, pane: Rect) {
+        pub(crate) fn render_form_in(&mut self, ui: &mut Ui, ctx: &Context, pane: Rect) {
             let painter = ui.painter().clone();
             // The rows of the settings are 14 points narrower than the pane (the scroll bar).
             let g = Geo::for_width(pane.width() - 14.0);
@@ -886,7 +891,7 @@ mod native {
                 true,
             ) {
                 if let Some(first) = FORMATS[i].1.iter().find(|p| p.available()) {
-                    self.deliver.preset = *first;
+                    self.deliver.set_format(*first);
                 }
             }
             let r = row(ui, 44.0 + stack());
@@ -906,7 +911,7 @@ mod native {
                 true,
             ) {
                 if let Some(p) = FORMATS[format_now].1.get(i) {
-                    self.deliver.preset = *p;
+                    self.deliver.set_format(*p);
                 }
             }
             // The processor's encoder or a graphics card's: the ones this FFmpeg has, those that did
@@ -1705,7 +1710,13 @@ mod native {
         fn form_audio(&mut self, ui: &mut Ui, row: &mut dyn FnMut(&mut Ui, f32) -> Rect) {
             let p = ui.painter().clone();
             let preset = self.deliver.preset;
+            // A Pro Tools deliver always carries its rendered audio (the AAF references the .wav
+            // stems), so its Export Audio is checked and locked.
+            let always_sound = matches!(preset, Preset::ProTools);
             let has_sound = !matches!(preset, Preset::PngSequence);
+            if always_sound {
+                self.deliver.options.audio = true;
+            }
             let r = row(ui, 52.0);
             if let Some(v) = check(
                 ui,
@@ -1714,23 +1725,27 @@ mod native {
                 14.0,
                 "Export Audio",
                 self.deliver.options.audio && has_sound,
-                has_sound,
+                has_sound && !always_sound,
             ) {
                 self.deliver.options.audio = v;
             }
             let r = row(ui, 12.0);
             rule(&p, r);
             let on = has_sound && self.deliver.options.audio;
-            // The codec: each file type has its own, and a QuickTime file AAC or linear PCM.
+            // QuickTime offers AAC or Linear PCM; MXF/IMF and Pro Tools offer only PCM.
             let r = row(ui, 44.0 + stack());
             let mov = matches!(preset, Preset::ProRes422 | Preset::DnxHr);
-            let pcm_now = mov && self.deliver.options.audio_codec != AudioCodec::Aac;
+            let pcm_locked = fixed_pcm_audio(preset);
+            if pcm_locked {
+                self.deliver.options.audio_codec = AudioCodec::Pcm;
+            }
             let shown = match preset {
+                _ if pcm_locked => "PCM",
                 Preset::Wav => "Linear PCM",
                 Preset::Mp3 => "MP3",
                 Preset::Vp9 => "Opus",
                 Preset::Ffv1 => "FLAC",
-                _ if pcm_now => "Linear PCM",
+                _ if mov && self.deliver.options.audio_codec != AudioCodec::Aac => "Linear PCM",
                 _ => "AAC",
             };
             let list: Vec<(String, bool)> = if mov {
@@ -1738,8 +1753,8 @@ mod native {
             } else {
                 vec![(shown.to_string(), true)]
             };
-            if let Some(i) = combo(ui, r, "acodec", "Codec", shown, &list, geo().wide, on && mov) {
-                self.deliver.options.audio_codec = if i == 0 {
+            if let Some(i) = combo(ui, r, "acodec", "Codec", shown, &list, geo().wide, on && (mov || pcm_locked)) {
+                self.deliver.options.audio_codec = if i == 0 && !pcm_locked {
                     AudioCodec::Aac
                 } else {
                     AudioCodec::Pcm

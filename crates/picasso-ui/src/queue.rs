@@ -171,7 +171,19 @@ pub(crate) mod native {
         queue.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    pub(crate) fn fixed_pcm_audio(preset: Preset) -> bool {
+        matches!(preset, Preset::Mxf | Preset::ProTools)
+    }
+
     impl Deliver {
+        /// Changes container/codec without resetting the rest of the form.
+        pub(crate) fn set_format(&mut self, preset: Preset) {
+            self.preset = preset;
+            if fixed_pcm_audio(preset) {
+                self.options.audio_codec = picasso_export::AudioCodec::Pcm;
+            }
+        }
+
         /// Tells the status line how finished exports ended; keeps the window redrawing while
         /// one runs.
         pub(crate) fn poll(&mut self, status: &mut Status, ctx: &Context) {
@@ -214,6 +226,11 @@ pub(crate) mod native {
         #[cfg(test)]
         pub(crate) fn states(&self) -> Vec<State> {
             lock(&self.queue).iter().map(|i| i.state.clone()).collect()
+        }
+
+        #[cfg(test)]
+        pub(crate) fn queued_settings(&self) -> Vec<Settings> {
+            lock(&self.queue).iter().map(|i| i.settings.clone()).collect()
         }
     }
 
@@ -372,7 +389,11 @@ pub(crate) mod native {
             if !preset.is_folder() {
                 self.write_subtitles(&path, start, end);
             }
-            let options = self.export_options();
+            let mut options = self.export_options();
+            // A pending job can outlive changes to the form while its file dialog is open.
+            if fixed_pcm_audio(preset) {
+                options.audio_codec = picasso_export::AudioCodec::Pcm;
+            }
             let options_for_total = options.clone();
             let project = self.project();
             let name = std::path::Path::new(&path)
@@ -586,6 +607,13 @@ pub(crate) mod native {
                 // Lossless: about a third of the raw 10-bit picture.
                 (Preset::Ffv1, _) => scale * speed * 450.0,
                 (Preset::Mp3, _) => 0.0,
+                // MXF: broadcast MPEG-2 / DNxHR rates.
+                (Preset::Mxf, _) => {
+                    let rates = [36.0, 116.0, 176.0, 176.0, 352.0];
+                    scale * speed * rates[usize::from(o.dnxhr).min(rates.len() - 1)]
+                }
+                // Pro Tools: AAF references media, no video encoding.
+                (Preset::ProTools, _) => 0.0,
                 (Preset::H264Web, picasso_export::Rate::Quality(q)) => {
                     scale * speed * super::quality_mbps(q)
                 }
@@ -603,7 +631,7 @@ pub(crate) mod native {
                 0.0
             } else if self.deliver.preset == Preset::Wav {
                 48_000.0 * 24.0 * 2.0 / 1.0e6
-            } else if matches!(self.deliver.preset, Preset::ProRes422 | Preset::DnxHr)
+            } else if matches!(self.deliver.preset, Preset::ProRes422 | Preset::DnxHr | Preset::Mxf)
                 && o.audio_codec != picasso_export::AudioCodec::Aac
             {
                 48_000.0 * 16.0 * 2.0 / 1.0e6
