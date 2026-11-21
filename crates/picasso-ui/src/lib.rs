@@ -18,6 +18,7 @@ mod deliver_clips;
 mod deliver_form;
 mod edit_page;
 mod effects;
+mod effects_library;
 mod fairlight;
 mod exit_prompt;
 mod fps_prompt;

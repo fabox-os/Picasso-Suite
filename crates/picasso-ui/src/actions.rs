@@ -1551,6 +1551,8 @@ impl StudioApp {
                 ctx.data_mut(|d| d.clear());
                 // The panels' dividers too: they are part of the layout (0.3.0).
                 self.extra.prefs.panels = crate::panels::Panels::default();
+                self.effects_library_open = false;
+                self.effects_library = Default::default();
                 #[cfg(not(test))]
                 self.extra.prefs.save();
                 self.info("The layout was reset");

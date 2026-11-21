@@ -22,6 +22,7 @@ use picasso_core::{
 use crate::app::StudioApp;
 use crate::capture::fit;
 use crate::chrome::{Screen, Tool};
+use crate::effects_library::has_category_pane;
 use crate::icons::Icon;
 use crate::menu::Act;
 use crate::panels::{divider, Divider, Panels};
@@ -142,7 +143,7 @@ impl<'a> Ed<'a> {
         } else {
             theme::regular(size)
         };
-        crate::i18n::paint_text(&self.p,self.at(x, y), align, text, font, c);
+        crate::i18n::paint_text(self.p, self.at(x, y), align, text, font, c);
     }
     /// Text sized to fill `width` reference pixels.
     /// Text `width` reference pixels wide, smaller when a divider made its column narrower than
@@ -152,7 +153,8 @@ impl<'a> Ed<'a> {
         let now = map_x(x1, &self.columns) - map_x(x0, &self.columns);
         let usual = map_x(x1, &COLUMNS) - map_x(x0, &COLUMNS);
         let shrink = (now / usual.max(1.0)).min(1.0);
-        crate::i18n::paint_text(&self.p,
+        crate::i18n::paint_text(
+            self.p,
             self.at(x, y),
             Align2::CENTER_CENTER,
             text,
@@ -211,18 +213,21 @@ impl<'a> Ed<'a> {
 
 /// A click area over an icon; returns whether it was clicked.
 fn hit(ui: &mut Ui, e: &Ed, id: &str, x: f32, y: f32, half: f32, hint: &str) -> bool {
-    ui.interact(
+    let response = ui.interact(
         e.rect(x - half * 1.5, y - 18.0, x + half * 1.5, y + 18.0),
         ui.id().with((id, x as i32, y as i32)),
         Sense::click(),
-    )
-    .on_hover_text(hint)
-    .clicked()
+    );
+    if !hint.is_empty() {
+        response.on_hover_text(hint).clicked()
+    } else {
+        response.clicked()
+    }
 }
 
 impl StudioApp {
     /// The first toolbar of the Edit page.
-    pub(crate) fn edit_toolbar1(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen, y: f32) {
+    pub(crate) fn edit_toolbar1(&mut self, ui: &mut Ui, s: &Screen, y: f32) {
         // (x in reference pixels, icon, hint, size)
         let tools: [(f32, Icon, &str, f32); 11] = [
             (45.0, Icon::MonitorUp, "Source viewer", 0.9),
@@ -241,18 +246,16 @@ impl StudioApp {
         for (x, icon, hint, size) in tools {
             let color = match icon {
                 Icon::Tools if self.inspector_open => theme::WHITE,
-                Icon::PhotoMusic => Color32::from_rgb(200, 200, 204),
+                Icon::PhotoMusic if !self.effects_library_open => Color32::from_rgb(200, 200, 204),
+                Icon::Wand if self.effects_library_open => theme::WHITE,
                 Icon::Diamonds | Icon::ChevronBox => Color32::from_rgb(70, 70, 74),
                 _ => theme::ICON,
             };
             let tool = Tool::new(hint).size(size).color(color);
             if self.tool(ui, s.p(x * K, y), icon, tool).clicked() {
                 match icon {
-                    Icon::PhotoMusic => self.import_dialog(ctx),
-                    // The clip's effects are in the Inspector (its Effects part): this is where they
-                    // are added and ordered, so the button opens it rather than leaving for the
-                    // Fusion page.
-                    Icon::Wand => self.inspector_open = true,
+                    Icon::PhotoMusic => self.effects_library_open = false,
+                    Icon::Wand => self.effects_library_open = !self.effects_library_open,
                     Icon::Export => self.page = crate::app::Page::Deliver,
                     Icon::Mixer => self.page = crate::app::Page::Audio,
                     Icon::Tools => self.inspector_open = !self.inspector_open,
@@ -272,8 +275,14 @@ impl StudioApp {
         e.band(3.0, 100.0, 2000.0, PAGE_BAR, BG);
 
         self.edit_toolbar2(ui, &e);
-        self.edit_bins(ui, &e);
-        self.edit_pool(ui, ctx, &e);
+        if self.effects_library_open {
+            let body = e.rect(3.0, TOOLBAR2_END + 1.0, 688.0, PAGE_BAR);
+            let split_x = e.at(233.0, TOOLBAR2_END).x;
+            self.edit_effects_library(ui, ctx, body, split_x);
+        } else {
+            self.edit_bins(ui, &e);
+            self.edit_pool(ui, ctx, &e);
+        }
         self.edit_source_viewer(ui, ctx, &e);
         if self.inspector_open {
             e.band(1349.0, TOOLBAR2_END + 1.0, 2000.0, 590.0, BG);
@@ -318,6 +327,12 @@ impl StudioApp {
             ("edit viewers", e.rect(1348.0, TOOLBAR2_END, 1350.0, 590.0)),
         ];
         for (i, (id, line)) in columns.into_iter().enumerate() {
+            if i == 0
+                && self.effects_library_open
+                && !has_category_pane(line.left() - e.at(3.0, TOOLBAR2_END).x)
+            {
+                continue;
+            }
             match divider(ui, id, line, false) {
                 Divider::Moved(at) => {
                     panels.set_edit_column(i, (at.x - e.s.o.x) / crate::chrome::R)
@@ -356,24 +371,12 @@ impl StudioApp {
     fn edit_toolbar2(&mut self, ui: &mut Ui, e: &Ed) {
         e.band(3.0, 100.0, 2000.0, TOOLBAR2_END, TOOLBAR2);
         e.line((3.0, TOOLBAR2_END), (2000.0, TOOLBAR2_END), 1.5, LINE);
-        let y = 120.0;
-        e.icon(26.0, y, Icon::Sidebar, ICON, 0.9);
-        e.chevron(62.0, y, GREY);
-        e.chevron(106.0, y, DIM);
-        e.chevron(140.0, y, DIM);
-        e.icon(191.0, y, Icon::Unlink, ICON, 0.85);
-        e.icon(248.0, y, Icon::ImportImage, ICON, 0.85);
-        e.chevron(285.0, y, GREY);
-        e.icon(336.0, y, Icon::Cloud, ICON, 0.9);
-        e.label(397.0, y, Align2::CENTER_CENTER, "M...", 17.5, TEXT, true);
-        e.icon(461.0, y, Icon::ThumbGrid, theme::WHITE, 0.95);
-        e.chevron(492.0, y, GREY);
-        e.icon(543.0, y, Icon::Search, GREY, 0.85);
-        e.icon(601.0, y, Icon::Sort, GREY, 0.9);
-        e.dots(659.0, y, GREY);
-        for x in [85.0, 165.0, 215.0, 305.0, 360.0, 430.0, 515.0, 570.0, 628.0] {
-            e.vline(x, 100.0, TOOLBAR2_END);
+        if self.effects_library_open {
+            self.effects_library.header(ui, e.rect(3.0, 100.0, 688.0, TOOLBAR2_END));
+        } else {
+            self.edit_pool_toolbar(ui, e);
         }
+        let y = 120.0;
         // The viewers' headers.
         e.icon(717.0, y, Icon::Photo, ICON, 0.85);
         e.icon(761.0, y, Icon::FilmView, ICON, 0.85);
@@ -420,20 +423,7 @@ impl StudioApp {
             e.vline(x, 100.0, TOOLBAR2_END);
         }
 
-        if hit(ui, e, "edit_tb2", 248.0, y, 20.0, "Import media") {
-            self.import_dialog(&self.ctx.clone());
-        }
-        let planned: [(f32, &str); 16] = [
-            (26.0, "Bins sidebar"),
-            (106.0, "Previous bin"),
-            (140.0, "Next bin"),
-            (191.0, "Unlinked media"),
-            (336.0, "Cloud media"),
-            (397.0, "Media pool view"),
-            (461.0, "Thumbnail view"),
-            (543.0, "Search media"),
-            (601.0, "Sort media"),
-            (659.0, "Media pool options"),
+        let planned = [
             (717.0, "Source viewer mode"),
             (1320.0, "Source viewer options"),
             (1635.0, "Safe area"),
@@ -447,15 +437,57 @@ impl StudioApp {
                 match name {
                     "Safe area" => self.do_act(&ctx, Act::OverlaySafeArea),
                     "Playback quality" => self.set_proxy(if self.proxy > 1 { 1 } else { 2 }),
-                    "Media pool view" | "Search media" | "Sort media" | "Thumbnail view" => {
-                        self.pool_tool(name);
-                    }
                     _ => self.planned(name),
                 }
             }
         }
         if hit(ui, e, "edit_tb2", 1980.0, y, 20.0, "Viewer options") {
             self.do_act(&ctx, Act::OverlayAll);
+        }
+    }
+
+    fn edit_pool_toolbar(&mut self, ui: &mut Ui, e: &Ed) {
+        let y = 120.0;
+        e.icon(26.0, y, Icon::Sidebar, ICON, 0.9);
+        e.chevron(62.0, y, GREY);
+        e.chevron(106.0, y, DIM);
+        e.chevron(140.0, y, DIM);
+        e.icon(191.0, y, Icon::Unlink, ICON, 0.85);
+        e.icon(248.0, y, Icon::ImportImage, ICON, 0.85);
+        e.chevron(285.0, y, GREY);
+        e.icon(336.0, y, Icon::Cloud, ICON, 0.9);
+        e.label(397.0, y, Align2::CENTER_CENTER, "M...", 17.5, TEXT, true);
+        e.icon(461.0, y, Icon::ThumbGrid, theme::WHITE, 0.95);
+        e.chevron(492.0, y, GREY);
+        e.icon(543.0, y, Icon::Search, GREY, 0.85);
+        e.icon(601.0, y, Icon::Sort, GREY, 0.9);
+        e.dots(659.0, y, GREY);
+        for x in [85.0, 165.0, 215.0, 305.0, 360.0, 430.0, 515.0, 570.0, 628.0] {
+            e.vline(x, 100.0, TOOLBAR2_END);
+        }
+        if hit(ui, e, "edit_tb2", 248.0, y, 20.0, "Import media") {
+            self.import_dialog(&self.ctx.clone());
+        }
+        for (x, name) in [
+            (26.0, "Bins sidebar"),
+            (106.0, "Previous bin"),
+            (140.0, "Next bin"),
+            (191.0, "Unlinked media"),
+            (336.0, "Cloud media"),
+            (397.0, "Media pool view"),
+            (461.0, "Thumbnail view"),
+            (543.0, "Search media"),
+            (601.0, "Sort media"),
+            (659.0, "Media pool options"),
+        ] {
+            if hit(ui, e, "edit_tb2", x, y, 20.0, name) {
+                match name {
+                    "Media pool view" | "Search media" | "Sort media" | "Thumbnail view" => {
+                        self.pool_tool(name);
+                    }
+                    _ => self.planned(name),
+                }
+            }
         }
     }
 
