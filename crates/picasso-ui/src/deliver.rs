@@ -44,8 +44,9 @@ const DIM: Color32 = Color32::from_rgb(150, 150, 156);
 const LINE: Color32 = Color32::from_rgb(14, 14, 18);
 
 /// The export frame rate a render starts with: 60 frames per second (the frame rate list holds
-/// the timeline's rate first, then the presets).
-pub(crate) const DEFAULT_FPS_CHOICE: usize = 5;
+/// the timeline's rate first, then the presets, so this is the position of
+/// [`Fps::FPS_60`] in [`Fps::PRESETS`] plus one).
+pub(crate) const DEFAULT_FPS_CHOICE: usize = 8;
 
 /// The three groups of settings.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -1204,13 +1205,7 @@ impl StudioApp {
         if changed {
             self.run_gesture(ctx, Command::SetFormat { width, height, fps });
         }
-        let label = |f: Fps| {
-            if f == Fps::FPS_2997 {
-                "29.97".to_string()
-            } else {
-                format!("{}", f.as_f64())
-            }
-        };
+        let label = crate::fps_prompt::fps_text;
         egui::ComboBox::from_label("Frame rate")
             .selected_text(label(fps))
             .show_ui(ui, |ui| {

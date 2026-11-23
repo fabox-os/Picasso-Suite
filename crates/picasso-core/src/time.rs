@@ -10,22 +10,41 @@ pub struct Fps {
 }
 
 impl Fps {
+    pub const FPS_23976: Fps = Fps {
+        num: 24000,
+        den: 1001,
+    };
     pub const FPS_24: Fps = Fps { num: 24, den: 1 };
     pub const FPS_25: Fps = Fps { num: 25, den: 1 };
-    pub const FPS_30: Fps = Fps { num: 30, den: 1 };
     pub const FPS_2997: Fps = Fps {
         num: 30000,
         den: 1001,
     };
+    pub const FPS_30: Fps = Fps { num: 30, den: 1 };
+    pub const FPS_48: Fps = Fps { num: 48, den: 1 };
+    pub const FPS_5994: Fps = Fps {
+        num: 60000,
+        den: 1001,
+    };
     pub const FPS_60: Fps = Fps { num: 60, den: 1 };
+    pub const FPS_11988: Fps = Fps {
+        num: 120000,
+        den: 1001,
+    };
+    pub const FPS_120: Fps = Fps { num: 120, den: 1 };
 
-    /// The frame rates the project settings offer.
-    pub const PRESETS: [Fps; 5] = [
+    /// The frame rates Project Settings and Deliver offer, in ascending order.
+    pub const PRESETS: [Fps; 10] = [
+        Self::FPS_23976,
         Self::FPS_24,
         Self::FPS_25,
-        Self::FPS_30,
         Self::FPS_2997,
+        Self::FPS_30,
+        Self::FPS_48,
+        Self::FPS_5994,
         Self::FPS_60,
+        Self::FPS_11988,
+        Self::FPS_120,
     ];
 
     /// False for a rate of zero or one above 1000.
@@ -133,6 +152,28 @@ mod tests {
         assert_eq!(f.timecode(24), "00:00:01:00");
         assert_eq!(f.timecode(24 * 60 + 5), "00:01:00:05");
         assert_eq!(f.timecode(24 * 3600), "01:00:00:00");
+    }
+
+    #[test]
+    fn the_presets_are_ascending_and_hold_the_common_rates() {
+        assert_eq!(
+            Fps::PRESETS.map(|f| (f.num, f.den)),
+            [
+                (24000, 1001),
+                (24, 1),
+                (25, 1),
+                (30000, 1001),
+                (30, 1),
+                (48, 1),
+                (60000, 1001),
+                (60, 1),
+                (120000, 1001),
+                (120, 1),
+            ]
+        );
+        for pair in Fps::PRESETS.windows(2) {
+            assert!(pair[0].as_f64() < pair[1].as_f64(), "{pair:?}");
+        }
     }
 
     #[test]
