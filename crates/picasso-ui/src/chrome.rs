@@ -564,7 +564,7 @@ impl StudioApp {
             return;
         }
         if self.page == Page::Edit {
-            self.edit_toolbar1(ui, ctx, s, 66.0);
+            self.edit_toolbar1(ui, s, 66.0);
             self.project_title(&painter, s, 66.0);
             return;
         }
@@ -1024,8 +1024,13 @@ impl StudioApp {
             ),
             Page::Edit => (
                 vec![
-                    it(Icon::PhotoMusic, "Media Pool", true, false),
-                    it(Icon::Wand, "Effects", false, false),
+                    it(
+                        Icon::PhotoMusic,
+                        "Media Pool",
+                        !self.effects_library_open,
+                        false,
+                    ),
+                    it(Icon::Wand, "Effects", self.effects_library_open, false),
                     it(Icon::ListBullets, "Index", false, false),
                     it(Icon::MusicLines, "Sound Library", false, false),
                     it(Icon::Diamonds, "Keyframes", false, false),
@@ -1102,6 +1107,14 @@ impl StudioApp {
         };
         use crate::app::Page as P;
         match (page, name) {
+            (P::Edit, "Media Pool") => {
+                self.effects_library_open = false;
+                ctx.request_repaint();
+            }
+            (P::Edit, "Effects") => {
+                self.effects_library_open = !self.effects_library_open;
+                ctx.request_repaint();
+            }
             (_, "Media Pool") | (_, "Media Storage") => self.import_dialog(ctx),
             (_, "Effects") if page != P::Color => self.page = P::Effects,
             (_, "Effects") => self.page = P::Effects,

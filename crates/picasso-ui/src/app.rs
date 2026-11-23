@@ -179,6 +179,9 @@ pub struct StudioApp {
     pub(crate) show_settings: bool,
     /// Whether the Edit page shows the inspector in place of the timeline viewer.
     pub(crate) inspector_open: bool,
+    /// Whether the Edit page shows the Effects Library in place of the media pool.
+    pub(crate) effects_library_open: bool,
+    pub(crate) effects_library: crate::effects_library::EffectsLibrary,
     /// The window title last sent, so it is sent again only when it changes.
     window_title: String,
     pub(crate) show_projects: bool,
@@ -366,6 +369,8 @@ impl StudioApp {
             graphics: None,
             show_settings: false,
             inspector_open: false,
+            effects_library_open: false,
+            effects_library: Default::default(),
             window_title: String::new(),
             show_projects: false,
             manager: crate::project_manager::ProjectManager::default(),

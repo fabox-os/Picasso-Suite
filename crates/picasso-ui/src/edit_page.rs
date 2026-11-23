@@ -23,6 +23,7 @@ use picasso_core::{
 use crate::app::StudioApp;
 use crate::capture::fit;
 use crate::chrome::{Screen, Tool};
+use crate::effects_library::has_category_pane;
 use crate::icons::Icon;
 use crate::menu::Act;
 use crate::panels::{divider, Divider, Panels};
@@ -156,7 +157,7 @@ impl<'a> Ed<'a> {
         } else {
             theme::regular(size)
         };
-        crate::i18n::paint_text(&self.p,self.at(x, y), align, text, font, c);
+        crate::i18n::paint_text(self.p, self.at(x, y), align, text, font, c);
     }
     /// Text sized to fill `width` reference pixels.
     /// Text `width` reference pixels wide, smaller when a divider made its column narrower than
@@ -166,7 +167,8 @@ impl<'a> Ed<'a> {
         let now = map_x(x1, &self.columns) - map_x(x0, &self.columns);
         let usual = map_x(x1, &COLUMNS) - map_x(x0, &COLUMNS);
         let shrink = (now / usual.max(1.0)).min(1.0);
-        crate::i18n::paint_text(&self.p,
+        crate::i18n::paint_text(
+            self.p,
             self.at(x, y),
             Align2::CENTER_CENTER,
             text,
@@ -241,7 +243,7 @@ fn hit(ui: &mut Ui, e: &Ed, id: &str, x: f32, y: f32, half: f32, hint: &str) -> 
 
 impl StudioApp {
     /// The first toolbar of the Edit page.
-    pub(crate) fn edit_toolbar1(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen, y: f32) {
+    pub(crate) fn edit_toolbar1(&mut self, ui: &mut Ui, s: &Screen, y: f32) {
         // (x in reference pixels, icon, hint, size)
         let tools: [(f32, Icon, &str, f32); 11] = [
             (45.0, Icon::MonitorUp, "Source viewer", 0.9),
@@ -260,18 +262,16 @@ impl StudioApp {
         for (x, icon, hint, size) in tools {
             let color = match icon {
                 Icon::Tools if self.inspector_open => theme::WHITE,
-                Icon::PhotoMusic => Color32::from_rgb(200, 200, 204),
+                Icon::PhotoMusic if !self.effects_library_open => Color32::from_rgb(200, 200, 204),
+                Icon::Wand if self.effects_library_open => theme::WHITE,
                 Icon::Diamonds | Icon::ChevronBox => Color32::from_rgb(70, 70, 74),
                 _ => theme::ICON,
             };
             let tool = Tool::new(hint).size(size).color(color);
             if self.tool(ui, s.p(x * K, y), icon, tool).clicked() {
                 match icon {
-                    Icon::PhotoMusic => self.import_dialog(ctx),
-                    // The clip's effects are in the Inspector (its Effects part): this is where they
-                    // are added and ordered, so the button opens it rather than leaving for the
-                    // Fusion page.
-                    Icon::Wand => self.inspector_open = true,
+                    Icon::PhotoMusic => self.effects_library_open = false,
+                    Icon::Wand => self.effects_library_open = !self.effects_library_open,
                     Icon::Export => self.page = crate::app::Page::Deliver,
                     Icon::Mixer => self.page = crate::app::Page::Audio,
                     Icon::Tools => self.inspector_open = !self.inspector_open,
@@ -291,8 +291,14 @@ impl StudioApp {
         e.band(3.0, 100.0, 2000.0, PAGE_BAR, BG);
 
         self.edit_toolbar2(ui, &e);
-        self.edit_bins(ui, &e);
-        self.edit_pool(ui, ctx, &e);
+        if self.effects_library_open {
+            let body = e.rect(3.0, TOOLBAR2_END + 1.0, 688.0, PAGE_BAR);
+            let split_x = e.at(233.0, TOOLBAR2_END).x;
+            self.edit_effects_library(ui, ctx, body, split_x);
+        } else {
+            self.edit_bins(ui, &e);
+            self.edit_pool(ui, ctx, &e);
+        }
         if self.inspector_open {
             // The inspector takes the right column: the timeline viewer moves to the center one
             // and the source viewer is not drawn, nor decodes, while it is hidden.
@@ -340,6 +346,12 @@ impl StudioApp {
             ("edit viewers", e.rect(1348.0, TOOLBAR2_END, 1350.0, 590.0)),
         ];
         for (i, (id, line)) in columns.into_iter().enumerate() {
+            if i == 0
+                && self.effects_library_open
+                && !has_category_pane(line.left() - e.at(3.0, TOOLBAR2_END).x)
+            {
+                continue;
+            }
             match divider(ui, id, line, false) {
                 Divider::Moved(at) => {
                     panels.set_edit_column(i, (at.x - e.s.o.x) / crate::chrome::R)
@@ -379,6 +391,25 @@ impl StudioApp {
         e.band(3.0, 100.0, 2000.0, TOOLBAR2_END, TOOLBAR2);
         e.line((3.0, TOOLBAR2_END), (2000.0, TOOLBAR2_END), 1.5, LINE);
         let y = 120.0;
+        if self.effects_library_open {
+            // The Effects Library takes the media pool's place in the left columns.
+            self.effects_library.header(ui, e.rect(3.0, 100.0, 688.0, TOOLBAR2_END));
+        } else {
+            self.edit_pool_toolbar(ui, e, y);
+        }
+        // The viewers' headers. The inspector takes the right column, so the timeline viewer's
+        // header moves to the center one and the source viewer's is not drawn at all.
+        e.vline(1348.0, 100.0, TOOLBAR2_END);
+        if self.inspector_open {
+            self.timeline_viewer_header(ui, e, VIEWER_CENTER);
+        } else {
+            self.source_viewer_header(ui, e);
+            self.timeline_viewer_header(ui, e, VIEWER_RIGHT);
+        }
+    }
+
+    /// The media pool's controls: the bins, the pool's views and its options.
+    fn edit_pool_toolbar(&mut self, ui: &mut Ui, e: &Ed, y: f32) {
         e.icon(26.0, y, Icon::Sidebar, ICON, 0.9);
         e.chevron(62.0, y, GREY);
         e.chevron(106.0, y, DIM);
@@ -396,16 +427,6 @@ impl StudioApp {
         for x in [85.0, 165.0, 215.0, 305.0, 360.0, 430.0, 515.0, 570.0, 628.0] {
             e.vline(x, 100.0, TOOLBAR2_END);
         }
-        // The viewers' headers. The inspector takes the right column, so the timeline viewer's
-        // header moves to the center one and the source viewer's is not drawn at all.
-        e.vline(1348.0, 100.0, TOOLBAR2_END);
-        if self.inspector_open {
-            self.timeline_viewer_header(ui, e, VIEWER_CENTER);
-        } else {
-            self.source_viewer_header(ui, e);
-            self.timeline_viewer_header(ui, e, VIEWER_RIGHT);
-        }
-
         if hit(ui, e, "edit_tb2", 248.0, y, 20.0, "Import media") {
             self.import_dialog(&self.ctx.clone());
         }

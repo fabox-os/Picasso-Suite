@@ -696,7 +696,7 @@ const PLAYBACK: &[Entry] = &[
     item("Delete Render Cache", &[], Act::DeleteRenderCache),
 ];
 
-const EFFECTS: &[Entry] = &[
+pub(crate) const EFFECTS: &[Entry] = &[
     sub(
         "Video Transitions",
         &[
