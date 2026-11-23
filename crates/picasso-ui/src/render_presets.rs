@@ -1,7 +1,8 @@
 //! The Render Settings presets of the Deliver page, as DaVinci Resolve lists them: each sets the
 //! format, codec, size and sound of the render. Some have a submenu of resolutions. Final Cut
 //! Pro 7, Premiere XML and AVID AAF write the timeline for another editor instead of rendering;
-//! IMF and Pro Tools are listed but not available yet.
+//! Pro Tools renders the timeline's audio as baked .wav files and writes an AAF that references
+//! them.
 
 use egui::{pos2, vec2, Align2, Color32, Painter, Pos2, Rect, Sense, Stroke, StrokeKind, Ui};
 use picasso_export::{AudioCodec, Options, Preset, Profile, Quality, Rate};
@@ -105,7 +106,7 @@ pub(crate) const ENTRIES: [Entry; 16] = [
         name: "IMF Generic",
         badge: Badge::Film("IMF", Color32::from_rgb(58, 58, 64)),
         sizes: &[],
-        available: false,
+        available: true,
     },
     Entry {
         name: "Final Cut Pro 7",
@@ -135,7 +136,7 @@ pub(crate) const ENTRIES: [Entry; 16] = [
         name: "Pro Tools",
         badge: Badge::ProTools,
         sizes: &[],
-        available: false,
+        available: true,
     },
 ];
 
@@ -213,6 +214,14 @@ pub(crate) fn settings(entry: &Entry, size: Option<&str>) -> Option<Settings> {
             s.preset = Preset::Wav;
             options.video = false;
         }
+        "IMF Generic" => {
+            s.preset = Preset::Mxf;
+            options.audio_codec = AudioCodec::Pcm;
+        }
+        "Pro Tools" => {
+            s.preset = Preset::ProTools;
+            options.audio_codec = AudioCodec::Pcm;
+        }
         _ => return None,
     }
     s.options = options;
@@ -255,7 +264,7 @@ pub(crate) fn paint_badge(p: &Painter, c: Pos2, badge: Badge) {
             let tag =
                 Rect::from_min_size(pos2(r.left() + 13.0, r.bottom() - 6.0), vec2(26.0, 11.0));
             p.rect_filled(tag, 2.0, color);
-            crate::i18n::paint_text(&p,
+            crate::i18n::paint_text(p,
                 tag.center(),
                 Align2::CENTER_CENTER,
                 label,
@@ -269,7 +278,7 @@ pub(crate) fn paint_badge(p: &Painter, c: Pos2, badge: Badge) {
         }
         Badge::Vimeo => {
             tile(Color32::from_rgb(26, 183, 234));
-            crate::i18n::paint_text(&p,
+            crate::i18n::paint_text(p,
                 c,
                 Align2::CENTER_CENTER,
                 "v",
@@ -358,7 +367,7 @@ pub(crate) fn paint_badge(p: &Painter, c: Pos2, badge: Badge) {
                 Stroke::new(1.2, Color32::from_rgb(153, 153, 255)),
                 StrokeKind::Inside,
             );
-            crate::i18n::paint_text(&p,
+            crate::i18n::paint_text(p,
                 c,
                 Align2::CENTER_CENTER,
                 "Pr",
@@ -437,7 +446,7 @@ fn row(
         paint_badge(p, pos2(rect.left() + 42.0, rect.center().y), badge);
         x = rect.left() + 82.0;
     }
-    crate::i18n::paint_text(&p,
+    crate::i18n::paint_text(p,
         pos2(x, rect.center().y),
         Align2::LEFT_CENTER,
         text,
@@ -569,6 +578,20 @@ mod tests {
         );
         let audio = ENTRIES.iter().find(|e| e.name == "Audio Only").unwrap();
         assert_eq!(settings(audio, None).unwrap().preset, Preset::Wav);
+        let imf = ENTRIES.iter().find(|e| e.name == "IMF Generic").unwrap();
+        assert!(imf.available);
+        assert_eq!(settings(imf, None).unwrap().preset, Preset::Mxf);
+        assert_eq!(
+            settings(imf, None).unwrap().options.audio_codec,
+            AudioCodec::Pcm
+        );
+        let pt = ENTRIES.iter().find(|e| e.name == "Pro Tools").unwrap();
+        assert!(pt.available);
+        assert_eq!(settings(pt, None).unwrap().preset, Preset::ProTools);
+        assert_eq!(
+            settings(pt, None).unwrap().options.audio_codec,
+            AudioCodec::Pcm
+        );
         assert!(settings(&ENTRIES[0], None).is_none());
         assert_eq!(title(yt, Some("1080p")), "YouTube 1080p");
         // Every entry that can be picked gives settings, except Custom Export and the ones that

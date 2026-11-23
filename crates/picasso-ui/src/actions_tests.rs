@@ -1200,6 +1200,74 @@ fn the_render_queue_renders_wav_and_video_one_after_another() {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn the_render_queue_renders_pro_tools_aaf_and_wav() {
+    use crate::queue::native::State;
+    use picasso_aaf::read_aaf;
+    use picasso_core::{Fps, otio::OtioMedia};
+    use picasso_export::Preset;
+    let Some(path) = video_with_sound() else {
+        return;
+    };
+    let mut app = app();
+    app.new_project();
+    app.open_path(&path, true);
+    app.settle_imports();
+    let dir = std::env::temp_dir();
+    let aaf = dir.join("picasso_ui_pro_tools.aaf");
+    let wav = dir.join("picasso_ui_pro_tools.wav");
+    for f in [&aaf, &wav] {
+        let _ = std::fs::remove_file(f);
+    }
+    app.queue_render(Preset::ProTools, aaf.to_string_lossy().into_owned());
+    assert_eq!(app.deliver.states().len(), 1);
+    assert!(matches!(
+        app.deliver.states()[0],
+        crate::queue::native::State::Queued
+    ));
+    app.start_queue(&Context::default());
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while app
+        .deliver
+        .states()
+        .iter()
+        .any(|s| matches!(s, State::Queued | State::Running))
+    {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the queue did not finish"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let states = app.deliver.states();
+    assert!(
+        states.iter().all(|s| matches!(s, State::Done(_))),
+        "{states:?}"
+    );
+    // Both the rendered .wav and the .aaf exist.
+    assert!(
+        std::fs::metadata(&wav).is_ok_and(|m| m.len() > 100),
+        "the rendered wav exists"
+    );
+    assert!(
+        std::fs::metadata(&aaf).is_ok_and(|m| m.len() > 100),
+        "the aaf exists"
+    );
+    // The AAF reads back cleanly with pyaaf2-style validation.
+    let aaf_bytes = std::fs::read(&aaf).unwrap();
+    let tl = read_aaf(&aaf_bytes, Fps { num: 24, den: 1 }).unwrap();
+    assert!(!tl.tracks.is_empty());
+    // The sound track references the rendered wav.
+    let has_wav = tl.tracks.iter().any(|t| {
+        t.clips.iter().any(|c| matches!(&c.media, OtioMedia::File { path } if path.ends_with(".wav")))
+    });
+    assert!(has_wav, "the AAF references the rendered wav");
+    for f in [aaf, wav] {
+        let _ = std::fs::remove_file(f);
+    }
+}
+
 #[test]
 fn projects_open_by_their_extensions() {
     let mut app = app();
@@ -1465,6 +1533,170 @@ mod deliver_page {
         assert_eq!(app.jobs()[0].state, crate::queue::JobState::Cancelled);
         app.clear_finished_jobs();
         assert!(app.jobs().is_empty());
+    }
+
+    fn deliver_frame(app: &mut StudioApp, events: Vec<egui::Event>) -> Vec<(String, egui::Pos2)> {
+        fn labels(shape: &egui::Shape, clip: egui::Rect, found: &mut Vec<(String, egui::Pos2)>) {
+            match shape {
+                egui::Shape::Text(t) => {
+                    let text = &t.galley.job.text;
+                    assert!(
+                        !text.contains("Second use") && !text.contains("First use"),
+                        "{text}"
+                    );
+                    let bounds = t.visual_bounding_rect();
+                    if bounds.is_positive() && clip.contains_rect(bounds) {
+                        found.push((text.clone(), bounds.center()));
+                    }
+                }
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        labels(shape, clip, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(crate::chrome::DESIGN_WIDTH, 1080.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let ctx = app.ctx.clone();
+        let mut output = ctx.run_ui(input, |ui| app.ui(ui));
+        output.textures_delta.clear();
+        let mut found = Vec::new();
+        for shape in &output.shapes {
+            labels(&shape.shape, shape.clip_rect, &mut found);
+        }
+        found
+    }
+
+    fn deliver_click(app: &mut StudioApp, pos: egui::Pos2) -> Vec<(String, egui::Pos2)> {
+        deliver_frame(app, vec![egui::Event::PointerMoved(pos)]);
+        for pressed in [true, false] {
+            deliver_frame(app, vec![egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            }]);
+        }
+        deliver_frame(app, vec![])
+    }
+
+    fn render_preset(app: &mut StudioApp, name: &str) -> Result<(), String> {
+        let index = crate::render_presets::ENTRIES
+            .iter()
+            .position(|entry| entry.name == name)
+            .ok_or_else(|| format!("missing preset {name}"))?;
+        app.apply_render_preset(index, None);
+        Ok(())
+    }
+
+    #[test]
+    fn imf_and_protools_audio_tab_keeps_visible_pcm_and_queues_it() -> Result<(), String> {
+        use crate::deliver::Tab;
+        use picasso_export::AudioCodec;
+        let _english = crate::i18n::CHANGING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::i18n::set(crate::i18n::Language::English);
+
+        for (name, preset, file) in [
+            ("IMF Generic", Preset::Mxf, "pcm.mxf"),
+            ("Pro Tools", Preset::ProTools, "pcm.aaf"),
+        ] {
+            let mut app = app();
+            app.manager.open = false;
+            app.page = Page::Deliver;
+            app.ctx.options_mut(|o| o.warn_on_id_clash = true);
+            render_preset(&mut app, "YouTube")?;
+            assert_eq!(app.deliver.options.audio_codec, AudioCodec::Aac);
+            render_preset(&mut app, name)?;
+            assert_eq!(app.deliver.preset, preset);
+            assert_eq!(app.deliver.options.audio_codec, AudioCodec::Pcm);
+
+            let tab = deliver_frame(&mut app, vec![])
+                .into_iter().find(|(text, _)| text == "Audio")
+                .map(|(_, pos)| pos)
+                .ok_or("missing Audio tab")?;
+            let mut painted = deliver_click(&mut app, tab);
+            assert!(matches!(app.deliver_ui.tab, Tab::Audio));
+            for _ in 0..3 {
+                assert!(painted.iter().any(|(text, _)| text == "PCM"), "{name}");
+                assert_eq!(app.deliver.options.audio_codec, AudioCodec::Pcm, "{name}");
+                painted = deliver_frame(&mut app, vec![]);
+            }
+            let (_, field) = painted.into_iter().find(|(text, _)| text == "PCM")
+                .ok_or("missing PCM field")?;
+            let popup = deliver_click(&mut app, field);
+            let (_, choice) = popup
+                .into_iter()
+                .find(|(text, pos)| text == "PCM" && pos.distance(field) > 5.0)
+                .ok_or("missing PCM dropdown option")?;
+            deliver_click(&mut app, choice);
+            assert_eq!(app.deliver.options.audio_codec, AudioCodec::Pcm);
+
+            app.deliver_ui.location = std::env::temp_dir().to_string_lossy().into_owned();
+            app.deliver_ui.file_name = "pcm".into();
+            app.add_to_queue(&app.ctx.clone());
+            assert_eq!(names(&app), [file]);
+            let jobs = app.deliver.queued_settings();
+            let job = jobs.first().ok_or("missing queued job")?;
+            assert_eq!(job.preset, preset);
+            assert_eq!(job.options.audio_codec, AudioCodec::Pcm);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn deliver_codec_defaults_and_container_constraints_are_unchanged() -> Result<(), String> {
+        use crate::deliver::Tab;
+        use picasso_export::AudioCodec::{Aac, Auto, Pcm};
+        let _english = crate::i18n::CHANGING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::i18n::set(crate::i18n::Language::English);
+        let mut app = app();
+        app.manager.open = false;
+        app.page = Page::Deliver;
+        app.deliver_ui.tab = Tab::Audio;
+        for (name, codec, label) in [
+            ("H.264 Master", Auto, "AAC"),
+            ("H.265 Master", Auto, "AAC"),
+            ("YouTube", Aac, "AAC"),
+            ("ProRes 422 HQ", Pcm, "Linear PCM"),
+        ] {
+            render_preset(&mut app, name)?;
+            let painted = deliver_frame(&mut app, vec![]);
+            assert!(painted.iter().any(|(text, _)| text == label), "{name}");
+            assert_eq!(app.deliver.options.audio_codec, codec, "{name}");
+        }
+        render_preset(&mut app, "H.264 Master")?;
+        app.deliver.set_format(Preset::Vp9);
+        let painted = deliver_frame(&mut app, vec![]);
+        assert!(painted.iter().any(|(text, _)| text == "Opus"));
+        assert_eq!(app.deliver.options.audio_codec, Auto);
+        Ok(())
+    }
+
+    #[test]
+    fn deliver_pcm_formats_are_fixed_even_without_drawing_the_audio_tab() {
+        use picasso_export::AudioCodec;
+        for preset in [Preset::Mxf, Preset::ProTools] {
+            let mut app = app();
+            app.deliver.options.audio_codec = AudioCodec::Aac;
+            app.deliver.set_format(preset);
+            assert_eq!(app.deliver.options.audio_codec, AudioCodec::Pcm);
+
+            // Simulate a pending output dialog completing after the form switched back to AAC.
+            app.deliver.set_format(Preset::H264Web);
+            app.deliver.options.audio_codec = AudioCodec::Aac;
+            app.queue_render(preset, format!("pcm.{}", preset.extension()));
+            let jobs = app.deliver.queued_settings();
+            assert_eq!(jobs.first().map(|job| job.options.audio_codec), Some(AudioCodec::Pcm));
+            assert_eq!(app.deliver.options.audio_codec, AudioCodec::Aac);
+        }
     }
 }
 

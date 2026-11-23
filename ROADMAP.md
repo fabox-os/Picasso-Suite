@@ -24,6 +24,7 @@ Status at 0.8.0 and what was made since.
 - [x] Fixes: Media and Deliver no longer flash black when opened; clips dropped anywhere on the Cut page's timelines land on a track; dragging the playhead no longer flashes black
 - [x] Deliver: AV1 (MP4), VP9 (WebM), DNxHR LB to 444 (QuickTime), lossless FFV1 (Matroska) and MP3; 10-bit H.264, H.265, AV1 and VP9
 - [x] Deliver: graphics card encoders (NVIDIA NVENC, Intel Quick Sync, AMD AMF, Apple VideoToolbox, VA-API) for H.264, H.265 and AV1, checked at start so those without a card are greyed out
+- [x] Deliver: IMF Generic and Pro Tools presets - an MXF writer (MXF container, MPEG-2/DNxHD/H.264 video, 48 kHz PCM audio) for IMF Generic, and Pro Tools renders baked .wav audio plus an AAF that references it
 - [x] Decoding on the graphics card (D3D11, VideoToolbox, VA-API, CUDA) with a System Preferences switch, falling back to the processor
 - [x] Keyboard Customization: every command's keys can be changed, a taken key is moved after asking, saved in the preferences
 - [x] Interchange: OpenTimelineIO export (File > Export > Timeline: OpenTimelineIO)
@@ -116,7 +117,6 @@ Status at 0.8.0 and what was made since.
 ## To do
 
 - [ ] Interface density: finish the pages measured on the 1080p screenshots (`docs/reference/resolve-1080p`). Done: page bar, labelled top toolbars, Cut, Edit, Fusion, Fairlight, Photo, Color, Media, Deliver. Every page is at Resolve's 1080p size; next, check the same pages at 4K and at small windows
-- [ ] Deliver: IMF Generic and Pro Tools presets (listed, greyed out) need an MXF writer and AAF with embedded or rendered sound
 - [ ] Effects: Color Palette (a strip of the picture's main colours), Dust Buster and Patch Replacer (they need a region you place), and the time effects seeing the effects before them in the stack
 - [ ] Transitions: motion blur, border and reverse on Slide Out, Split and Barn Door, and the Wipe Reverse option
 - [ ] Keys with a colour picked from the picture (Custom Key Color, HSL Key by hue, 3D Keyer colours), the matte and status views, and spill removal for other colours
