@@ -1,6 +1,6 @@
 # Roadmap
 
-Status at 0.8.0 and what was made since.
+Status at 0.8.1 and what was made since.
 
 ## Done
 
@@ -113,6 +113,10 @@ Status at 0.8.0 and what was made since.
 - [x] Titles: 17 ways to come in (fade, slides, rise, drop, zooms, pop, stamp, spin, blur, wipe, typewriter, flicker, glitch), set in the Inspector's Text+ section with a duration
 - [x] Tracking: use `picasso-track` in the interface: a Track button for Match Move and Stabilization in the Inspector on the Edit page, and window tracking on the Color page
 - [x] Effects: effect bundles (`.picef` files, a zip of effect templates, titles, transitions and LUTs) installed from File > Import > Effect Bundle or dropped on the window, read within size limits like every other file (at most 256 entries, 16 MB an entry and 64 MB read, entries that name a place outside the bundle, a device or a control character refused, LUTs parsed and checked), and offered in the Effect Bundles window and the Inspector's presets
+- [x] Edit: a docked Effects Library in place of the Bins and Media Pool (the top-left **Effects** button toggles it; Video Transitions, Titles, Generators, Effects, Looks and Audio FX, searched by name, each added with one undo step)
+- [x] Timeline: dragging a clip above the top or below the bottom track makes a new track for it, and a linked picture and sound move together (one undo step)
+- [x] Project: 23.976, 48, 59.94, 119.88 and 120 frames per second in Project Settings and Deliver, stored exactly (24000/1001 and so on), so sound does not drift over a long timeline
+- [x] Edit: with the Inspector open the timeline viewer stays in the centre column; the transport icons of the timeline viewer have their tooltips
 
 ## To do
 

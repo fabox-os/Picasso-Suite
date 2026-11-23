@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.1
+
+Effect bundles you can install, a docked Effects Library on the Edit page, 23.976 and the other missing frame rates, and tracks that appear when you drag a clip past the last one. Most of this version was written by GMNEdits.
+
+### ✨ New
+- ✅ **Effect bundles:** **File > Import > Effect Bundle...**, or a `.picef` file dropped on the window, installs a zip of effect templates, titles, transitions and look-up tables. A bundle is untrusted input and is read within limits: 64 MB for the file, 256 entries, 16 MB for an entry (read through a cap, so a zip bomb stops there), no entry whose name is absolute, holds `..`, a drive letter, a backslash or a control character, and only `.cube` tables and `.json` descriptors are kept, each checked and brought into range. Effect templates appear in the Edit page's Presets list, titles and transitions in **Effects > Titles** and **Effects > Video Transitions**, and look-up tables in the Color page's LUTs window. A bundle with nothing usable, a corrupt one and one over a limit are refused with the reason. (GMNEdits)
+- ✅ **Effects Library:** on the Edit page the top-left **Effects** button opens a library in place of the Bins and the Media Pool, with Video Transitions, Titles, Generators, Effects, Looks and Audio FX, a search box that filters across all of them, and each item added to the clip or timeline with one undo step. **Media Pool** brings the pool back. (GMNEdits, rebased onto the new Edit layout)
+- ✅ **More frame rates:** Project Settings and Deliver offer 23.976, 24, 25, 29.97, 30, 48, 59.94, 60, 119.88 and 120. The rates that are not whole numbers are kept exactly (24000/1001, 60000/1001, 120000/1001), so sound no longer slips against the picture over a long timeline at 23.976. A render still starts at 60. (GMNEdits, fixes #57)
+- ✅ **New tracks when dragging:** dragging a clip above the top video track or below the bottom audio track makes a new track, and a clip with a linked picture or sound takes its partner along, also onto a new track. The whole drag is one undo step, and with Linked Selection off only the dragged clip moves. (GMNEdits)
+
+### 🐛 Fixed
+- 🐛 **Edit page with the Inspector open:** the timeline viewer now stays visible in the centre column (it was hidden behind the Inspector, with the empty source viewer left on screen), and the transport icons of the timeline viewer no longer show blank tooltips. (GMNEdits)
+
+### 🔧 Changed
+- 🔧 On the Edit page the **Effects** button opens the Effects Library instead of the Inspector (the clip's own effects are still in the Inspector), and **Media Pool** closes the library instead of opening the import window.
+- 🔧 The list of frame rates in `picasso-core` (`Fps::PRESETS`) has ten entries instead of five, in ascending order.
+- 🔧 Reading an effect bundle is in `picasso-drp`, next to the project reader.
+
+### ⚠️ Known limitations
+- Effect bundles hold Picasso's own descriptors; bundles from other programs are not read. An installed title or transition has the settings its descriptor gives and no more.
+- 23.976 and the high rates are offered and exported exactly, but drop-frame timecode is still counted only for 29.97 and 59.94.
+
 ## 0.8.0
 
 More of the editor's own tools: 29 sound effects for tracks, 22 more picture effects (141 in all), 18 look transitions (115 transitions), 17 ways for a title to come in, 34 keyframe curves, 12 one-click Looks, markers on the beat, a video layout chooser for new projects and subtitles made from speech (Whisper, run in pure Rust on this computer).
