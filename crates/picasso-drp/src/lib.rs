@@ -1,4 +1,5 @@
-//! Reads DaVinci Resolve project archives (`.drp`) into Picasso Suite projects.
+//! Reads DaVinci Resolve project archives (`.drp`) into Picasso Suite projects, and effect
+//! bundles (`.picef`) into the templates and look-up tables they hold.
 //!
 //! A `.drp` file, as Resolve exports it, is a ZIP archive of XML documents. Resolve does not
 //! publish what those documents hold, so this reader does not depend on their exact layout. It
@@ -27,6 +28,8 @@ use std::io::{Cursor, Read};
 use picasso_core::{Command, Fps, MediaSource, Project};
 use quick_xml::events::Event;
 use quick_xml::Reader;
+
+pub mod bundle;
 
 /// Entries read from one archive at most.
 const MAX_ENTRIES: usize = 20_000;

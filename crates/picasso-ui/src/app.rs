@@ -1234,6 +1234,11 @@ impl StudioApp {
             self.apply_lut(&file.name, &file.bytes);
             return;
         }
+        // A dropped effect bundle installs its templates, titles, transitions and LUTs.
+        if platform::is_bundle_name(&file.name) {
+            self.install_bundle(&file.name, &file.bytes);
+            return;
+        }
         if platform::is_project_name(&file.name)
             || platform::is_timeline_name(&file.name)
             || platform::is_resolve_name(&file.name)
@@ -1553,8 +1558,89 @@ impl StudioApp {
         platform::pick_media(self.inbox.clone(), ctx.clone());
     }
 
+    /// Open the LUTs dialog: apply an installed look-up table, or load a `.cube` file.
     pub(crate) fn lut_dialog(&mut self, ctx: &Context) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut open = true;
+            let mut open_file = false;
+            let mut chosen_lut = None;
+            egui::Window::new("LUTs")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(true)
+                .default_width(300.0)
+                .show(ctx, |ui| {
+                    ui.label("Apply a look-up table to the clip being graded.");
+                    let installed = crate::effect_bundle::library().luts;
+                    if installed.is_empty() {
+                        ui.label("No LUT is installed yet.");
+                    } else {
+                        ui.label("Installed LUTs:");
+                        egui::ScrollArea::vertical()
+                            .id_salt("installed_luts")
+                            .max_height(200.0)
+                            .show(ui, |ui| {
+                                for name in &installed {
+                                    if ui.button(name).clicked() {
+                                        chosen_lut = Some(name.clone());
+                                    }
+                                }
+                            });
+                    }
+                    ui.separator();
+                    if ui.button("Open a .cube file...").clicked() {
+                        open_file = true;
+                    }
+                });
+            if let Some(name) = chosen_lut.take() {
+                if let Some(id) = self.target_clip() {
+                    if let Some(lut) = crate::effect_bundle::load_lut(&name) {
+                        self.apply_lut_table(id, lut);
+                    } else {
+                        self.fail(format!("{name}: the LUT could not be read"));
+                    }
+                } else {
+                    self.fail(format!("{name}: select a clip to put the LUT on"));
+                }
+            }
+            if open_file {
+                platform::pick_lut(self.inbox.clone(), ctx.clone());
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
         platform::pick_lut(self.inbox.clone(), ctx.clone());
+    }
+
+    /// File > Import > Effect Bundle...: lets the user pick a `.picef` to install.
+    pub(crate) fn bundle_dialog(&mut self, ctx: &Context) {
+        platform::pick_bundle(self.inbox.clone(), ctx.clone());
+    }
+
+    /// Installs an effect bundle into the data folder and says what it held (desktop only: the
+    /// browser has no data folder to write to).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn install_bundle(&mut self, name: &str, bytes: &[u8]) {
+        match crate::effect_bundle::install(name, bytes) {
+            Ok(installed) => {
+                if installed.total() == 0 {
+                    self.fail(format!("{name}: nothing in the bundle could be installed"));
+                } else {
+                    self.info(installed.summary());
+                }
+                for why in installed.skipped.iter().take(5) {
+                    self.info(format!("{name}: left out {why}"));
+                }
+            }
+            Err(e) => self.fail(e),
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn install_bundle(&mut self, name: &str, _bytes: &[u8]) {
+        self.fail(format!(
+            "{name}: effect bundles need the desktop app, which can write their files"
+        ));
     }
 
     pub(crate) fn open_dialog(&mut self, ctx: &Context) {

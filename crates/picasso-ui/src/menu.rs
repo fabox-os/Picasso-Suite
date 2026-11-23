@@ -25,6 +25,7 @@ pub(crate) enum Act {
     SaveCopy,
     Revert,
     ImportMedia,
+    ImportEffectBundle,
     ProjectSettings,
     MediaManagement,
     QuickExport,
@@ -319,6 +320,7 @@ const FILE: &[Entry] = &[
             item("Subtitle...", &[], Act::ImportTimeline),
             planned("Metadata to Media Pool...", ""),
             planned("Bin...", ""),
+            item("Effect Bundle...", &[], Act::ImportEffectBundle),
         ],
     ),
     sub(
