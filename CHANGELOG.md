@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### ✨ New
+- ✅ **Interface size (issue #66):** **System Preferences > Interface > Largest size** keeps the interface from growing past a size in a big window. **Fit window** (the default, as before) scales the whole interface so it is always as wide as the window; 100%, 125%, 150% and 200% limit it to that part of the system's scale, and in a window wider than that the layout stays in the middle, with the window's own edges still where they were. A smaller window still shrinks the interface to fit.
+
 ## 0.8.1
 
 Effect bundles you can install, a docked Effects Library on the Edit page, 23.976 and the other missing frame rates, and tracks that appear when you drag a clip past the last one. Most of this version was written by GMNEdits.

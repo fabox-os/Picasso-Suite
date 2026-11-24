@@ -1,6 +1,6 @@
 //! The settings of this computer rather than of a project (System Preferences and Keyboard
 //! Customization), in `preferences.txt` in the data folder: `hardware_decoding=on` and
-//! `audio_scrubbing=on` lines, a `language=es` line (Help > Language, `crate::i18n`), a `key<TAB>Undo<TAB>Ctrl+U` line for each command whose keys were
+//! `audio_scrubbing=on` lines, a `ui_size=0` line (how large the interface may grow, 0: fit the window), a `language=es` line (Help > Language, `crate::i18n`), a `key<TAB>Undo<TAB>Ctrl+U` line for each command whose keys were
 //! changed, with the keys it has instead of the menus' (none: no key), and a
 //! `panels=147,457,1186,474,960,519` line with the sizes of the panels whose dividers were
 //! dragged (`crate::panels`). Lines that cannot be read are skipped, so a file from another
@@ -32,6 +32,10 @@ pub(crate) struct Preferences {
     pub keys: HashMap<Act, Vec<String>>,
     /// The sizes of the panels on the pages.
     pub panels: Panels,
+    /// How large the interface may grow, as a percentage of the operating system's scale: 0
+    /// fits the window (the interface is always as wide as the window), and a number keeps the
+    /// text from growing past that size in a big window, the layout then staying in the middle.
+    pub ui_size: u16,
 }
 
 impl Default for Preferences {
@@ -43,9 +47,13 @@ impl Default for Preferences {
             optimised_media: true,
             keys: HashMap::new(),
             panels: Panels::default(),
+            ui_size: 0,
         }
     }
 }
+
+/// The sizes System Preferences offers for [`Preferences::ui_size`] (0 is "fit the window").
+pub(crate) const UI_SIZES: [u16; 5] = [0, 100, 125, 150, 200];
 
 impl Preferences {
     pub(crate) fn parse(text: &str) -> Self {
@@ -80,6 +88,15 @@ impl Preferences {
                     // A language this version does not have stays English.
                     "language" => prefs.language = Language::from_code(value).unwrap_or_default(),
                     "optimised_media" => prefs.optimised_media = value.trim() != "off",
+                    // Anything out of range is "fit the window".
+                    "ui_size" => {
+                        prefs.ui_size = value
+                            .trim()
+                            .parse::<u16>()
+                            .ok()
+                            .filter(|v| (50..=400).contains(v))
+                            .unwrap_or(0);
+                    }
                     "panels" => {
                         if let Some(panels) = parse_panels(value) {
                             let moved = std::mem::take(&mut prefs.panels.moved);
@@ -99,11 +116,13 @@ impl Preferences {
 audio_scrubbing={}
 language={}
 optimised_media={}
+ui_size={}
 ",
             if self.hardware_decoding { "on" } else { "off" },
             if self.audio_scrubbing { "on" } else { "off" },
             self.language.code(),
-            if self.optimised_media { "on" } else { "off" }
+            if self.optimised_media { "on" } else { "off" },
+            self.ui_size
         );
         out.push_str(&panels_text(&self.panels));
         let mut keys: Vec<(String, &Vec<String>)> = self
@@ -228,6 +247,22 @@ mod tests {
         assert_eq!(Preferences::parse(&text), prefs);
         // Windows line ends, too.
         assert_eq!(Preferences::parse(&text.replace('\n', "\r\n")), prefs);
+    }
+
+    #[test]
+    fn the_interface_size_is_kept_and_out_of_range_means_fit() {
+        assert_eq!(Preferences::default().ui_size, 0);
+        let prefs = Preferences {
+            ui_size: 150,
+            ..Preferences::default()
+        };
+        assert!(prefs.text().contains("ui_size=150\n"));
+        assert_eq!(Preferences::parse(&prefs.text()).ui_size, 150);
+        for bad in ["ui_size=7", "ui_size=9000", "ui_size=big", "ui_size=-1", "ui_size="] {
+            assert_eq!(Preferences::parse(bad).ui_size, 0, "{bad}");
+        }
+        // A file from before this setting still opens, as "fit the window".
+        assert_eq!(Preferences::parse("language=de\n").ui_size, 0);
     }
 
     #[test]

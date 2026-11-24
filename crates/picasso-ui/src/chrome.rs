@@ -398,7 +398,7 @@ impl StudioApp {
 
     /// Thin zones along the window's edges that start a resize (the window has no frame).
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn resize_edges(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen) {
+    pub(crate) fn resize_edges(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen, width: f32) {
         use egui::viewport::ResizeDirection as D;
         use egui::CursorIcon;
         if ctx.input(|i| {
@@ -406,7 +406,7 @@ impl StudioApp {
         }) {
             return;
         }
-        let (w, h, e) = (DESIGN_WIDTH, s.h, 4.0);
+        let (w, h, e) = (width, s.h, 4.0);
         let zones = [
             (s.r(e, 0.0, w - e, e), D::North, CursorIcon::ResizeVertical),
             (

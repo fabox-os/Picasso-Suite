@@ -1934,13 +1934,17 @@ impl StudioApp {
         let rect = ui.max_rect();
         // Scale the interface so the window is always DESIGN_WIDTH points wide; the layout
         // below uses fixed positions of that width.
+        // System Preferences > Interface can keep it from growing past a size, and the layout
+        // then stays in the middle of a wider window.
         let ppp = ctx.pixels_per_point();
-        let target = (rect.width() * ppp / DESIGN_WIDTH).clamp(0.4, 4.0);
+        let native = ctx.native_pixels_per_point().unwrap_or(1.0);
+        let target = interface_scale(rect.width() * ppp, self.extra.prefs.ui_size, native);
         if (target / ppp - 1.0).abs() > 0.003 {
             ctx.set_pixels_per_point(target);
         }
+        let side = side_margin(rect.width() * ppp / target);
         let s = Screen {
-            o: rect.min,
+            o: rect.min + vec2(side, 0.0),
             h: rect.height(),
             warp: Default::default(),
         };
@@ -2027,7 +2031,11 @@ impl StudioApp {
             theme::WINDOW_BORDER,
         );
         #[cfg(not(target_arch = "wasm32"))]
-        self.resize_edges(ui, ctx, &s);
+        {
+            // The window's own edges, which are further out than the layout's when it is centred.
+            let edges = Screen { o: rect.min, ..s };
+            self.resize_edges(ui, ctx, &edges, rect.width());
+        }
         self.windows(ctx);
     }
 
@@ -2135,6 +2143,28 @@ impl StudioApp {
 }
 
 /// One matrix per clip frame, numbered by position.
+/// The scale (pixels per point) of the interface in a window `width_px` pixels wide: wide enough
+/// for the layout's `DESIGN_WIDTH` points, unless `ui_size` (a percentage of the system's
+/// `native` scale, 0 for no limit) keeps it from growing past that.
+fn interface_scale(width_px: f32, ui_size: u16, native: f32) -> f32 {
+    let fit = (width_px / DESIGN_WIDTH).clamp(0.4, 4.0);
+    if ui_size == 0 || !native.is_finite() || native <= 0.0 {
+        return fit;
+    }
+    fit.min(native * f32::from(ui_size) / 100.0).max(0.4)
+}
+
+/// How far the layout is moved in from the left of a window `width` points wide, so that it
+/// stays in the middle when the scale is limited and the window is wider than the layout.
+fn side_margin(width: f32) -> f32 {
+    let margin = (width - DESIGN_WIDTH) / 2.0;
+    if margin > 0.5 {
+        margin
+    } else {
+        0.0
+    }
+}
+
 fn frame_transforms(matrices: Vec<picasso_core::Matrix3>) -> Vec<picasso_core::FrameTransform> {
     matrices
         .into_iter()
@@ -2335,4 +2365,47 @@ fn track_window(
         ],
         matrices,
     })
+}
+
+#[cfg(test)]
+mod interface_scale_tests {
+    use super::*;
+
+    #[test]
+    fn fit_window_always_fills_the_width() {
+        for width in [936.0, 1872.0, 3840.0] {
+            let scale = interface_scale(width, 0, 1.0);
+            assert!((scale * DESIGN_WIDTH - width).abs() < 0.01, "{width}");
+        }
+        // The old limits stay.
+        assert_eq!(interface_scale(100.0, 0, 1.0), 0.4);
+        assert_eq!(interface_scale(100_000.0, 0, 1.0), 4.0);
+    }
+
+    #[test]
+    fn a_size_limit_stops_the_growth_but_never_the_shrinking() {
+        // A 4K window on a screen with no scaling, limited to 100%: one pixel per point.
+        assert_eq!(interface_scale(3840.0, 100, 1.0), 1.0);
+        // 150% of a 1.25 scale.
+        assert!((interface_scale(5000.0, 150, 1.25) - 1.875).abs() < 1e-6);
+        // A window smaller than the limit still shrinks the interface to fit.
+        let small = interface_scale(1000.0, 100, 1.0);
+        assert!((small * DESIGN_WIDTH - 1000.0).abs() < 0.01);
+        // No usable system scale: no limit.
+        assert_eq!(
+            interface_scale(3840.0, 100, 0.0),
+            interface_scale(3840.0, 0, 1.0)
+        );
+        assert_eq!(
+            interface_scale(3840.0, 100, f32::NAN),
+            interface_scale(3840.0, 0, 1.0)
+        );
+    }
+
+    #[test]
+    fn the_layout_is_centred_only_when_the_window_is_wider() {
+        assert_eq!(side_margin(DESIGN_WIDTH), 0.0);
+        assert_eq!(side_margin(DESIGN_WIDTH + 0.2), 0.0);
+        assert_eq!(side_margin(DESIGN_WIDTH + 400.0), 200.0);
+    }
 }
