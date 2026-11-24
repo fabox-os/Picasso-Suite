@@ -835,6 +835,7 @@ impl StudioApp {
         let mut volume = self.monitor.volume;
         let mut scrubbing = self.extra.prefs.audio_scrubbing;
         let mut hardware = self.extra.prefs.hardware_decoding;
+        let mut ui_size = self.extra.prefs.ui_size;
         egui::Window::new("System Preferences")
             .open(&mut open)
             .collapsible(false)
@@ -856,6 +857,28 @@ impl StudioApp {
                 });
                 ui.add(egui::Slider::new(&mut volume, 0.0..=1.0).text("Monitor volume"));
                 ui.checkbox(&mut scrubbing, "Audio scrubbing (sound while the playhead is dragged)");
+                ui.separator();
+                ui.heading("Interface");
+                ui.horizontal(|ui| {
+                    ui.label("Largest size");
+                    for size in crate::prefs::UI_SIZES {
+                        let label = if size == 0 {
+                            "Fit window".to_string()
+                        } else {
+                            format!("{size}%")
+                        };
+                        ui.radio_value(&mut ui_size, size, label);
+                    }
+                });
+                ui.label(
+                    RichText::new(
+                        "Fit window scales the whole interface with the window. A percentage of \
+                         the system's scale keeps the text from growing past that size in a big \
+                         window; the layout then stays in the middle.",
+                    )
+                    .small()
+                    .weak(),
+                );
                 ui.separator();
                 ui.heading("Decode Options");
                 ui.checkbox(
@@ -891,7 +914,19 @@ impl StudioApp {
         }
         self.set_audio_scrubbing(scrubbing);
         self.set_hardware_decoding(hardware);
+        self.set_ui_size(ui_size);
         self.extra.preferences = open;
+    }
+
+    /// Sets how large the interface may grow (System Preferences > Interface), for this
+    /// computer: 0 fits the window, a percentage limits the scale to that part of the system's.
+    pub(crate) fn set_ui_size(&mut self, size: u16) {
+        if size == self.extra.prefs.ui_size {
+            return;
+        }
+        self.extra.prefs.ui_size = size;
+        #[cfg(not(test))]
+        self.extra.prefs.save();
     }
 
     /// Turns audio scrubbing on or off (the Clip menu's entry, and System Preferences >
