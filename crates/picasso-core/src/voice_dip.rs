@@ -1,6 +1,6 @@
 //! Voice dip: the music gets quieter while someone speaks, and comes back after.
 //!
-//! Adapted from the auto ducking of Drift 0.9.4 by CutWire Studios (GPL-3.0,
+//! Adapted from Drift 0.9.4 by CutWire Studios (GPL-3.0,
 //! <https://github.com/CutWire-Studios/Drift>), written again in Rust for Picasso's mixer.
 //!
 //! Speech is found as "louder than a threshold" in windows of 20 ms ([`level_speech_spans`]); the
