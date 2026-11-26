@@ -39,7 +39,7 @@ Entire Timeline|Tüm çizelge
 Estimated File Size|Tahmini boyut
 Every|Her
 Export Video|Video aktar
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Dosya adı
 Filters|Filtre
 Format|Biçim
@@ -47,7 +47,7 @@ Frame rate|Kare hızı
 Frame reordering|Kare yeniden sıra
 Full Frames|Tam kareler
 Full Screen|Tam ekran
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Üreteç

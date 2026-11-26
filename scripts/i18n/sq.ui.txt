@@ -38,14 +38,14 @@ Entire Timeline|Gjithë kronologjia
 Estimated File Size|Madhësia
 Every|Çdo
 Export Video|Eksporto video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Emri i skedarit
 Format|Formati
 Frame rate|Kuadro/s
 Frame reordering|Rirenditja
 Full Frames|Kuadro të plota
 Full Screen|Ekran i plotë
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Gjenerator

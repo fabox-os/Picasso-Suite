@@ -15,7 +15,7 @@ mod wav;
 
 pub use loudness::{KWeighting, Loudness, TruePeak, LOUDNESS_BLOCK, TARGET_LUFS};
 pub use mix::{
-    frames_to_samples, mix_block, mixdown, plan, AudioPlan, ClipSound, MixdownError, Mixer,
+    frames_to_samples, mix_block, mixdown, plan, AudioPlan, ClipSound, VoiceDipPlan, MixdownError, Mixer,
     SampleSource, METERED_TRACKS, SAMPLE_RATE,
 };
 #[cfg(not(target_arch = "wasm32"))]

@@ -38,14 +38,14 @@ Entire Timeline|Cả dòng TG
 Estimated File Size|Dung lượng
 Every|Mỗi
 Export Video|Xuất video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Tên tệp
 Format|Định dạng
 Frame rate|Khung/giây
 Frame reordering|Sắp xếp lại
 Full Frames|Khung đầy đủ
 Full Screen|Toàn màn hình
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Bộ tạo

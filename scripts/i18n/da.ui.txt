@@ -38,14 +38,14 @@ Entire Timeline|Hele tidslinjen
 Estimated File Size|Filstørrelse
 Every|Hver
 Export Video|Eksp. video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Filnavn
 Format|Format
 Frame rate|Billedfrekv.
 Frame reordering|Omsortering
 Full Frames|Hele billeder
 Full Screen|Fuld skærm
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

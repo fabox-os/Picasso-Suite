@@ -38,14 +38,14 @@ Entire Timeline|Kogu ajajoon
 Estimated File Size|Suurus
 Every|Iga
 Export Video|Ekspordi video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Failinimi
 Format|Vorming
 Frame rate|Kaadrit/s
 Frame reordering|Ümberjärjest.
 Full Frames|Täiskaadrid
 Full Screen|Täisekraan
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generaator

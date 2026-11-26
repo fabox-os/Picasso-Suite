@@ -19,10 +19,15 @@ pub enum GeneratorKind {
     FullColorBars,
     /// The eight EBU bars (100 % white, 75 % colours, black).
     EbuBars,
+    /// The SMPTE bars of ECR 1-1978: seven 75 % bars, a strip of reversed bars under them, and
+    /// the -I, white, +Q and PLUGE row at the bottom.
+    StudioBars,
     /// A smooth black-to-white ramp.
     GreyRamp,
     /// Eleven grey steps from black to white.
     GreyScale,
+    /// Ten grey steps from black to white.
+    TenfoldGrey,
     /// Eight steps of exactly 100 mV of a 700 mV signal.
     #[serde(rename = "steps_100mv")]
     Steps100mV,
@@ -57,15 +62,17 @@ pub enum GeneratorKind {
 
 impl GeneratorKind {
     /// Every generator, in menu order.
-    pub const ALL: [GeneratorKind; 21] = [
+    pub const ALL: [GeneratorKind; 23] = [
         GeneratorKind::FourColorGradient,
         GeneratorKind::VerticalGradient,
         GeneratorKind::DiagonalGradient,
         GeneratorKind::RadialGradient,
         GeneratorKind::FullColorBars,
         GeneratorKind::EbuBars,
+        GeneratorKind::StudioBars,
         GeneratorKind::GreyRamp,
         GeneratorKind::GreyScale,
+        GeneratorKind::TenfoldGrey,
         GeneratorKind::Steps100mV,
         GeneratorKind::YcbcrRamp,
         GeneratorKind::Bt2111HlgNarrow,
@@ -90,8 +97,10 @@ impl GeneratorKind {
             GeneratorKind::RadialGradient => "Radial Gradient",
             GeneratorKind::FullColorBars => "Full-Field Color Bars",
             GeneratorKind::EbuBars => "EBU Color Bars",
+            GeneratorKind::StudioBars => "Studio Bars",
             GeneratorKind::GreyRamp => "Grey Ramp",
             GeneratorKind::GreyScale => "Grey Scale",
+            GeneratorKind::TenfoldGrey => "Tenfold Grey",
             GeneratorKind::Steps100mV => "100 mV Steps",
             GeneratorKind::YcbcrRamp => "YCbCr Ramp",
             GeneratorKind::Bt2111HlgNarrow => "HDR Bars (HLG, Narrow)",

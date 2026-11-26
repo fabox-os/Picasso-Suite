@@ -38,14 +38,14 @@ Entire Timeline|Toată cronol.
 Estimated File Size|Dimensiune
 Every|La fiecare
 Export Video|Export video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Nume fișier
 Format|Format
 Frame rate|Cadre/s
 Frame reordering|Reordonare
 Full Frames|Cadre întregi
 Full Screen|Ecran complet
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

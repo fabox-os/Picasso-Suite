@@ -38,14 +38,14 @@ Entire Timeline|Όλο το χρονολ.
 Estimated File Size|Μέγεθος
 Every|Κάθε
 Export Video|Εξαγ. βίντεο
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Όνομα αρχείου
 Format|Μορφή
 Frame rate|Καρέ/δλ
 Frame reordering|Αναδιάταξη καρέ
 Full Frames|Πλήρη καρέ
 Full Screen|Πλήρης οθόνη
-Fusion|Fusion
+Spectra|Spectra
 Gain|Κέρδος
 Gamma|Gamma
 Generator|Γεννήτρια

@@ -38,14 +38,14 @@ Entire Timeline|Teljes idővonal
 Estimated File Size|Méret
 Every|Minden
 Export Video|Videó export
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Fájlnév
 Format|Formátum
 Frame rate|Kocka/mp
 Frame reordering|Átrendezés
 Full Frames|Teljes kockák
 Full Screen|Teljes kép
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generátor

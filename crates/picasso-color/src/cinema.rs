@@ -611,6 +611,104 @@ fn saturation(rgba: &mut [u8], w: usize, h: usize, a: f32) {
     });
 }
 
+// ---- storm and beat --------------------------------------------------------------------------
+// Storm Flash and Downbeat Jolt are adapted from the Lightning Sky and Beat Shake effects of
+// Drift 0.9.4 by
+// CutWire Studios (GPL-3.0, https://github.com/CutWire-Studios/Drift), rewritten in Rust to work
+// on the processor.
+
+/// A number from 0 to 1 from a number, the way the shaders of Drift make one (`fract(sin(p *
+/// 127.1) * 43758.5453)`), in double precision so every machine gets the same answer.
+fn sin_hash(p: f64) -> f32 {
+    let v = (p * 127.1).sin() * 43758.5453;
+    (v - v.floor()) as f32
+}
+
+/// A colour from its hue (0 to 1), saturation and value.
+fn hsv(h: f32, s: f32, v: f32) -> [f32; 3] {
+    let h = h - h.floor();
+    [0.0f32, 2.0 / 3.0, 1.0 / 3.0].map(|offset| {
+        let k = h + 1.0 - offset;
+        let p = ((k - k.floor()) * 6.0 - 3.0).abs();
+        v * mix(1.0, (p - 1.0).clamp(0.0, 1.0), s)
+    })
+}
+
+/// A storm over the top of the picture: a pale blue glow in the sky, and now and then a bolt of
+/// light that wanders down from it. The strength is how bright they are.
+fn storm_flash(rgba: &mut [u8], w: usize, h: usize, a: f32, t: f32) {
+    // The settings Drift starts the effect with.
+    const FREQUENCY: f32 = 0.4;
+    const HUE: f32 = 0.58;
+    const FLASH: f32 = 0.5;
+    let moment = f64::from(t * mix(0.4, 2.5, FREQUENCY));
+    let step = moment * 3.0;
+    let edge = 0.992 - FREQUENCY * 0.02;
+    let bolt_colour = {
+        let tint = hsv(HUE, 0.7, 1.0);
+        [0, 1, 2].map(|i| mix([0.85, 0.92, 1.0][i], tint[i], 0.35))
+    };
+    // A column of the picture gets a strike or not, and the same column strikes in every row.
+    let strikes: Vec<bool> = (0..w)
+        .map(|x| {
+            let column = ((x as f32 + 0.5) / w as f32 * 40.0).floor();
+            sin_hash(step.floor() + f64::from(column)) >= edge
+        })
+        .collect();
+    // What depends only on the row: the sky, how far the bolt has wandered, and how much of the
+    // bolt shows there. The lower third of the picture has no sky and is left as it is.
+    let rows: Vec<(f32, f32, f32)> = (0..h)
+        .map(|y| {
+            let v = (y as f32 + 0.5) / h as f32;
+            let wander = (v * 12.0 + moment as f32).sin() * 0.08;
+            (smoothstep(0.35, 1.0, 1.0 - v), wander, smoothstep(0.2, 0.95, v))
+        })
+        .collect();
+    each_colour(rgba, w, h, &|x, y, c| {
+        let (sky, wander, window) = rows[y];
+        if sky <= 0.0 {
+            return c;
+        }
+        let glow = FLASH * 0.35 * sky;
+        // The bolt only needs working out in a column that has a strike.
+        let lit = if strikes[x] {
+            let u = (x as f32 + 0.5) / w as f32;
+            glow.max((-(u - 0.5 - wander).abs() * 120.0).exp() * window)
+        } else {
+            glow
+        } * sky
+            * a;
+        [0, 1, 2].map(|i| (c[i] + bolt_colour[i] * lit).clamp(0.0, 1.0))
+    });
+}
+
+/// The picture shakes, hardest on the beat (one a second, as for Zoom Punch) and then settling:
+/// a little closer in, moved about and turned a few degrees. The strength is how hard.
+fn downbeat_jolt(rgba: &mut [u8], w: usize, h: usize, a: f32, t: f32) {
+    // The settings Drift starts the effect with.
+    const ROTATION: f32 = 0.35;
+    const SEED: f32 = 0.5;
+    let a = a * (-5.0 * t.fract()).exp();
+    if a <= 1e-5 {
+        return;
+    }
+    let overscan = 1.0 + a * 0.12;
+    let wobble = t * 48.0 + SEED * 97.0;
+    let mut jitter = [(wobble * 1.7).sin() * a * 0.035, (wobble * 2.3).cos() * a * 0.035];
+    jitter[0] += sin_hash(f64::from(wobble)) * a * 0.02 - a * 0.01;
+    jitter[1] += sin_hash(f64::from(wobble) + 3.1) * a * 0.02 - a * 0.01;
+    let (sin, cos) = (a * ROTATION * 0.08 * (wobble * 3.1).sin()).sin_cos();
+    resample(rgba, w, h, &|src, x, y| {
+        let (u, v) = ((x as f32 + 0.5) / w as f32 - 0.5, (y as f32 + 0.5) / h as f32 - 0.5);
+        let (px, py) = (u * overscan, v * overscan);
+        let q = (
+            (px * cos - py * sin + 0.5 + jitter[0]).clamp(0.0, 1.0),
+            (px * sin + py * cos + 0.5 + jitter[1]).clamp(0.0, 1.0),
+        );
+        src.at(q.0 * w as f32, q.1 * h as f32)
+    });
+}
+
 pub(crate) fn apply(kind: EffectKind, a: f32, rgba: &mut [u8], w: usize, h: usize, frame: u64, rate: f32) {
     if w == 0 || h == 0 || rgba.len() < w * h * 4 || a <= 0.0 {
         return;
@@ -640,6 +738,8 @@ pub(crate) fn apply(kind: EffectKind, a: f32, rgba: &mut [u8], w: usize, h: usiz
         EffectKind::Contrast => contrast(rgba, w, h, a),
         EffectKind::Gamma => gamma(rgba, w, h, a),
         EffectKind::Saturation => saturation(rgba, w, h, a),
+        EffectKind::StormFlash => storm_flash(rgba, w, h, a, t),
+        EffectKind::DownbeatJolt => downbeat_jolt(rgba, w, h, a, t),
         _ => {}
     }
 }
@@ -649,7 +749,7 @@ mod tests {
     use super::*;
     use crate::fx::Effect;
 
-    pub(super) const KINDS: [EffectKind; 22] = [
+    pub(super) const KINDS: [EffectKind; 24] = [
         EffectKind::BlockGlitch,
         EffectKind::DigitalGlitch,
         EffectKind::ScanlineGlitch,
@@ -672,6 +772,8 @@ mod tests {
         EffectKind::Contrast,
         EffectKind::Gamma,
         EffectKind::Saturation,
+        EffectKind::StormFlash,
+        EffectKind::DownbeatJolt,
     ];
 
     const W: usize = 64;
@@ -749,6 +851,7 @@ mod tests {
             EffectKind::Shockwave,
             EffectKind::InfiniteZoom,
             EffectKind::Sparkle,
+            EffectKind::DownbeatJolt,
         ] {
             let (a, b) = (run(kind, 100.0, &src, 2), run(kind, 100.0, &src, 11));
             assert_ne!(a, b, "{kind:?} is the same at two moments");
@@ -811,6 +914,77 @@ mod tests {
         assert!(distance(&on_beat) > distance(&settled) * 3, "{} {}", distance(&on_beat), distance(&settled));
         // The dot in the middle stays where it is.
         assert!(px(&on_beat, 32, 24)[0] > 200);
+    }
+
+    #[test]
+    fn storm_flash_only_adds_light_and_most_of_it_is_in_the_sky() {
+        let src = picture();
+        let out = run(EffectKind::StormFlash, 100.0, &src, 3);
+        // Nothing gets darker.
+        assert!(out.iter().zip(&src).all(|(o, s)| o >= s));
+        // The top of the picture gets more light than the bottom, which the sky does not reach.
+        let lit = |rows: std::ops::Range<usize>| -> u64 {
+            let mut sum = 0u64;
+            for y in rows {
+                for x in 0..W {
+                    let (a, b) = (px(&out, x, y), px(&src, x, y));
+                    sum += (0..3).map(|i| u64::from(a[i] - b[i])).sum::<u64>();
+                }
+            }
+            sum
+        };
+        assert!(lit(0..H / 4) > lit(3 * H / 4..H) * 4 + 1, "{} {}", lit(0..H / 4), lit(3 * H / 4..H));
+    }
+
+    /// The straightforward version of Storm Flash, one pixel at a time, to hold the quick one to.
+    fn storm_flash_reference(src: &[u8], a: f32, t: f32) -> Vec<u8> {
+        const FREQUENCY: f32 = 0.4;
+        let moment = f64::from(t * mix(0.4, 2.5, FREQUENCY));
+        let tint = hsv(0.58, 0.7, 1.0);
+        let colour = [0, 1, 2].map(|i| mix([0.85, 0.92, 1.0][i], tint[i], 0.35));
+        let mut out = src.to_vec();
+        for y in 0..H {
+            for x in 0..W {
+                let (u, v) = ((x as f32 + 0.5) / W as f32, (y as f32 + 0.5) / H as f32);
+                let sky = smoothstep(0.35, 1.0, 1.0 - v);
+                let column = (u * 40.0).floor();
+                let strike = if sin_hash((moment * 3.0).floor() + f64::from(column)) >= 0.992 - FREQUENCY * 0.02 { 1.0 } else { 0.0 };
+                let wander = (v * 12.0 + moment as f32).sin() * 0.08;
+                let bolt = (-(u - 0.5 - wander).abs() * 120.0).exp() * smoothstep(0.2, 0.95, v);
+                let lit = (strike * bolt).max(0.5 * 0.35 * sky) * sky * a;
+                let i = (y * W + x) * 4;
+                for k in 0..3 {
+                    let c = f32::from(src[i + k]) / 255.0;
+                    out[i + k] = ((c + colour[k] * lit).clamp(0.0, 1.0) * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_quick_storm_flash_draws_what_the_plain_one_does_with_and_without_a_strike() {
+        let src = picture();
+        let mut struck = 0;
+        for frame in 0..400u64 {
+            let t = frame as f32 / 24.0;
+            let quick = run(EffectKind::StormFlash, 80.0, &src, frame);
+            let plain = storm_flash_reference(&src, 0.8, t);
+            assert_eq!(quick, plain, "frame {frame}");
+            if plain != storm_flash_reference(&src, 0.0, t) && frame % 7 == 0 {
+                struck += 1;
+            }
+        }
+        assert!(struck > 0);
+    }
+
+    #[test]
+    fn downbeat_jolt_is_hardest_on_the_beat_and_settles_between() {
+        let src = picture();
+        // The effect counts 24 pictures to the second here: frame 0 is on the beat, 23 is
+        // just before the next.
+        let moved = |frame: u64| diff(&run(EffectKind::DownbeatJolt, 100.0, &src, frame), &src);
+        assert!(moved(0) > moved(20) * 2 + 20, "{} {}", moved(0), moved(20));
     }
 
     #[test]

@@ -38,14 +38,14 @@ Entire Timeline|Seluruh lini masa
 Estimated File Size|Ukuran berkas
 Every|Tiap
 Export Video|Ekspor video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Nama berkas
 Format|Format
 Frame rate|Frame rate
 Frame reordering|Urutan ulang
 Full Frames|Bingkai penuh
 Full Screen|Layar penuh
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

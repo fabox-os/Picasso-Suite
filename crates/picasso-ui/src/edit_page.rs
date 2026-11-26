@@ -1565,6 +1565,18 @@ impl StudioApp {
                 .add(egui::DragValue::new(&mut audio.fade_out).range(0..=duration))
                 .changed();
         });
+        ui.horizontal(|ui| {
+            ui.label("Fade curve");
+            egui::ComboBox::from_id_salt(("fade_curve", id))
+                .selected_text(audio.fade_curve.label())
+                .show_ui(ui, |ui| {
+                    for shape in picasso_core::FadeCurve::ALL {
+                        changed |= ui
+                            .selectable_value(&mut audio.fade_curve, shape, shape.label())
+                            .changed();
+                    }
+                });
+        });
         if changed {
             self.run_gesture(ctx, Command::SetClipAudio { clip: id, audio });
         }

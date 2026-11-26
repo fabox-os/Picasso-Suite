@@ -46,7 +46,7 @@ Estimated File Size|Geschätzte Größe
 Every|Jede
 Every media file is where the project says it is.|Alle Mediendateien liegen am richtigen Ort.
 Export Video|Videoexport
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Dateiname
 Filters|Filter
 Format|Format
@@ -55,7 +55,7 @@ Frame reordering|Bildumsortierung
 Free software under the GPL, version 3 or later.|Freie Software unter der GPL, Version 3 oder neuer.
 Full Frames|Vollbilder
 Full Screen|Vollbild
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

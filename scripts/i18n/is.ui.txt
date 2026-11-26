@@ -38,14 +38,14 @@ Entire Timeline|Öll tímalína
 Estimated File Size|Stærð
 Every|Á hverju
 Export Video|Flytja út myndband
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Skráarheiti
 Format|Snið
 Frame rate|Rammar/s
 Frame reordering|Endurröðun
 Full Frames|Heilir rammar
 Full Screen|Allur skjár
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Rafall

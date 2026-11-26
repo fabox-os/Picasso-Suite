@@ -38,14 +38,14 @@ Entire Timeline|전체 타임라인
 Estimated File Size|예상 크기
 Every|매
 Export Video|영상 내보내기
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|파일 이름
 Format|형식
 Frame rate|프레임 레이트
 Frame reordering|프레임 순서
 Full Frames|전체 프레임
 Full Screen|전체 화면
-Fusion|Fusion
+Spectra|Spectra
 Gain|게인
 Gamma|감마
 Generator|제너레이터

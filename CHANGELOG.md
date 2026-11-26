@@ -1,9 +1,31 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
+
+Two new Picasso FX effects (Storm Flash and Downbeat Jolt), a voice dip for music under speech, fade curves, two more test patterns, a size limit for the interface, and new names for two pages: Spectra and Decibel.
 
 ### ✨ New
 - ✅ **Interface size (issue #66):** **System Preferences > Interface > Largest size** keeps the interface from growing past a size in a big window. **Fit window** (the default, as before) scales the whole interface so it is always as wide as the window; 100%, 125%, 150% and 200% limit it to that part of the system's scale, and in a window wider than that the layout stays in the middle, with the window's own edges still where they were. A smaller window still shrinks the interface to fit.
+- ✅ **Storm Flash and Downbeat Jolt:** two more Picasso FX effects, adapted from the Lightning Sky and Beat Shake effects of Drift 0.9.4 by CutWire Studios (GPL-3.0) and written again in Rust on Picasso's own effect engine (`picasso-color`, on the processor, so they look the same in the viewer and in an export). **Picasso FX > Film and Light > Storm Flash** puts a pale glow in the top of the picture and now and then a bolt of light that wanders down from it. **Picasso FX > Zoom and Pulse > Downbeat Jolt** shakes the picture hardest on the beat (one a second, as Zoom Punch does) and lets it settle between beats. Each has one strength, 0 to 100, like the other effects of its group.
+- ✅ **Voice dip:** **Clip > Dip Music Under Voice** takes the sound of the selected clips down by 12 dB wherever the clips on the other tracks are loud (speech: windows of 20 ms above a level, short gaps joined), with a ramp of 0.2 s down before the speech and 0.5 s up after it, and the music staying down between words that are less than 1.2 s apart. **Clip > Remove Voice Dip** takes it away. The dips are kept with the clip in frames of the timeline, so they stay with the speech when the clip is moved or cut, Picasso's own mixer (`picasso-audio`) and the export apply them, the speech is found by a level detector in `picasso-core` that needs no model download, and the whole pass is one undo step. Everything on the other tracks that makes sound counts as speech.
+- ✅ **Two more test patterns:** **Generators > Test Patterns > Studio Bars** (the bars of ECR 1-1978: seven 75 % bars, the reversed strip under them, and the -I, white, +Q and PLUGE row at the bottom) and **Tenfold Grey** (ten equal grey steps from black to white, next to the eleven of Grey Scale). Both are drawn by Picasso's own generator code in `picasso-render`, with tests on their colours.
+- ✅ **Fade curves:** the Inspector's Sound section has a **Fade curve** list next to Fade in and out: Straight (as before, and the default), Even power, Midway, Late rise, Early rise and Silk. It sets how the sound goes in and out over a fade, in the viewer, in playback and in an export. At a crossfade between two clips, a curve on both gives an even-power or silk crossfade. It is kept with the clip, stays on both halves when the clip is cut, and a straight fade is not written to the project file, so old files read the same.
+
+### 🔒 Checked
+- A voice dip read from a project file is put in order and bounded like the other settings (at most 4096 dips, ramps of at most 1,048,576 frames, a level of at most 0 dB), and one with nothing left in it is dropped. Dip Music Under Voice listens to at most 5 minutes of each clip and 15 minutes in all, and says so when it cut a long clip short, so the window is not held for long. Storm Flash skips the part of the picture with no sky and works out a bolt only in a column that has one: about 2.5 ms for a 1080p picture, and the same pixels as before (tested over 400 frames).
+
+### 🔧 Changed
+- 🔧 **Page names:** the **Fusion** page is now called **Spectra** and the **Fairlight** page **Decibel**, in the page bar, the translations, the README and the website, with the same icons. `--page=spectra` and `--page=decibel` open them on the command line; `--page=fusion` and `--page=fairlight` no longer do. The Effects and Audio pages are otherwise as they were.
+
+### ⚠️ Known limitations
+- The voice dip's amount (12 dB), ramps and sensitivity are fixed, and everything that makes sound on the other tracks counts as speech.
+- Not taken from Drift yet: the depth effects, the face effects, Audio Spectrum Bars and Audio Waveform Line, Motion Smoothing and 11 of its 23 effect templates (see the roadmap).
+
+### 🙏 Credits
+- The fade curves follow the audio crossfade curves of [KinoKlip](https://github.com/SeniorMatt/kinoklip) 1.14.2 by SeniorMatt (GPL-3.0-or-later), written again in Rust in `crates/picasso-core/src/fade_curve.rs`.
+- The colour values of Studio Bars follow the pattern in [KinoKlip](https://github.com/SeniorMatt/kinoklip) 1.14.2 by SeniorMatt (GPL-3.0-or-later); the notice is kept in `crates/picasso-render/src/generators.rs`. KinoKlip's name and logo are not under the GPL and are not used.
+- Voice dip follows the auto ducking of [Drift](https://github.com/CutWire-Studios/Drift) by CutWire Studios (GPL-3.0), written again in Rust in `crates/picasso-core/src/voice_dip.rs`, and its menu action in `crates/picasso-ui/src/voice_dip.rs`.
+- Storm Flash and Downbeat Jolt follow Lightning Sky and Beat Shake in [Drift](https://github.com/CutWire-Studios/Drift) by CutWire Studios, which is also GPL-3.0; the notice is kept in `crates/picasso-color/src/cinema.rs`.
 
 ## 0.8.1
 

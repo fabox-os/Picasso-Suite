@@ -2003,7 +2003,7 @@ impl StudioApp {
         } else if self.page == Page::Capture {
             self.capture_page(ui, ctx, &s);
         } else if self.page == Page::Audio {
-            self.fairlight_page(ui, ctx, &s);
+            self.decibel_page(ui, ctx, &s);
         } else if self.page == Page::Effects {
             self.effects_page(ui, ctx, &s);
         } else if self.page == Page::Color {

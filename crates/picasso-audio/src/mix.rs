@@ -40,8 +40,36 @@ pub struct ClipSound {
     /// Samples over which the sound rises at the start and falls at the end.
     pub fade_in: u64,
     pub fade_out: u64,
+    /// How the two fades go.
+    pub fade_curve: picasso_core::FadeCurve,
     /// Played backwards, from the end of what the clip uses.
     pub reverse: bool,
+    /// Voice dip: where the sound is taken down.
+    pub voice_dip: Option<VoiceDipPlan>,
+}
+
+/// The voice dip of a clip's sound (`picasso_core::VoiceDip`) in samples of the timeline.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VoiceDipPlan {
+    /// (first sample, end sample) of each dip, in order.
+    pub dips: Vec<(u64, u64)>,
+    /// The factor at the bottom of a dip.
+    pub gain: f32,
+    pub attack: u64,
+    pub release: u64,
+}
+
+impl VoiceDipPlan {
+    /// The voice dip `voice_dip` of a clip, in samples.
+    pub fn of(project: &Project, voice_dip: &picasso_core::VoiceDip) -> Self {
+        let samples = |f: u64| frames_to_samples(project, f);
+        Self {
+            dips: voice_dip.dips.iter().map(|&(a, b)| (samples(a), samples(b))).collect(),
+            gain: voice_dip.gain(),
+            attack: samples(voice_dip.attack),
+            release: samples(voice_dip.release),
+        }
+    }
 }
 
 impl ClipSound {
@@ -61,7 +89,9 @@ impl ClipSound {
             right: 1.0,
             fade_in: 0,
             fade_out: 0,
+            fade_curve: picasso_core::FadeCurve::Straight,
             reverse: false,
+            voice_dip: None,
         }
     }
 
@@ -69,11 +99,20 @@ impl ClipSound {
     fn envelope(&self, at: u64) -> f32 {
         let mut e = 1.0f32;
         if at < self.fade_in {
-            e = e.min(at as f32 / self.fade_in as f32);
+            e = e.min(self.fade_curve.gain(at as f32 / self.fade_in as f32));
         }
         let remaining = self.len.saturating_sub(at);
         if remaining < self.fade_out {
-            e = e.min(remaining as f32 / self.fade_out as f32);
+            e = e.min(self.fade_curve.gain(remaining as f32 / self.fade_out as f32));
+        }
+        if let Some(voice_dip) = &self.voice_dip {
+            e *= picasso_core::voice_dip::voice_dip_factor(
+                &voice_dip.dips,
+                voice_dip.gain,
+                voice_dip.attack,
+                voice_dip.release,
+                self.start.saturating_add(at),
+            );
         }
         e
     }
@@ -212,7 +251,9 @@ pub fn plan(project: &Project) -> AudioPlan {
                     project,
                     after.map_or(audio.fade_out, |f| f.max(audio.fade_out)),
                 ),
+                fade_curve: audio.fade_curve,
                 reverse: clip.reverse,
+                voice_dip: clip.voice_dip.as_ref().map(|d| VoiceDipPlan::of(project, d)),
             });
         }
     }
@@ -310,7 +351,9 @@ fn nested_sounds(
                         } else {
                             0
                         },
+                        fade_curve: audio.fade_curve,
                         reverse: clip.reverse,
+                        voice_dip: None,
                     });
                 }
                 MediaSource::Compound { timeline } => {
@@ -808,6 +851,7 @@ mod tests {
                 gain_db: -6.0,
                 fade_in: 12,
                 fade_out: 24,
+                ..ClipAudio::default()
             },
         }
         .apply(&mut p)
@@ -877,6 +921,143 @@ mod tests {
         assert_eq!(l[4], 1.0);
         assert_eq!(l[5], 1.0);
         assert!((l[7] - 0.6).abs() < 1e-6 && (l[9] - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_voice_dip_follows_the_timeline_not_the_clip_and_the_block() {
+        // The clip starts at sample 4; the dip is samples 10 to 14 of the timeline, with a ramp
+        // of 2 down and 2 up, to a quarter.
+        let mut c = ClipSound::plain(MediaId(1), "", 4, 20, 0);
+        c.voice_dip = Some(VoiceDipPlan {
+            dips: vec![(10, 14)],
+            gain: 0.25,
+            attack: 2,
+            release: 2,
+        });
+        let plan = AudioPlan {
+            clips: vec![c],
+            ..Default::default()
+        };
+        // 30 stereo samples, mixed as one block and as two.
+        let mut whole = vec![0.0; 60];
+        mix_block(&plan, &Constant, 0, &mut whole);
+        let mut parts = vec![0.0; 60];
+        let mut mixer = Mixer::new();
+        mixer.mix(&plan, &Constant, 0, &mut parts[..28]);
+        mixer.mix(&plan, &Constant, 14, &mut parts[28..]);
+        assert_eq!(whole, parts);
+        let l = left(&whole);
+        // Silence before the clip, then full level up to the ramp (at 8), halfway down at 9.
+        assert_eq!(l[3], 0.0);
+        assert_eq!(l[7], 1.0);
+        assert!((l[9] - 0.625).abs() < 1e-6, "{}", l[9]);
+        assert_eq!((l[10], l[13], l[14]), (0.25, 0.25, 0.25));
+        assert!((l[15] - 0.625).abs() < 1e-6, "{}", l[15]);
+        assert_eq!(l[16], 1.0);
+        // Without the dips the clip is as before.
+        let mut plain = vec![0.0; 60];
+        let free = AudioPlan {
+            clips: vec![ClipSound::plain(MediaId(1), "", 4, 20, 0)],
+            ..Default::default()
+        };
+        mix_block(&free, &Constant, 0, &mut plain);
+        assert_eq!(left(&plain)[12], 1.0);
+    }
+
+    #[test]
+    fn a_clip_with_a_voice_dip_in_the_project_is_planned_with_it() {
+        let mut p = Project::new("t");
+        let m = video(&mut p, "a");
+        let v1 = p.tracks[0].id;
+        let Outcome::Clip(clip) = (Command::AddClip {
+            track: v1,
+            media: m,
+            start: 0,
+            duration: None,
+            with_sound: false,
+        })
+        .apply(&mut p)
+        .unwrap() else {
+            panic!()
+        };
+        assert_eq!(plan(&p).clips[0].voice_dip, None);
+        Command::SetVoiceDip {
+            clip,
+            voice_dip: Some(picasso_core::VoiceDip {
+                dips: vec![(30, 60)],
+                reduce_db: -6.0,
+                attack: 3,
+                release: 6,
+            }),
+        }
+        .apply(&mut p)
+        .unwrap();
+        let voice_dip = plan(&p).clips[0].voice_dip.clone().expect("the clip is dipped");
+        // In samples: frames times samples per frame.
+        let per_frame = frames_to_samples(&p, 1);
+        assert_eq!(voice_dip.dips, vec![(30 * per_frame, 60 * per_frame)]);
+        assert_eq!((voice_dip.attack, voice_dip.release), (3 * per_frame, 6 * per_frame));
+        assert!((voice_dip.gain - 0.501_187).abs() < 1e-4);
+        // Taking it away, or setting dips that are all empty, clears it.
+        Command::SetVoiceDip { clip, voice_dip: None }.apply(&mut p).unwrap();
+        assert_eq!(plan(&p).clips[0].voice_dip, None);
+        Command::SetVoiceDip {
+            clip,
+            voice_dip: Some(picasso_core::VoiceDip {
+                dips: vec![(5, 5)],
+                reduce_db: -6.0,
+                attack: 0,
+                release: 0,
+            }),
+        }
+        .apply(&mut p)
+        .unwrap();
+        assert_eq!(plan(&p).clips[0].voice_dip, None);
+    }
+
+    #[test]
+    fn a_fade_follows_its_curve() {
+        use picasso_core::FadeCurve;
+        // A fade in over 10 samples of a constant sound at full level: the left channel is the
+        // gain of the shape at each sample.
+        let run = |shape: FadeCurve| {
+            let mut c = ClipSound::plain(MediaId(1), "", 0, 20, 0);
+            c.fade_in = 10;
+            c.fade_curve = shape;
+            let plan = AudioPlan {
+                clips: vec![c],
+                ..Default::default()
+            };
+            let mut out = vec![0.0; 40];
+            mix_block(&plan, &Constant, 0, &mut out);
+            left(&out)
+        };
+        let linear = run(FadeCurve::Straight);
+        assert!((linear[5] - 0.5).abs() < 1e-6);
+        let equal = run(FadeCurve::EvenPower);
+        assert!((equal[5] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-4, "{}", equal[5]);
+        let slow = run(FadeCurve::LateRise);
+        assert!(slow[5] < 0.2 && slow[9] < linear[9], "{} {}", slow[5], slow[9]);
+        // After the fade every shape is at full level, and at the start at none.
+        for shape in FadeCurve::ALL {
+            let l = run(shape);
+            assert_eq!(l[0], 0.0, "{shape:?}");
+            assert_eq!(l[12], 1.0, "{shape:?}");
+        }
+        // A fade out reads the shape backwards: the last sample is the quietest.
+        let mut c = ClipSound::plain(MediaId(1), "", 0, 20, 0);
+        c.fade_out = 10;
+        c.fade_curve = FadeCurve::EvenPower;
+        let plan = AudioPlan {
+            clips: vec![c],
+            ..Default::default()
+        };
+        let mut out = vec![0.0; 40];
+        mix_block(&plan, &Constant, 0, &mut out);
+        let l = left(&out);
+        assert_eq!(l[9], 1.0);
+        assert!((l[15] - std::f32::consts::FRAC_1_SQRT_2).abs() < 1e-4, "{}", l[15]);
+        assert!(l[19] < 0.2);
     }
 
     #[test]

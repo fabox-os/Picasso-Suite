@@ -1031,6 +1031,8 @@ impl StudioApp {
             | Act::NormalizeAudio => self.target_clip().is_some(),
             Act::AutoAlignWaveform => self.can_align_by_waveform(),
             Act::MarkBeats => self.can_mark_beats(),
+            Act::DipMusic => self.can_dip_music(),
+            Act::RemoveVoiceDip => self.can_remove_voice_dip(),
             Act::AutoSubtitles => self.can_auto_subtitle(),
             Act::AutoAlignTimecode => {
                 let ids = self.selected_ids();
@@ -1182,6 +1184,8 @@ impl StudioApp {
             Act::AddAudioEffect(kind) => self.add_audio_effect(kind),
             Act::ChooseVideoLayout => self.open_video_layout(),
             Act::MarkBeats => self.mark_beats(),
+            Act::DipMusic => self.dip_music(),
+            Act::RemoveVoiceDip => self.remove_voice_dip(),
             Act::AutoSubtitles => self.open_auto_subtitles(),
             Act::ApplyLook(i) => match (self.target_clip(), picasso_core::effect_looks::LOOKS.get(i)) {
                 (Some(clip), Some(look)) => {

@@ -120,6 +120,8 @@ pub(crate) enum Act {
     UnlinkClips,
     ToggleLinkedSelection,
     ToggleAudioScrubbing,
+    DipMusic,
+    RemoveVoiceDip,
     AddSerialNode,
     ToggleNode,
     GoFirst,
@@ -553,6 +555,8 @@ const CLIP: &[Entry] = &[
         &[],
         Act::ToggleAudioScrubbing,
     ),
+    item("Dip Music Under Voice", &[], Act::DipMusic),
+    item("Remove Voice Dip", &[], Act::RemoveVoiceDip),
     sub(
         "Auto Align Clips",
         &[
@@ -1924,6 +1928,11 @@ pub(crate) const EFFECTS: &[Entry] = &[
                         &[],
                         Act::AddEffect(EffectKind::Sparkle),
                     ),
+                    item(
+                        "Storm Flash",
+                        &[],
+                        Act::AddEffect(EffectKind::StormFlash),
+                    ),
                 ],
             ),
             sub(
@@ -1943,6 +1952,11 @@ pub(crate) const EFFECTS: &[Entry] = &[
                         "Zoom Punch",
                         &[],
                         Act::AddEffect(EffectKind::ZoomPunch),
+                    ),
+                    item(
+                        "Downbeat Jolt",
+                        &[],
+                        Act::AddEffect(EffectKind::DownbeatJolt),
                     ),
                 ],
             ),
@@ -2060,11 +2074,21 @@ pub(crate) const EFFECTS: &[Entry] = &[
                         &[],
                         Act::AddGenerator(GeneratorKind::EbuBars),
                     ),
+                    item(
+                        "Studio Bars",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::StudioBars),
+                    ),
                     item("Grey Ramp", &[], Act::AddGenerator(GeneratorKind::GreyRamp)),
                     item(
                         "Grey Scale",
                         &[],
                         Act::AddGenerator(GeneratorKind::GreyScale),
+                    ),
+                    item(
+                        "Tenfold Grey",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::TenfoldGrey),
                     ),
                     item(
                         "100 mV Steps",
