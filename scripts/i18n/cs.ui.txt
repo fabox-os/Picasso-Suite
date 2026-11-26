@@ -38,14 +38,14 @@ Entire Timeline|Celá osa
 Estimated File Size|Velikost
 Every|Každých
 Export Video|Export videa
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Název souboru
 Format|Formát
 Frame rate|Snímky/s
 Frame reordering|Řazení snímků
 Full Frames|Celé snímky
 Full Screen|Celá obrazovka
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generátor

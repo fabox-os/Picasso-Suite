@@ -47,7 +47,7 @@ Estimated File Size|Tamaño estimado
 Every|Cada
 Every media file is where the project says it is.|Todos los medios están donde indica el proyecto.
 Export Video|Exportar vídeo
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Nombre
 Filters|Filtros
 Format|Formato
@@ -56,7 +56,7 @@ Frame reordering|Reorden. fotog.
 Free software under the GPL, version 3 or later.|Software libre bajo la GPL, versión 3 o posterior.
 Full Frames|Completos
 Full Screen|Pant. compl.
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gan.
 Gamma|Gamma
 Generator|Generador

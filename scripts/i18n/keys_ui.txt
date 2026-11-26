@@ -38,14 +38,14 @@ Entire Timeline
 Estimated File Size
 Every
 Export Video
-Fairlight
+Decibel
 File Name
 Format
 Frame rate
 Frame reordering
 Full Frames
 Full Screen
-Fusion
+Spectra
 Gain
 Gamma
 Generator

@@ -38,14 +38,14 @@ Entire Timeline|Visa līnija
 Estimated File Size|Izmērs
 Every|Katru
 Export Video|Eksportēt video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Faila nosaukums
 Format|Formāts
 Frame rate|Kadri/s
 Frame reordering|Pārkārtošana
 Full Frames|Pilni kadri
 Full Screen|Pilns ekrāns
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Ģenerators

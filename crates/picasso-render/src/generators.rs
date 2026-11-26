@@ -62,6 +62,57 @@ const EBU_BARS: [[u8; 3]; 8] = [
     [0, 0, 0],
 ];
 
+/// The SMPTE bars of ECR 1-1978 at (`u`, `v`) from 0 to 1: seven 75 % bars over the top two
+/// thirds, a strip of reversed bars (blue, black, magenta, black, cyan, black, white) down to
+/// three quarters, then -I, white, +Q and black, and the PLUGE (black, 4 % and 8 % above it) at
+/// the bottom. Adapted from the pattern in KinoKlip 1.14.2 by SeniorMatt (GPL-3.0-or-later).
+fn studio_bars(u: f32, v: f32) -> [u8; 4] {
+    const TOP: [[u8; 3]; 7] = [
+        [191, 191, 191],
+        [191, 191, 0],
+        [0, 191, 191],
+        [0, 191, 0],
+        [191, 0, 191],
+        [191, 0, 0],
+        [0, 0, 191],
+    ];
+    const MIDDLE: [[u8; 3]; 7] = [
+        [0, 0, 191],
+        [0, 0, 0],
+        [191, 0, 191],
+        [0, 0, 0],
+        [0, 191, 191],
+        [0, 0, 0],
+        [191, 191, 191],
+    ];
+    let (u, v) = (u.clamp(0.0, 0.999_999), v.clamp(0.0, 0.999_999));
+    let bar = (u * 7.0) as usize;
+    let c = if v < 2.0 / 3.0 {
+        TOP[bar]
+    } else if v < 0.75 {
+        MIDDLE[bar]
+    } else {
+        // In bars: 1.25 each of -I, white, +Q and black, then the PLUGE in thirds of a bar.
+        let x = u * 7.0;
+        if x < 1.25 {
+            [0, 33, 76]
+        } else if x < 2.5 {
+            [255, 255, 255]
+        } else if x < 3.75 {
+            [50, 0, 106]
+        } else if x < 5.0 + 1.0 / 3.0 {
+            [0, 0, 0]
+        } else if x < 5.0 + 2.0 / 3.0 {
+            [10, 10, 10]
+        } else if x < 6.0 {
+            [20, 20, 20]
+        } else {
+            [0, 0, 0]
+        }
+    };
+    [c[0], c[1], c[2], 255]
+}
+
 fn bar_of(table: &[[u8; 3]; 8], u: f32) -> [u8; 4] {
     rgb(table[((u * 8.0) as usize).min(7)])
 }
@@ -428,8 +479,10 @@ pub(crate) fn draw(
             }
             GeneratorKind::FullColorBars => bar_of(&FULL_BARS, u),
             GeneratorKind::EbuBars => bar_of(&EBU_BARS, u),
+            GeneratorKind::StudioBars => studio_bars(u, v),
             GeneratorKind::GreyRamp => grey(u),
             GeneratorKind::GreyScale => grey(((u * 11.0).floor().min(10.0)) / 10.0),
+            GeneratorKind::TenfoldGrey => grey(((u * 10.0).floor().min(9.0)) / 9.0),
             GeneratorKind::Steps100mV => grey(((u * 8.0).floor().min(7.0)) / 7.0),
             GeneratorKind::YcbcrRamp => ycbcr_ramp(((v * 3.0) as usize).min(2), u),
             GeneratorKind::Bt2111HlgNarrow
@@ -599,6 +652,37 @@ mod tests {
         assert_eq!(px(&out, w, w - 2, 5), [0, 0, 0, 255]);
         let ebu = render(GeneratorKind::EbuBars, (w, 10), 0);
         assert_eq!(px(&ebu, w, 25, 5), [191, 191, 0, 255]);
+    }
+
+    #[test]
+    fn studio_bars_have_three_bands_and_the_pluge() {
+        let (w, h) = (700, 120);
+        let out = render(GeneratorKind::StudioBars, (w, h), 0);
+        // Top: seven bars of 75 %, white first; the middle strip is reversed; the bottom has
+        // -I, white, +Q and black.
+        assert_eq!(px(&out, w, 50, 20), [191, 191, 191, 255]);
+        assert_eq!(px(&out, w, 150, 20), [191, 191, 0, 255]);
+        assert_eq!(px(&out, w, 50, 85), [0, 0, 191, 255]);
+        assert_eq!(px(&out, w, 650, 85), [191, 191, 191, 255]);
+        assert_eq!(px(&out, w, 50, 110), [0, 33, 76, 255]);
+        assert_eq!(px(&out, w, 200, 110), [255, 255, 255, 255]);
+        assert_eq!(px(&out, w, 350, 110), [50, 0, 106, 255]);
+        // The PLUGE: black, then 4 % and 8 % above it, then black again.
+        assert_eq!(px(&out, w, 520, 110), [0, 0, 0, 255]);
+        assert_eq!(px(&out, w, 550, 110), [10, 10, 10, 255]);
+        assert_eq!(px(&out, w, 590, 110), [20, 20, 20, 255]);
+        assert_eq!(px(&out, w, 690, 110), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn the_tenfold_grey_has_ten_equal_steps_from_black_to_white() {
+        let w = 1000;
+        let out = render(GeneratorKind::TenfoldGrey, (w, 4), 0);
+        assert_eq!(px(&out, w, 10, 1)[0], 0);
+        assert_eq!(px(&out, w, w - 10, 1)[0], 255);
+        let levels: std::collections::BTreeSet<u8> = (0..w).map(|x| px(&out, w, x, 1)[0]).collect();
+        assert_eq!(levels.len(), 10);
+        assert_eq!(px(&out, w, 450, 1)[0], byte(4.0 / 9.0));
     }
 
     #[test]

@@ -303,6 +303,12 @@ pub enum Command {
         clip: ClipId,
         audio: ClipAudio,
     },
+    /// Sets (or, with `None`, takes away) the voice dip of a clip's sound: where it is taken down,
+    /// in frames of the timeline.
+    SetVoiceDip {
+        clip: ClipId,
+        voice_dip: Option<crate::VoiceDip>,
+    },
     /// Sets what a track adds to the mix: a gain in decibels and a pan from -1 to 1.
     SetTrackMix {
         track: TrackId,
@@ -579,6 +585,7 @@ impl Command {
             Self::SlipClip { .. } => "clip.slip",
             Self::SlideClip { .. } => "clip.slide",
             Self::SetClipAudio { .. } => "clip.set_audio",
+            Self::SetVoiceDip { .. } => "clip.set_voice_dip",
             Self::SetTrackMix { .. } => "track.set_mix",
             Self::PasteClip { .. } => "clip.paste",
             Self::SetReverse { .. } => "clip.set_reverse",
@@ -674,6 +681,7 @@ impl Command {
             Self::SlipClip { .. } => "Slip clip",
             Self::SlideClip { .. } => "Slide clip",
             Self::SetClipAudio { .. } => "Clip audio",
+            Self::SetVoiceDip { .. } => "Voice dip",
             Self::SetTrackMix { .. } => "Track mix",
             Self::PasteClip { .. } => "Paste clip",
             Self::SetReverse { .. } => "Reverse clip",
@@ -1561,6 +1569,26 @@ impl Command {
                 }
                 Ok(Outcome::Nothing)
             }
+            Self::SetVoiceDip { clip, voice_dip } => {
+                // Like the clip's gain, it can change on a locked track.
+                let (ti, ci) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+                let voice_dip = voice_dip.map(crate::VoiceDip::sanitized).filter(|d| !d.dips.is_empty());
+                // A picture whose sound has a linked clip of its own passes it on to that clip,
+                // the one that is heard.
+                let mut targets = vec![(ti, ci)];
+                if !p.tracks[ti].clips[ci].sound {
+                    targets.extend(
+                        p.linked_to(clip)
+                            .into_iter()
+                            .filter(|id| p.clip(*id).is_some_and(|(_, c)| c.sound))
+                            .filter_map(|id| p.locate(id)),
+                    );
+                }
+                for (ti, ci) in targets {
+                    p.tracks[ti].clips[ci].voice_dip = voice_dip.clone();
+                }
+                Ok(Outcome::Nothing)
+            }
             Self::SetTrackMix {
                 track,
                 gain_db,
@@ -1663,6 +1691,7 @@ impl Command {
                     effects: Vec::new(),
                     stabilization: crate::StabilizationSettings::default(),
                     tracking_data: Vec::new(),
+                    voice_dip: None,
                 };
                 if let Some(t) = p.track_mut(track) {
                     t.clips.push(clip);
@@ -2073,6 +2102,7 @@ fn plain_clip(id: ClipId, media: MediaId, name: String, start: u64, duration: u6
         effects: Vec::new(),
         stabilization: crate::StabilizationSettings::default(),
         tracking_data: Vec::new(),
+        voice_dip: None,
     }
 }
 
@@ -2168,6 +2198,7 @@ fn new_clip(
         effects: Vec::new(),
         stabilization: crate::StabilizationSettings::default(),
         tracking_data: Vec::new(),
+        voice_dip: None,
     })
 }
 
@@ -4342,6 +4373,7 @@ mod tests {
                 gain_db: 500.0,
                 fade_in: 80,
                 fade_out: 80,
+                ..ClipAudio::default()
             },
         }
         .apply(&mut p)
@@ -4356,6 +4388,7 @@ mod tests {
                 gain_db: f32::NAN,
                 fade_in: 0,
                 fade_out: 0,
+                ..ClipAudio::default()
             },
         }
         .apply(&mut p)
@@ -4375,6 +4408,70 @@ mod tests {
     }
 
     #[test]
+    fn the_fade_curve_is_kept_saved_only_when_it_is_not_linear_and_survives_a_split() {
+        let (mut p, _, _, [a, ..]) = demo();
+        let audio = ClipAudio {
+            fade_in: 10,
+            fade_out: 10,
+            fade_curve: crate::FadeCurve::Silk,
+            ..ClipAudio::default()
+        };
+        Command::SetClipAudio { clip: a, audio }.apply(&mut p).unwrap();
+        assert_eq!(p.clip(a).unwrap().1.audio.fade_curve, crate::FadeCurve::Silk);
+        // A linear fade is not written to the file, so old files read the same way as new ones.
+        let linear = serde_json::to_string(&ClipAudio::default()).unwrap();
+        assert!(!linear.contains("fade_curve"), "{linear}");
+        let smooth = serde_json::to_string(&audio).unwrap();
+        assert!(smooth.contains("Silk"), "{smooth}");
+        assert_eq!(serde_json::from_str::<ClipAudio>(&smooth).unwrap(), audio);
+        assert_eq!(
+            serde_json::from_str::<ClipAudio>("{\"gain_db\":0.0,\"fade_in\":0,\"fade_out\":0}")
+                .unwrap()
+                .fade_curve,
+            crate::FadeCurve::Straight
+        );
+        // Cutting the clip keeps the shape on both halves.
+        let Outcome::Split(left, right) = (Command::Split { clip: a, at: 40 }).apply(&mut p).unwrap() else {
+            panic!()
+        };
+        for half in [left, right] {
+            assert_eq!(p.clip(half).unwrap().1.audio.fade_curve, crate::FadeCurve::Silk);
+        }
+    }
+
+    #[test]
+    fn a_voice_dip_in_a_file_is_put_in_order_and_bounded_when_it_loads() {
+        let (mut p, _, _, [a, ..]) = demo();
+        // What a damaged or hostile file could hold: far too many dips, out of order, one that
+        // starts past any clip, an end that is before its start, a level above zero (JSON cannot hold a NaN, so such a file is refused whole).
+        let mut dips: Vec<(u64, u64)> = (0..50_000u64).rev().map(|i| (i * 10, i * 10 + 3)).collect();
+        dips.push((u64::MAX - 5, u64::MAX));
+        dips.push((9, 4));
+        p.tracks[0].clips.iter_mut().find(|c| c.id == a).unwrap().voice_dip = Some(crate::VoiceDip {
+            dips,
+            reduce_db: 50.0,
+            attack: u64::MAX,
+            release: 3,
+        });
+        let loaded = Project::from_json(&p.to_json().unwrap()).unwrap();
+        let dip = loaded.clip(a).unwrap().1.voice_dip.clone().expect("kept");
+        assert!(dip.dips.len() <= crate::voice_dip::MAX_DIPS, "{}", dip.dips.len());
+        assert!(dip.dips.windows(2).all(|w| w[0].1 <= w[1].0), "in order and apart");
+        assert!(dip.dips.iter().all(|d| d.1 > d.0 && d.1 <= crate::voice_dip::MAX_DIP_FRAME));
+        assert_eq!(dip.reduce_db, 0.0);
+        assert!(dip.attack <= 1 << 20);
+        // A voice dip with nothing left in it is not kept.
+        p.tracks[0].clips.iter_mut().find(|c| c.id == a).unwrap().voice_dip = Some(crate::VoiceDip {
+            dips: vec![(7, 7), (9, 4)],
+            reduce_db: -6.0,
+            attack: 0,
+            release: 0,
+        });
+        let loaded = Project::from_json(&p.to_json().unwrap()).unwrap();
+        assert!(loaded.clip(a).unwrap().1.voice_dip.is_none());
+    }
+
+    #[test]
     fn splitting_keeps_each_fade_with_its_end() {
         let (mut p, _, _, [a, ..]) = demo();
         Command::SetClipAudio {
@@ -4383,6 +4480,7 @@ mod tests {
                 gain_db: -3.0,
                 fade_in: 10,
                 fade_out: 20,
+                ..ClipAudio::default()
             },
         }
         .apply(&mut p)
@@ -5879,6 +5977,7 @@ mod tests {
             gain_db: -6.0,
             fade_in: 5,
             fade_out: 0,
+            ..ClipAudio::default()
         };
         Command::SetClipAudio {
             clip: picture,

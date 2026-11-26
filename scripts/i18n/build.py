@@ -86,7 +86,7 @@ def width(text):
 ROOMY = {'Color Bars', 'Half', 'Eighth', 'Teal', 'Default', 'Off'}
 # The page tabs along the bottom: centred on a tab 100 px wide, so a name may grow a little to both sides
 # but is kept near the English (a long word beside short ones looks wrong).
-TABS = {'Media', 'Photo', 'Cut', 'Edit', 'Fusion', 'Color', 'Fairlight', 'Deliver'}
+TABS = {'Media', 'Photo', 'Cut', 'Edit', 'Spectra', 'Color', 'Decibel', 'Deliver'}
 
 
 DIALOG = set((HERE / 'keys_dialogs.txt').read_text(encoding='utf-8').split(chr(10)))

@@ -2395,7 +2395,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "picasso-aaf"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "cfb",
  "picasso-core",
@@ -2404,7 +2404,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-asr"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-audio"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "cpal",
  "picasso-core",
@@ -2427,14 +2427,14 @@ dependencies = [
 
 [[package]]
 name = "picasso-bridge"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "picasso-drp",
 ]
 
 [[package]]
 name = "picasso-color"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2442,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-core"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "picasso-color",
  "quick-xml",
@@ -2454,7 +2454,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-decode"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "ffmpeg-next",
  "picasso-color",
@@ -2464,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-drp"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "flate2",
  "picasso-color",
@@ -2478,7 +2478,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-export"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "ffmpeg-next",
  "picasso-audio",
@@ -2491,7 +2491,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-media"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "picasso-decode",
  "rusqlite",
@@ -2500,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-render"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "ab_glyph",
  "image",
@@ -2510,7 +2510,7 @@ dependencies = [
 
 [[package]]
 name = "picasso-suite"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "eframe",
  "image",
@@ -2527,11 +2527,11 @@ dependencies = [
 
 [[package]]
 name = "picasso-track"
-version = "0.8.1"
+version = "0.9.0"
 
 [[package]]
 name = "picasso-ui"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "egui",
  "image",

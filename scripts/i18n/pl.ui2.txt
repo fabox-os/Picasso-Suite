@@ -39,7 +39,7 @@ Entire Timeline|Cała oś czasu
 Estimated File Size|Szac. rozmiar
 Every|Co
 Export Video|Eksport wideo
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Nazwa
 Filters|Filtry
 Format|Format
@@ -47,7 +47,7 @@ Frame rate|Klatki/s
 Frame reordering|Kolejn. klatek
 Full Frames|Pełne klatki
 Full Screen|Pełny ekran
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

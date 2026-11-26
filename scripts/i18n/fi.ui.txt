@@ -38,14 +38,14 @@ Entire Timeline|Koko aikajana
 Estimated File Size|Tiedostokoko
 Every|Joka
 Export Video|Vie video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Tiedostonimi
 Format|Muoto
 Frame rate|Kuvataajuus
 Frame reordering|Järjestys
 Full Frames|Täydet kuvat
 Full Screen|Koko näyttö
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generaattori

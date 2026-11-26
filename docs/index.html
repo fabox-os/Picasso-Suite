@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>Picasso Suite — an open-source video editor in Rust</title>
-<meta name="description" content="Picasso Suite is a cross-platform video editor written in Rust, laid out like DaVinci Resolve: Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages. Windows, Linux and macOS. Free and open source.">
+<meta name="description" content="Picasso Suite is a cross-platform video editor written in Rust, laid out like DaVinci Resolve: Media, Photo, Cut, Edit, Spectra, Color, Decibel and Deliver pages. Windows, Linux and macOS. Free and open source.">
 <meta property="og:title" content="Picasso Suite — an open-source video editor in Rust">
-<meta property="og:description" content="Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, in pure Rust. Windows, Linux and macOS.">
+<meta property="og:description" content="Media, Photo, Cut, Edit, Spectra, Color, Decibel and Deliver pages, in pure Rust. Windows, Linux and macOS.">
 <meta property="og:image" content="https://fabox-os.github.io/Picasso-Suite/logo.webp">
 <link rel="icon" type="image/png" href="icon.png">
 <style>
@@ -253,9 +253,9 @@ footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-heig
 <header class="hero" id="top">
   <div class="wrap">
     <img class="logo" src="logo.webp" alt="Picasso Suite logo: a cubist face beside a painter's palette and brush" width="132" height="132">
-    <div class="badge"><b>v<span data-version>0.8.1</span></b> Open source · GPL-3.0-or-later</div>
+    <div class="badge"><b>v<span data-version>0.9.0</span></b> Open source · GPL-3.0-or-later</div>
     <h1>Cut. Color. Mix.<br><span class="spectrum">Deliver.</span></h1>
-    <p class="lead"><strong>Picasso Suite</strong> is a cross-platform video editor written in Rust, laid out like DaVinci Resolve: Media, Photo, Cut, Edit, Fusion, Color, Fairlight and Deliver pages, on Windows, Linux and macOS. FFmpeg comes with every package.</p>
+    <p class="lead"><strong>Picasso Suite</strong> is a cross-platform video editor written in Rust, laid out like DaVinci Resolve: Media, Photo, Cut, Edit, Spectra, Color, Decibel and Deliver pages, on Windows, Linux and macOS. FFmpeg comes with every package.</p>
     <div class="actions">
       <a class="btn primary" href="#download">⬇ Download Picasso Suite</a>
       <a class="btn" href="https://github.com/fabox-os/Picasso-Suite">★ View on GitHub</a>
@@ -292,7 +292,7 @@ footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-heig
         <p>Serial, parallel and layer nodes; lift, gamma, gain and offset wheels; custom curves (Y, R, G, B, intensity and soft clip); qualifier and power windows; LUTs; gallery stills; parade, waveform, vectorscope and histogram.</p>
       </article>
       <article class="card" style="--c: var(--teal)">
-        <div class="tag">FAIRLIGHT</div>
+        <div class="tag">DECIBEL</div>
         <h3>Audio mixing</h3>
         <p>Per-track EQ and compressor, meters, loudness (BS.1770), recording from the microphone, voice-over, Bounce Mix to Track and Bounce Selected Tracks, and audio scrubbing.</p>
       </article>
@@ -357,16 +357,16 @@ footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-heig
         <figcaption><b>Edit</b> — source and timeline viewers, the toolbar, and video and audio tracks with thumbnails and waveforms.</figcaption>
       </figure>
       <figure>
-        <a href="screenshots/0.2.0/fusion.webp"><img loading="lazy" src="screenshots/0.2.0/fusion.webp" width="2000" height="1125" alt="The Fusion page"></a>
-        <figcaption><b>Fusion</b> — the clip's MediaIn and MediaOut nodes, the viewer, the frame ruler and the inspector.</figcaption>
+        <a href="screenshots/0.2.0/fusion.webp"><img loading="lazy" src="screenshots/0.2.0/fusion.webp" width="2000" height="1125" alt="The Spectra page"></a>
+        <figcaption><b>Spectra</b> — the clip's MediaIn and MediaOut nodes, the viewer, the frame ruler and the inspector.</figcaption>
       </figure>
       <figure>
         <a href="screenshots/0.2.0/color.webp"><img loading="lazy" src="screenshots/0.2.0/color.webp" width="2000" height="1125" alt="The Color page"></a>
         <figcaption><b>Color</b> — clip thumbnails, the node graph, color wheels, curves with a live histogram and RGB parade scopes.</figcaption>
       </figure>
       <figure>
-        <a href="screenshots/0.2.0/fairlight.webp"><img loading="lazy" src="screenshots/0.2.0/fairlight.webp" width="2000" height="1125" alt="The Fairlight page"></a>
-        <figcaption><b>Fairlight</b> — audio tracks with waveforms, track and bus meters, loudness and the mixer.</figcaption>
+        <a href="screenshots/0.2.0/fairlight.webp"><img loading="lazy" src="screenshots/0.2.0/fairlight.webp" width="2000" height="1125" alt="The Decibel page"></a>
+        <figcaption><b>Decibel</b> — audio tracks with waveforms, track and bus meters, loudness and the mixer.</figcaption>
       </figure>
       <figure>
         <a href="screenshots/0.2.0/deliver.webp"><img loading="lazy" src="screenshots/0.2.0/deliver.webp" width="2000" height="1125" alt="The Deliver page"></a>
@@ -454,14 +454,14 @@ footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-heig
     <p class="sub">Every entry of every menu is counted, and the ones that are not made yet are shown disabled. The numbers come from the repository and change with each release.</p>
     <div class="meters">
       <div class="meter">
-        <div class="num">95.41%</div>
-        <div class="of">of the menu entries work (603 of 632)</div>
-        <div class="track"><i style="width:95.41%"></i></div>
+        <div class="num">95.45%</div>
+        <div class="of">of the menu entries work (609 of 638)</div>
+        <div class="track"><i style="width:95.45%"></i></div>
       </div>
       <div class="meter">
-        <div class="num">77.93%</div>
-        <div class="of">of the roadmap is done (113 of 145 items)</div>
-        <div class="track"><i style="width:77.93%"></i></div>
+        <div class="num">76.77%</div>
+        <div class="of">of the roadmap is done (119 of 155 items)</div>
+        <div class="track"><i style="width:76.77%"></i></div>
       </div>
     </div>
     <p class="status-text">The to-do items on the roadmap are bigger than the done ones, so the share looks better than the work left. See <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/Menu-Status.md">Menu-Status.md</a> for each menu entry and the <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/ROADMAP.md">roadmap</a> for what is next. Every release's <a href="https://github.com/fabox-os/Picasso-Suite/blob/main/CHANGELOG.md">changelog</a> lists what was tested and what was not.</p>
@@ -472,7 +472,7 @@ footer .legal { max-width: 820px; margin: 26px 0 0; font-size: 12.5px; line-heig
   <div class="wrap">
     <div class="center">
       <div class="eyebrow">Download</div>
-      <h2>Get Picasso Suite <span data-version-text>0.8.1</span>.</h2>
+      <h2>Get Picasso Suite <span data-version-text>0.9.0</span>.</h2>
       <p class="sub">Prebuilt packages with FFmpeg bundled. Free and open source under the GPL.</p>
     </div>
     <div class="os">

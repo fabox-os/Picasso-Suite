@@ -39,7 +39,7 @@ Entire Timeline|Hele tijdlijn
 Estimated File Size|Geschatte grootte
 Every|Elke
 Export Video|Videoexport
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Naam
 Filters|Filters
 Format|Formaat
@@ -47,7 +47,7 @@ Frame rate|Framerate
 Frame reordering|Frames herordenen
 Full Frames|Hele frames
 Full Screen|Volledig
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

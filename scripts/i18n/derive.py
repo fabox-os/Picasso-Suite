@@ -12,7 +12,7 @@ SR = BS + [('vrijeme', 'vreme'), ('Vrijeme', 'Vreme'), ('Sljedeći', 'Sledeći')
            ('Prostor', 'Prostor'), ('Cijel', 'Cel'), ('cijel', 'cel'), ('Pohrana', 'Skladište'), ('riječi', 'reči'),
            ('Riječi', 'Reči'), ('Ključne r.', 'Ključne r.'), ('Nema što vidjeti', 'Nema šta da se vidi'), ('Pomoć', 'Pomoć'),
            ('Ponovno', 'Ponovo'), ('ponovno', 'ponovo'), ('Ponovo', 'Ponovo'), ('Izlaz', 'Izlaz'), ('Isporuka', 'Isporuka')]
-KEEP = set('''Gain Gamma Master Pan Lift Spline Scope Scopes Scopeovi scopeove scopeovi Sat Temp Tint Fairlight Fusion Picasso Suite
+KEEP = set('''Gain Gamma Master Pan Lift Spline Scope Scopes Scopeovi scopeove scopeovi Sat Temp Tint Decibel Spectra Picasso Suite
 OpenFX Cinemascope visionOS Flat Pass Proxy proxy Parade LUT EQ ADR FX XML EDL AAF Rust Windows Linux macOS Explorer Exploreru
 timecode timecodea timecodeu Timecode Render render Bounce bounce Slip Slide Ripple ripple Pivot Soft Clip Esc GPL cache cachea
 debayer Debayer multicam Multicam Lightbox still stillova stillove Still Stillova Reset reset Auto Jog jog scrubbing Scrubbing

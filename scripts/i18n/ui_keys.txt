@@ -46,7 +46,7 @@ Estimated File Size
 Every
 Every media file is where the project says it is.
 Export Video
-Fairlight
+Decibel
 File Name
 Filters
 Format
@@ -55,7 +55,7 @@ Frame reordering
 Free software under the GPL, version 3 or later.
 Full Frames
 Full Screen
-Fusion
+Spectra
 Gain
 Gamma
 Generator

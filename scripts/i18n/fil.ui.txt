@@ -38,14 +38,14 @@ Entire Timeline|Buong timeline
 Estimated File Size|Laki
 Every|Bawat
 Export Video|I-export video
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Pangalan ng file
 Format|Format
 Frame rate|Frame/s
 Frame reordering|Reordering
 Full Frames|Buong frame
 Full Screen|Full screen
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

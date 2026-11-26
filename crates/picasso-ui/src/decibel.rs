@@ -265,7 +265,7 @@ fn fill_of(level: f32) -> f32 {
 
 impl StudioApp {
     /// The first toolbar of the Audio page.
-    pub(crate) fn fairlight_toolbar1(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen, y: f32) {
+    pub(crate) fn decibel_toolbar1(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen, y: f32) {
         // (x in reference pixels, icon, hint)
         let left: [(f32, Icon, &str); 6] = [
             (45.0, Icon::PhotoMusic, "Import media"),
@@ -319,7 +319,7 @@ impl StudioApp {
         }
     }
 
-    pub(crate) fn fairlight_page(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen) {
+    pub(crate) fn decibel_page(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen) {
         let painter = ui.painter().clone();
         let bottom_line = s.h - 46.8;
         // The dividers: under the console (everything below moves with it, and the timeline
@@ -440,7 +440,7 @@ impl StudioApp {
         // ---- the transport row (413 to 470)
         c.band(3.0, 413.0, 2000.0, 470.0, HEADER);
         c.band(3.0, 411.0, 2000.0, 413.0, LINE);
-        self.fairlight_transport(ui, &c);
+        self.decibel_transport(ui, &c);
 
         // ---- the tool row (470 to 552) and the timecodes on its left
         c.band(3.0, 470.0, 2000.0, 552.0, HEADER);
@@ -467,7 +467,7 @@ impl StudioApp {
         c.ring(60.0, 589.0, 8.0, 1.1, DIM);
         c.path(&[(60.0, 584.0), (60.0, 589.0), (64.0, 591.0)], 1.1, DIM);
         c.vline(358.0, 470.0, 1100.0, LINE);
-        self.fairlight_tools(ui, &c);
+        self.decibel_tools(ui, &c);
 
         // ---- the timeline (552 to the bottom) and the mixer on its right
         let tl = Rect::from_min_max(
@@ -475,9 +475,9 @@ impl StudioApp {
             Pos2::new(c.at(1783.0, 600.0).x, bottom_line),
         );
         c.band(3.0, 612.0, 358.0, 1100.0, Color32::from_rgb(30, 29, 33));
-        self.fairlight_timeline(ui, ctx, &c, tl);
-        self.fairlight_headers(ui, ctx, &c);
-        self.fairlight_mixer(ui, ctx, &c, bottom_line);
+        self.decibel_timeline(ui, ctx, &c, tl);
+        self.decibel_headers(ui, ctx, &c);
+        self.decibel_mixer(ui, ctx, &c, bottom_line);
         self.dividers(ui, s, &splits);
     }
 
@@ -733,7 +733,7 @@ impl StudioApp {
         }
     }
 
-    fn fairlight_transport(&mut self, ui: &mut Ui, c: &Canvas) {
+    fn decibel_transport(&mut self, ui: &mut Ui, c: &Canvas) {
         let tc = self.tc(self.playhead as i64);
         c.text(
             95.0,
@@ -939,7 +939,7 @@ impl StudioApp {
         }
     }
 
-    fn fairlight_tools(&mut self, ui: &mut Ui, c: &Canvas) {
+    fn decibel_tools(&mut self, ui: &mut Ui, c: &Canvas) {
         let g = TOOL;
         // The tool buttons answer clicks with a note; they are drawn here.
         let mut planned: Option<&str> = None;
@@ -1063,7 +1063,7 @@ impl StudioApp {
         }
     }
 
-    fn fairlight_timeline(&mut self, ui: &mut Ui, ctx: &Context, c: &Canvas, area: Rect) {
+    fn decibel_timeline(&mut self, ui: &mut Ui, ctx: &Context, c: &Canvas, area: Rect) {
         let has_tracks = self
             .project()
             .tracks
@@ -1098,7 +1098,7 @@ impl StudioApp {
 
     /// The headers left of the timeline: each sound track (number, name, level, lock, record,
     /// solo, mute and a meter), then Bus 1.
-    fn fairlight_headers(&mut self, ui: &mut Ui, ctx: &Context, c: &Canvas) {
+    fn decibel_headers(&mut self, ui: &mut Ui, ctx: &Context, c: &Canvas) {
         let tracks: Vec<(usize, picasso_core::TrackId, String, f32, bool, bool)> = self
             .project()
             .tracks
@@ -1281,7 +1281,7 @@ impl StudioApp {
     /// The mixer on the right: Resolve's rows (input, track effects, order, effects, dynamics, EQ,
     /// sends and pan), then the name, the buttons, the level and the fader of each strip. Written
     /// in pixels of Resolve at 1080p.
-    fn fairlight_mixer(&mut self, ui: &mut Ui, ctx: &Context, c: &Canvas, _bottom_line: f32) {
+    fn decibel_mixer(&mut self, ui: &mut Ui, ctx: &Context, c: &Canvas, _bottom_line: f32) {
         let right = 1915.0;
         c.rband(1711.0, 325.0, 1713.0, 1000.0, LINE);
         c.rband(1713.0, 325.0, right + 1.0, 352.0, HEADER);
