@@ -1,8 +1,7 @@
 //! The curve of a fade: how fast the sound comes in or goes out over the length of the fade.
 //!
 //! Adapted from the audio crossfade curves of KinoKlip 1.14.2 by SeniorMatt (GPL-3.0-or-later,
-//! <https://github.com/SeniorMatt/kinoklip>), which Drift 0.9.4 by CutWire Studios (GPL-3.0) also
-//! has in another form (linear, smooth, equal power); written again in Rust for Picasso's mixer.
+//! <https://github.com/SeniorMatt/kinoklip>), written again in Rust for Picasso's mixer.
 //! Every curve rises from 0 to 1 over `t` from 0 to 1; a fade out reads it backwards.
 
 use std::f32::consts::{FRAC_PI_2, PI};

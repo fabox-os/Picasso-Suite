@@ -612,13 +612,11 @@ fn saturation(rgba: &mut [u8], w: usize, h: usize, a: f32) {
 }
 
 // ---- storm and beat --------------------------------------------------------------------------
-// Storm Flash and Downbeat Jolt are adapted from the Lightning Sky and Beat Shake effects of
-// Drift 0.9.4 by
-// CutWire Studios (GPL-3.0, https://github.com/CutWire-Studios/Drift), rewritten in Rust to work
-// on the processor.
+// Storm Flash and Downbeat Jolt are adapted from Drift 0.9.4 by CutWire Studios (GPL-3.0,
+// https://github.com/CutWire-Studios/Drift), rewritten in Rust to work on the processor.
 
-/// A number from 0 to 1 from a number, the way the shaders of Drift make one (`fract(sin(p *
-/// 127.1) * 43758.5453)`), in double precision so every machine gets the same answer.
+/// A number from 0 to 1 from a number (`fract(sin(p * 127.1) * 43758.5453)`), in double
+/// precision so every machine gets the same answer.
 fn sin_hash(p: f64) -> f32 {
     let v = (p * 127.1).sin() * 43758.5453;
     (v - v.floor()) as f32
@@ -637,7 +635,7 @@ fn hsv(h: f32, s: f32, v: f32) -> [f32; 3] {
 /// A storm over the top of the picture: a pale blue glow in the sky, and now and then a bolt of
 /// light that wanders down from it. The strength is how bright they are.
 fn storm_flash(rgba: &mut [u8], w: usize, h: usize, a: f32, t: f32) {
-    // The settings Drift starts the effect with.
+    // The settings the effect starts with.
     const FREQUENCY: f32 = 0.4;
     const HUE: f32 = 0.58;
     const FLASH: f32 = 0.5;
@@ -685,7 +683,7 @@ fn storm_flash(rgba: &mut [u8], w: usize, h: usize, a: f32, t: f32) {
 /// The picture shakes, hardest on the beat (one a second, as for Zoom Punch) and then settling:
 /// a little closer in, moved about and turned a few degrees. The strength is how hard.
 fn downbeat_jolt(rgba: &mut [u8], w: usize, h: usize, a: f32, t: f32) {
-    // The settings Drift starts the effect with.
+    // The settings the effect starts with.
     const ROTATION: f32 = 0.35;
     const SEED: f32 = 0.5;
     let a = a * (-5.0 * t.fract()).exp();

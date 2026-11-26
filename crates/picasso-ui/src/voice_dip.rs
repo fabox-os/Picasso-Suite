@@ -1,8 +1,8 @@
 //! Clip > Dip Music Under Voice: finds where there is speech on the other tracks and takes
-//! the sound of the selected clips down there (`picasso_core::voice dip`), with a ramp down before
+//! the sound of the selected clips down there (`picasso_core::voice_dip`), with a ramp down before
 //! the speech and a ramp up after it. Clip > Remove Voice Dip takes it away.
 //!
-//! Adapted from the auto ducking of Drift 0.9.4 by CutWire Studios (GPL-3.0,
+//! Adapted from Drift 0.9.4 by CutWire Studios (GPL-3.0,
 //! <https://github.com/CutWire-Studios/Drift>). Everything on the other tracks that makes sound
 //! counts as speech: the level of the sound decides, not what it is.
 
