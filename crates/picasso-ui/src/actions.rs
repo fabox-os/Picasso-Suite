@@ -13,6 +13,7 @@ use picasso_core::{
 };
 
 use crate::app::{Page, StudioApp};
+use crate::effect_bundle::{library, load_title, load_transition};
 use crate::menu::{self, Act, Entry};
 use crate::menu_extra::RampDialog;
 use crate::platform;
@@ -245,11 +246,24 @@ impl StudioApp {
 
     /// Puts a one-second transition of `kind` on the cut nearest the playhead.
     fn add_transition(&mut self, track: TrackKind, kind: TransitionKind) {
+        self.add_transition_of(track, kind, None);
+    }
+
+    /// Adds a transition at the nearest cut, `frames` long when the caller says (a bundle's
+    /// template), otherwise the project's one-second default.
+    pub(crate) fn add_transition_of(
+        &mut self,
+        track: TrackKind,
+        kind: TransitionKind,
+        frames: Option<u64>,
+    ) {
         let Some(clip) = self.nearest_cut(track, false) else {
             self.fail("there is no cut between two clips that touch");
             return;
         };
-        let frames = self.project().fps.nominal().max(2);
+        let frames = frames
+            .filter(|f| *f > 0)
+            .unwrap_or_else(|| self.project().fps.nominal().max(2));
         self.run(Command::SetTransition {
             clip,
             transition: Some(Transition { kind, frames }),
@@ -279,7 +293,7 @@ impl StudioApp {
         self.add_title_of("Text+", title);
     }
 
-    fn add_title_of(&mut self, name: &str, title: picasso_core::TitleText) {
+    pub(crate) fn add_title_of(&mut self, name: &str, title: picasso_core::TitleText) {
         let start = self.playhead;
         let length = self.project().fps.nominal().max(1) * 5;
         let made = self.session.dispatch_all_then(
@@ -1017,6 +1031,8 @@ impl StudioApp {
             | Act::NormalizeAudio => self.target_clip().is_some(),
             Act::AutoAlignWaveform => self.can_align_by_waveform(),
             Act::MarkBeats => self.can_mark_beats(),
+            Act::DipMusic => self.can_dip_music(),
+            Act::RemoveVoiceDip => self.can_remove_voice_dip(),
             Act::AutoSubtitles => self.can_auto_subtitle(),
             Act::AutoAlignTimecode => {
                 let ids = self.selected_ids();
@@ -1168,6 +1184,8 @@ impl StudioApp {
             Act::AddAudioEffect(kind) => self.add_audio_effect(kind),
             Act::ChooseVideoLayout => self.open_video_layout(),
             Act::MarkBeats => self.mark_beats(),
+            Act::DipMusic => self.dip_music(),
+            Act::RemoveVoiceDip => self.remove_voice_dip(),
             Act::AutoSubtitles => self.open_auto_subtitles(),
             Act::ApplyLook(i) => match (self.target_clip(), picasso_core::effect_looks::LOOKS.get(i)) {
                 (Some(clip), Some(look)) => {
@@ -1551,6 +1569,8 @@ impl StudioApp {
                 ctx.data_mut(|d| d.clear());
                 // The panels' dividers too: they are part of the layout (0.3.0).
                 self.extra.prefs.panels = crate::panels::Panels::default();
+                self.effects_library_open = false;
+                self.effects_library = Default::default();
                 #[cfg(not(test))]
                 self.extra.prefs.save();
                 self.info("The layout was reset");
@@ -1637,6 +1657,7 @@ impl StudioApp {
             Act::ExportXml(premiere) => self.export_xml(ctx, premiere),
             Act::ExportAaf => self.export_aaf(ctx),
             Act::ImportTimeline => self.open_dialog(ctx),
+            Act::ImportEffectBundle => self.bundle_dialog(ctx),
             Act::ExportSubtitles => self.export_subtitles(ctx),
             Act::CreateSubtitleTrack => {
                 self.run(Command::AddTrack {
@@ -1740,6 +1761,53 @@ impl StudioApp {
                             }
                         }
                         ui.separator();
+                        self.draw_entries(ui, ctx, items);
+                    });
+                }
+                // Installed titles from effect bundles, offered directly in the Titles menu.
+                Entry::Sub { label, items } if *label == "Titles" => {
+                    let installed = library().titles;
+                    ui.menu_button(crate::i18n::tr(label), |ui| {
+                        ui.set_min_width(240.0);
+                        for name in &installed {
+                            if ui.button(name).clicked() {
+                                ui.close();
+                                if let Some(title) = load_title(name) {
+                                    self.add_title_of(name, title);
+                                } else {
+                                    self.fail(format!("{name}: the title could not be read"));
+                                }
+                            }
+                        }
+                        if !installed.is_empty() {
+                            ui.separator();
+                        }
+                        self.draw_entries(ui, ctx, items);
+                    });
+                }
+                // Installed transitions from effect bundles, offered directly in the
+                // Video Transitions menu.
+                Entry::Sub { label, items } if *label == "Video Transitions" => {
+                    let installed = library().transitions;
+                    ui.menu_button(crate::i18n::tr(label), |ui| {
+                        ui.set_min_width(240.0);
+                        for name in &installed {
+                            if ui.button(name).clicked() {
+                                ui.close();
+                                if let Some(template) = load_transition(name) {
+                                    self.add_transition_of(
+                                        TrackKind::Video,
+                                        template.kind,
+                                        template.frames,
+                                    );
+                                } else {
+                                    self.fail(format!("{name}: the transition could not be read"));
+                                }
+                            }
+                        }
+                        if !installed.is_empty() {
+                            ui.separator();
+                        }
                         self.draw_entries(ui, ctx, items);
                     });
                 }

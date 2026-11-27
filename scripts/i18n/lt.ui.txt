@@ -38,14 +38,14 @@ Entire Timeline|Visa juosta
 Estimated File Size|Dydis
 Every|Kas
 Export Video|Eksportuoti vaizdo įr.
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Failo pavadinimas
 Format|Formatas
 Frame rate|Kadrų/s
 Frame reordering|Perrikiavimas
 Full Frames|Pilni kadrai
 Full Screen|Visas ekranas
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generatorius

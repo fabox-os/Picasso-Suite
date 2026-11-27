@@ -38,14 +38,14 @@ Entire Timeline|كل الجدول
 Estimated File Size|الحجم المقدّر
 Every|كل
 Export Video|تصدير الفيديو
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|اسم الملف
 Format|الصيغة
 Frame rate|معدل الإطارات
 Frame reordering|إعادة ترتيب الإطارات
 Full Frames|إطارات كاملة
 Full Screen|ملء الشاشة
-Fusion|Fusion
+Spectra|Spectra
 Gain|كسب
 Gamma|غاما
 Generator|مولّد

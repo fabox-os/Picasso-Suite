@@ -189,7 +189,7 @@ Export Project...
 Export Video
 F:\
 FORMAT
-Fairlight
+Decibel
 File
 File Name
 Filters
@@ -202,7 +202,7 @@ Free software under the GPL, version 3 or later.
 Full Frames
 Full HD 1920 x 1080
 Full Screen
-Fusion
+Spectra
 G
 G:\
 Gain

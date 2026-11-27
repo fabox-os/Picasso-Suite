@@ -38,14 +38,14 @@ Entire Timeline|Ganz Zäitlinn
 Estimated File Size|Gréisst
 Every|All
 Export Video|Video exportéieren
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Dateinumm
 Format|Format
 Frame rate|Biller/s
 Frame reordering|Ëmuerdnung
 Full Frames|Ganz Biller
 Full Screen|Vollbild
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

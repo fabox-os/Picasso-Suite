@@ -36,14 +36,14 @@ Entire Timeline|Весь таймлайн
 Estimated File Size|Оценка размера
 Every|Раз в
 Export Video|Эксп. видео
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Имя файла
 Format|Формат
 Frame rate|Кадр/с
 Frame reordering|Порядок кадров
 Full Frames|Полные
 Full Screen|Весь экран
-Fusion|Fusion
+Spectra|Spectra
 Gain|Гейн
 Gamma|Гамма
 Generator|Генератор

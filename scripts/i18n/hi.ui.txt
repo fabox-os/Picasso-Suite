@@ -38,14 +38,14 @@ Entire Timeline|पूरी टाइमलाइन
 Estimated File Size|अनुमानित आकार
 Every|हर
 Export Video|वीडियो निर्यात
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|फ़ाइल नाम
 Format|प्रारूप
 Frame rate|फ़्रेम दर
 Frame reordering|फ़्रेम क्रम
 Full Frames|पूरे फ़्रेम
 Full Screen|फ़ुल स्क्रीन
-Fusion|Fusion
+Spectra|Spectra
 Gain|गेन
 Gamma|गामा
 Generator|जनरेटर

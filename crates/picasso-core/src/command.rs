@@ -303,6 +303,12 @@ pub enum Command {
         clip: ClipId,
         audio: ClipAudio,
     },
+    /// Sets (or, with `None`, takes away) the voice dip of a clip's sound: where it is taken down,
+    /// in frames of the timeline.
+    SetVoiceDip {
+        clip: ClipId,
+        voice_dip: Option<crate::VoiceDip>,
+    },
     /// Sets what a track adds to the mix: a gain in decibels and a pan from -1 to 1.
     SetTrackMix {
         track: TrackId,
@@ -579,6 +585,7 @@ impl Command {
             Self::SlipClip { .. } => "clip.slip",
             Self::SlideClip { .. } => "clip.slide",
             Self::SetClipAudio { .. } => "clip.set_audio",
+            Self::SetVoiceDip { .. } => "clip.set_voice_dip",
             Self::SetTrackMix { .. } => "track.set_mix",
             Self::PasteClip { .. } => "clip.paste",
             Self::SetReverse { .. } => "clip.set_reverse",
@@ -674,6 +681,7 @@ impl Command {
             Self::SlipClip { .. } => "Slip clip",
             Self::SlideClip { .. } => "Slide clip",
             Self::SetClipAudio { .. } => "Clip audio",
+            Self::SetVoiceDip { .. } => "Voice dip",
             Self::SetTrackMix { .. } => "Track mix",
             Self::PasteClip { .. } => "Paste clip",
             Self::SetReverse { .. } => "Reverse clip",
@@ -1561,6 +1569,26 @@ impl Command {
                 }
                 Ok(Outcome::Nothing)
             }
+            Self::SetVoiceDip { clip, voice_dip } => {
+                // Like the clip's gain, it can change on a locked track.
+                let (ti, ci) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+                let voice_dip = voice_dip.map(crate::VoiceDip::sanitized).filter(|d| !d.dips.is_empty());
+                // A picture whose sound has a linked clip of its own passes it on to that clip,
+                // the one that is heard.
+                let mut targets = vec![(ti, ci)];
+                if !p.tracks[ti].clips[ci].sound {
+                    targets.extend(
+                        p.linked_to(clip)
+                            .into_iter()
+                            .filter(|id| p.clip(*id).is_some_and(|(_, c)| c.sound))
+                            .filter_map(|id| p.locate(id)),
+                    );
+                }
+                for (ti, ci) in targets {
+                    p.tracks[ti].clips[ci].voice_dip = voice_dip.clone();
+                }
+                Ok(Outcome::Nothing)
+            }
             Self::SetTrackMix {
                 track,
                 gain_db,
@@ -1663,6 +1691,7 @@ impl Command {
                     effects: Vec::new(),
                     stabilization: crate::StabilizationSettings::default(),
                     tracking_data: Vec::new(),
+                    voice_dip: None,
                 };
                 if let Some(t) = p.track_mut(track) {
                     t.clips.push(clip);
@@ -1864,7 +1893,25 @@ fn shifted(at: u64, from: u64, to: u64) -> Option<u64> {
     u64::try_from(moved).ok()
 }
 
-/// Moves a clip, and its linked clips by the same time on their own tracks.
+/// The 0-based index of `track` among tracks of the same kind.
+fn same_kind_index(p: &Project, track: TrackId) -> Option<usize> {
+    let kind = p.track(track)?.kind;
+    p.tracks.iter()
+        .filter(|t| t.kind == kind)
+        .position(|t| t.id == track)
+}
+
+/// The track at 0-based `index` among tracks of `kind`, or `None` when it does not exist yet.
+fn track_at_kind_index(p: &Project, kind: TrackKind, index: usize) -> Option<TrackId> {
+    p.tracks.iter()
+        .filter(|t| t.kind == kind)
+        .nth(index)
+        .map(|t| t.id)
+}
+
+/// Moves a clip, and its linked clips by the same time and by the same same-kind track delta.
+/// A linked partner whose target track does not exist yet gets one created atomically, so one
+/// Undo moves both clips back and removes the auto-created track.
 fn linked_move(
     p: &mut Project,
     clip: ClipId,
@@ -1876,15 +1923,31 @@ fn linked_move(
         return move_clip(p, clip, track, start);
     }
     let from = p.clip(clip).ok_or(EditError::NoSuchClip)?.1.start;
+    let (src_ti, _) = p.locate(clip).ok_or(EditError::NoSuchClip)?;
+    let src_kind_index = same_kind_index(p, p.tracks[src_ti].id).unwrap_or(0);
+    let dst_kind_index = same_kind_index(p, track).unwrap_or(0);
+    let delta = dst_kind_index as i64 - src_kind_index as i64;
     let mut q = p.clone();
     let out = move_clip(&mut q, clip, track, start)?;
     for id in partners {
-        let (t, c) = q.clip(id).ok_or(EditError::NoSuchClip)?;
-        let (own_track, to) = (
-            t.id,
-            shifted(c.start, from, start).ok_or(EditError::OutOfRange)?,
-        );
-        move_clip(&mut q, id, own_track, to)?;
+        // Copy the values needed before the mutable borrow of AddTrack.
+        let (partner_kind, partner_kind_index, clip_start) = {
+            let (t, c) = q.clip(id).ok_or(EditError::NoSuchClip)?;
+            (
+                t.kind,
+                same_kind_index(&q, t.id).unwrap_or(0),
+                c.start,
+            )
+        };
+        let target_kind_index = (partner_kind_index as i64 + delta).max(0) as usize;
+        let mut target_track = track_at_kind_index(&q, partner_kind, target_kind_index);
+        if target_track.is_none() {
+            Command::AddTrack { kind: partner_kind }.apply(&mut q)?;
+            target_track = track_at_kind_index(&q, partner_kind, target_kind_index);
+        }
+        let target_track = target_track.ok_or(EditError::NoSuchTrack)?;
+        let to = shifted(clip_start, from, start).ok_or(EditError::OutOfRange)?;
+        move_clip(&mut q, id, target_track, to)?;
     }
     *p = q;
     Ok(out)
@@ -2039,6 +2102,7 @@ fn plain_clip(id: ClipId, media: MediaId, name: String, start: u64, duration: u6
         effects: Vec::new(),
         stabilization: crate::StabilizationSettings::default(),
         tracking_data: Vec::new(),
+        voice_dip: None,
     }
 }
 
@@ -2134,6 +2198,7 @@ fn new_clip(
         effects: Vec::new(),
         stabilization: crate::StabilizationSettings::default(),
         tracking_data: Vec::new(),
+        voice_dip: None,
     })
 }
 
@@ -4415,6 +4480,7 @@ mod tests {
                 gain_db: 500.0,
                 fade_in: 80,
                 fade_out: 80,
+                ..ClipAudio::default()
             },
         }
         .apply(&mut p)
@@ -4429,6 +4495,7 @@ mod tests {
                 gain_db: f32::NAN,
                 fade_in: 0,
                 fade_out: 0,
+                ..ClipAudio::default()
             },
         }
         .apply(&mut p)
@@ -4448,6 +4515,70 @@ mod tests {
     }
 
     #[test]
+    fn the_fade_curve_is_kept_saved_only_when_it_is_not_linear_and_survives_a_split() {
+        let (mut p, _, _, [a, ..]) = demo();
+        let audio = ClipAudio {
+            fade_in: 10,
+            fade_out: 10,
+            fade_curve: crate::FadeCurve::Silk,
+            ..ClipAudio::default()
+        };
+        Command::SetClipAudio { clip: a, audio }.apply(&mut p).unwrap();
+        assert_eq!(p.clip(a).unwrap().1.audio.fade_curve, crate::FadeCurve::Silk);
+        // A linear fade is not written to the file, so old files read the same way as new ones.
+        let linear = serde_json::to_string(&ClipAudio::default()).unwrap();
+        assert!(!linear.contains("fade_curve"), "{linear}");
+        let smooth = serde_json::to_string(&audio).unwrap();
+        assert!(smooth.contains("Silk"), "{smooth}");
+        assert_eq!(serde_json::from_str::<ClipAudio>(&smooth).unwrap(), audio);
+        assert_eq!(
+            serde_json::from_str::<ClipAudio>("{\"gain_db\":0.0,\"fade_in\":0,\"fade_out\":0}")
+                .unwrap()
+                .fade_curve,
+            crate::FadeCurve::Straight
+        );
+        // Cutting the clip keeps the shape on both halves.
+        let Outcome::Split(left, right) = (Command::Split { clip: a, at: 40 }).apply(&mut p).unwrap() else {
+            panic!()
+        };
+        for half in [left, right] {
+            assert_eq!(p.clip(half).unwrap().1.audio.fade_curve, crate::FadeCurve::Silk);
+        }
+    }
+
+    #[test]
+    fn a_voice_dip_in_a_file_is_put_in_order_and_bounded_when_it_loads() {
+        let (mut p, _, _, [a, ..]) = demo();
+        // What a damaged or hostile file could hold: far too many dips, out of order, one that
+        // starts past any clip, an end that is before its start, a level above zero (JSON cannot hold a NaN, so such a file is refused whole).
+        let mut dips: Vec<(u64, u64)> = (0..50_000u64).rev().map(|i| (i * 10, i * 10 + 3)).collect();
+        dips.push((u64::MAX - 5, u64::MAX));
+        dips.push((9, 4));
+        p.tracks[0].clips.iter_mut().find(|c| c.id == a).unwrap().voice_dip = Some(crate::VoiceDip {
+            dips,
+            reduce_db: 50.0,
+            attack: u64::MAX,
+            release: 3,
+        });
+        let loaded = Project::from_json(&p.to_json().unwrap()).unwrap();
+        let dip = loaded.clip(a).unwrap().1.voice_dip.clone().expect("kept");
+        assert!(dip.dips.len() <= crate::voice_dip::MAX_DIPS, "{}", dip.dips.len());
+        assert!(dip.dips.windows(2).all(|w| w[0].1 <= w[1].0), "in order and apart");
+        assert!(dip.dips.iter().all(|d| d.1 > d.0 && d.1 <= crate::voice_dip::MAX_DIP_FRAME));
+        assert_eq!(dip.reduce_db, 0.0);
+        assert!(dip.attack <= 1 << 20);
+        // A voice dip with nothing left in it is not kept.
+        p.tracks[0].clips.iter_mut().find(|c| c.id == a).unwrap().voice_dip = Some(crate::VoiceDip {
+            dips: vec![(7, 7), (9, 4)],
+            reduce_db: -6.0,
+            attack: 0,
+            release: 0,
+        });
+        let loaded = Project::from_json(&p.to_json().unwrap()).unwrap();
+        assert!(loaded.clip(a).unwrap().1.voice_dip.is_none());
+    }
+
+    #[test]
     fn splitting_keeps_each_fade_with_its_end() {
         let (mut p, _, _, [a, ..]) = demo();
         Command::SetClipAudio {
@@ -4456,6 +4587,7 @@ mod tests {
                 gain_db: -3.0,
                 fade_in: 10,
                 fade_out: 20,
+                ..ClipAudio::default()
             },
         }
         .apply(&mut p)
@@ -5952,6 +6084,7 @@ mod tests {
             gain_db: -6.0,
             fade_in: 5,
             fade_out: 0,
+            ..ClipAudio::default()
         };
         Command::SetClipAudio {
             clip: picture,
@@ -6012,6 +6145,179 @@ mod tests {
                 start: 10,
             },
         );
+    }
+
+    #[test]
+    fn moving_linked_video_down_auto_creates_audio_track_and_moves_sound() {
+        let (p, picture, sound) = linked();
+        let v1 = p.tracks[0].id;
+        let v2 = p.tracks[1].id;
+        let mut session = crate::session::Session::new(p);
+        session
+            .dispatch(Command::MoveClip {
+                clip: picture,
+                track: v2,
+                start: 10,
+            })
+            .unwrap();
+        let p = session.project();
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            v2,
+            "picture on V2"
+        );
+        let a2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.kind == TrackKind::Audio && t.name == "A2")
+            .expect("A2 was created");
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a2_idx].id,
+            "sound on A2"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 10, "sound at same start");
+        assert_eq!(p.tracks.len(), 4, "V1, V2, A1, A2");
+
+        // One undo restores both clips to V1/A1 and removes A2.
+        assert!(session.undo());
+        let p = session.project();
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            v1,
+            "picture back on V1"
+        );
+        assert_eq!(p.clip(picture).unwrap().1.start, 0, "picture at original start");
+        let a1_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.kind == TrackKind::Audio && t.name == "A1")
+            .expect("A1 still exists");
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a1_idx].id,
+            "sound back on A1"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 0, "sound at original start");
+        assert!(!p.tracks.iter().any(|t| t.name == "A2"), "A2 removed");
+        assert_eq!(p.tracks.len(), 3, "V1, V2, A1");
+    }
+
+    #[test]
+    fn moving_linked_video_up_moves_sound_to_same_relative_track() {
+        let (p, picture, sound) = linked();
+        let v1 = p.tracks[0].id;
+        let v2 = p.tracks[1].id;
+        let mut session = crate::session::Session::new(p);
+        // First move V1 -> V2: A2 created, sound A1 -> A2.
+        session
+            .dispatch(Command::MoveClip {
+                clip: picture,
+                track: v2,
+                start: 10,
+            })
+            .unwrap();
+        let p = session.project();
+        let a2_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "A2")
+            .unwrap();
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a2_idx].id,
+            "sound on A2"
+        );
+        // Now move V2 -> V1: sound A2 -> A1.
+        session
+            .dispatch(Command::MoveClip {
+                clip: picture,
+                track: v1,
+                start: 20,
+            })
+            .unwrap();
+        let p = session.project();
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            v1,
+            "picture back on V1"
+        );
+        assert_eq!(p.clip(picture).unwrap().1.start, 20);
+        let a1_idx = p
+            .tracks
+            .iter()
+            .position(|t| t.name == "A1")
+            .unwrap();
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[a1_idx].id,
+            "sound on A1"
+        );
+        assert_eq!(
+            p.clip(sound).unwrap().1.start,
+            20,
+            "sound at same start"
+        );
+        // A2 still exists as an empty track.
+        assert!(p.tracks.iter().any(|t| t.name == "A2"), "A2 still exists");
+        assert_eq!(p.tracks.len(), 4);
+    }
+
+    #[test]
+    fn linked_selection_off_moves_only_the_dragged_clip() {
+        let (mut p, picture, sound) = linked();
+        Command::SetLinkedSelection { on: false }
+            .apply(&mut p)
+            .unwrap();
+        let v2 = p.tracks[1].id;
+        Command::MoveClip {
+            clip: picture,
+            track: v2,
+            start: 10,
+        }
+        .apply(&mut p)
+        .unwrap();
+        assert_eq!(p.clip(picture).unwrap().0.id, v2, "picture on V2");
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            p.tracks[2].id,
+            "sound still on A1"
+        );
+        assert_eq!(p.clip(sound).unwrap().1.start, 0, "sound at original start");
+        assert_eq!(p.tracks.len(), 3, "no A2 created");
+    }
+
+    #[test]
+    fn locked_audio_track_refuses_linked_move_without_creating_tracks() {
+        let (mut p, picture, sound) = linked();
+        let a1 = p.clip(sound).unwrap().0.id;
+        Command::SetTrackLocked {
+            track: a1,
+            locked: true,
+        }
+        .apply(&mut p)
+        .unwrap();
+        let v2 = p.tracks[1].id;
+        let before = p.clone();
+        refused(
+            &mut p,
+            Command::MoveClip {
+                clip: picture,
+                track: v2,
+                start: 10,
+            },
+        );
+        // Nothing changed: no A2 created, clips stay put.
+        assert_eq!(p.tracks.len(), before.tracks.len());
+        assert_eq!(
+            p.clip(picture).unwrap().0.id,
+            before.clip(picture).unwrap().0.id
+        );
+        assert_eq!(
+            p.clip(sound).unwrap().0.id,
+            before.clip(sound).unwrap().0.id
+        );
+        assert!(!p.tracks.iter().any(|t| t.name == "A2"), "no A2 created");
     }
 
     #[test]

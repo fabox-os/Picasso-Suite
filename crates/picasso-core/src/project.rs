@@ -348,6 +348,13 @@ pub struct ClipAudio {
     pub fade_in: u64,
     /// Frames over which it falls to silence at the end.
     pub fade_out: u64,
+    /// How the two fades go: straight, even power, midway, late or early rise, silk.
+    #[serde(default, skip_serializing_if = "is_straight")]
+    pub fade_curve: crate::FadeCurve,
+}
+
+fn is_straight(shape: &crate::FadeCurve) -> bool {
+    *shape == crate::FadeCurve::Straight
 }
 
 impl ClipAudio {
@@ -365,6 +372,7 @@ impl ClipAudio {
             gain_db,
             fade_in,
             fade_out,
+            fade_curve: self.fade_curve,
         }
     }
 }
@@ -560,6 +568,10 @@ pub struct Clip {
     /// Tracked points/planes and their measured frames, used by Match Move and window tracking.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tracking_data: Vec<crate::TrackData>,
+    /// Voice dip: where the music of this clip is taken down, in frames of the timeline (they
+    /// follow the speech, not the clip).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_dip: Option<crate::VoiceDip>,
 }
 
 /// The colours a clip can be given (Mark > Set Clip Color), as names and sRGB.
@@ -1435,6 +1447,7 @@ impl Project {
                     effects: Vec::new(),
                     stabilization: crate::StabilizationSettings::default(),
                     tracking_data: Vec::new(),
+                    voice_dip: None,
                 });
             }
             at += fps * 4;
@@ -1694,6 +1707,12 @@ impl Project {
             t.fx = std::mem::take(&mut t.fx).sanitized();
             for c in &mut t.clips {
                 c.audio = c.audio.sanitized(c.duration);
+                // A voice dip from a file is as untrusted as the rest: put in order, bounded.
+                c.voice_dip = c
+                    .voice_dip
+                    .take()
+                    .map(crate::VoiceDip::sanitized)
+                    .filter(|d| !d.dips.is_empty());
                 c.keyframes = std::mem::take(&mut c.keyframes)
                     .into_iter()
                     .map(crate::KeyTrack::sanitized)

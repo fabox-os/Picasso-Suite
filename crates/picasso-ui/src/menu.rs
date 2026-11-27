@@ -25,6 +25,7 @@ pub(crate) enum Act {
     SaveCopy,
     Revert,
     ImportMedia,
+    ImportEffectBundle,
     ProjectSettings,
     MediaManagement,
     QuickExport,
@@ -119,6 +120,8 @@ pub(crate) enum Act {
     UnlinkClips,
     ToggleLinkedSelection,
     ToggleAudioScrubbing,
+    DipMusic,
+    RemoveVoiceDip,
     AddSerialNode,
     ToggleNode,
     GoFirst,
@@ -319,6 +322,7 @@ const FILE: &[Entry] = &[
             item("Subtitle...", &[], Act::ImportTimeline),
             planned("Metadata to Media Pool...", ""),
             planned("Bin...", ""),
+            item("Effect Bundle...", &[], Act::ImportEffectBundle),
         ],
     ),
     sub(
@@ -551,6 +555,8 @@ const CLIP: &[Entry] = &[
         &[],
         Act::ToggleAudioScrubbing,
     ),
+    item("Dip Music Under Voice", &[], Act::DipMusic),
+    item("Remove Voice Dip", &[], Act::RemoveVoiceDip),
     sub(
         "Auto Align Clips",
         &[
@@ -694,7 +700,7 @@ const PLAYBACK: &[Entry] = &[
     item("Delete Render Cache", &[], Act::DeleteRenderCache),
 ];
 
-const EFFECTS: &[Entry] = &[
+pub(crate) const EFFECTS: &[Entry] = &[
     sub(
         "Video Transitions",
         &[
@@ -1922,6 +1928,11 @@ const EFFECTS: &[Entry] = &[
                         &[],
                         Act::AddEffect(EffectKind::Sparkle),
                     ),
+                    item(
+                        "Storm Flash",
+                        &[],
+                        Act::AddEffect(EffectKind::StormFlash),
+                    ),
                 ],
             ),
             sub(
@@ -1941,6 +1952,11 @@ const EFFECTS: &[Entry] = &[
                         "Zoom Punch",
                         &[],
                         Act::AddEffect(EffectKind::ZoomPunch),
+                    ),
+                    item(
+                        "Downbeat Jolt",
+                        &[],
+                        Act::AddEffect(EffectKind::DownbeatJolt),
                     ),
                 ],
             ),
@@ -2058,11 +2074,21 @@ const EFFECTS: &[Entry] = &[
                         &[],
                         Act::AddGenerator(GeneratorKind::EbuBars),
                     ),
+                    item(
+                        "Studio Bars",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::StudioBars),
+                    ),
                     item("Grey Ramp", &[], Act::AddGenerator(GeneratorKind::GreyRamp)),
                     item(
                         "Grey Scale",
                         &[],
                         Act::AddGenerator(GeneratorKind::GreyScale),
+                    ),
+                    item(
+                        "Tenfold Grey",
+                        &[],
+                        Act::AddGenerator(GeneratorKind::TenfoldGrey),
                     ),
                     item(
                         "100 mV Steps",

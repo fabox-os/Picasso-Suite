@@ -38,14 +38,14 @@ Entire Timeline|Tota la cronologia
 Estimated File Size|Mida
 Every|Cada
 Export Video|Exporta vídeo
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Nom del fitxer
 Format|Format
 Frame rate|Fotogr./s
 Frame reordering|Reordenació
 Full Frames|Fotogrames sencers
 Full Screen|Pantalla completa
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generador

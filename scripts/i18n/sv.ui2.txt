@@ -39,7 +39,7 @@ Entire Timeline|Hela tidslinjen
 Estimated File Size|Uppsk. storlek
 Every|Var
 Export Video|Videoexport
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|Filnamn
 Filters|Filter
 Format|Format
@@ -47,7 +47,7 @@ Frame rate|Bildfrekvens
 Frame reordering|Omordna bilder
 Full Frames|Hela bilder
 Full Screen|Helskärm
-Fusion|Fusion
+Spectra|Spectra
 Gain|Gain
 Gamma|Gamma
 Generator|Generator

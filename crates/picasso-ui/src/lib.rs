@@ -18,7 +18,8 @@ mod deliver_clips;
 mod deliver_form;
 mod edit_page;
 mod effects;
-mod fairlight;
+mod effects_library;
+mod decibel;
 mod exit_prompt;
 mod fps_prompt;
 mod icons;
@@ -28,6 +29,7 @@ mod i18n;
 mod shots;
 mod keyboard;
 mod auto_subtitles;
+mod voice_dip;
 mod beat_markers;
 mod keyframes_ui;
 mod layouts;
@@ -56,6 +58,8 @@ mod render_cache;
 mod render_presets;
 #[cfg(not(target_arch = "wasm32"))]
 mod effect_presets;
+#[cfg(not(target_arch = "wasm32"))]
+mod effect_bundle;
 #[cfg(not(target_arch = "wasm32"))]
 mod resolve;
 mod sound;

@@ -8,6 +8,10 @@ rust-version.workspace = true
 
 [dependencies]
 picasso-core.workspace = true
+# Effect bundles hold effect templates and look-up tables, which are picasso-color's.
+picasso-color.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 # A .drp file is a ZIP archive of XML documents.
 zip = { version = "8", default-features = false, features = ["deflate-flate2"] }  # MIT

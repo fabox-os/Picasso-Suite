@@ -156,23 +156,23 @@ const TABS: [(Icon, &str, Option<Page>); 8] = [
     (Icon::PageCapture, "Photo", Some(Page::Capture)),
     (Icon::PageCut, "Cut", Some(Page::Cut)),
     (Icon::PageEdit, "Edit", Some(Page::Edit)),
-    (Icon::PageEffects, "Fusion", Some(Page::Effects)),
+    (Icon::PageEffects, "Spectra", Some(Page::Effects)),
     (Icon::PageColor, "Color", Some(Page::Color)),
-    (Icon::PageAudio, "Fairlight", Some(Page::Audio)),
+    (Icon::PageAudio, "Decibel", Some(Page::Audio)),
     (Icon::PageDeliver, "Deliver", Some(Page::Deliver)),
 ];
 
 /// The page a name stands for, as the tabs are called: `photo` is the Capture page (its tab
-/// says Photo), `fusion` the Effects page and `fairlight` the Audio one, beside the plain names.
+/// says Photo), `spectra` the Effects page and `decibel` the Audio one, beside the plain names.
 pub(crate) fn page_from_name(name: &str) -> Option<Page> {
     Some(match name.trim().to_ascii_lowercase().as_str() {
         "media" => Page::Media,
         "photo" | "capture" => Page::Capture,
         "cut" => Page::Cut,
         "edit" => Page::Edit,
-        "fusion" | "effects" => Page::Effects,
+        "spectra" | "effects" => Page::Effects,
         "color" => Page::Color,
-        "fairlight" | "audio" => Page::Audio,
+        "decibel" | "audio" => Page::Audio,
         "deliver" => Page::Deliver,
         _ => return None,
     })
@@ -398,7 +398,7 @@ impl StudioApp {
 
     /// Thin zones along the window's edges that start a resize (the window has no frame).
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn resize_edges(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen) {
+    pub(crate) fn resize_edges(&mut self, ui: &mut Ui, ctx: &Context, s: &Screen, width: f32) {
         use egui::viewport::ResizeDirection as D;
         use egui::CursorIcon;
         if ctx.input(|i| {
@@ -406,7 +406,7 @@ impl StudioApp {
         }) {
             return;
         }
-        let (w, h, e) = (DESIGN_WIDTH, s.h, 4.0);
+        let (w, h, e) = (width, s.h, 4.0);
         let zones = [
             (s.r(e, 0.0, w - e, e), D::North, CursorIcon::ResizeVertical),
             (
@@ -549,7 +549,7 @@ impl StudioApp {
             return;
         }
         if self.page == Page::Audio {
-            self.fairlight_toolbar1(ui, ctx, s, 66.0);
+            self.decibel_toolbar1(ui, ctx, s, 66.0);
             self.project_title(&painter, s, 66.0);
             return;
         }
@@ -564,7 +564,7 @@ impl StudioApp {
             return;
         }
         if self.page == Page::Edit {
-            self.edit_toolbar1(ui, ctx, s, 66.0);
+            self.edit_toolbar1(ui, s, 66.0);
             self.project_title(&painter, s, 66.0);
             return;
         }
@@ -1024,8 +1024,13 @@ impl StudioApp {
             ),
             Page::Edit => (
                 vec![
-                    it(Icon::PhotoMusic, "Media Pool", true, false),
-                    it(Icon::Wand, "Effects", false, false),
+                    it(
+                        Icon::PhotoMusic,
+                        "Media Pool",
+                        !self.effects_library_open,
+                        false,
+                    ),
+                    it(Icon::Wand, "Effects", self.effects_library_open, false),
                     it(Icon::ListBullets, "Index", false, false),
                     it(Icon::MusicLines, "Sound Library", false, false),
                     it(Icon::Diamonds, "Keyframes", false, false),
@@ -1102,6 +1107,14 @@ impl StudioApp {
         };
         use crate::app::Page as P;
         match (page, name) {
+            (P::Edit, "Media Pool") => {
+                self.effects_library_open = false;
+                ctx.request_repaint();
+            }
+            (P::Edit, "Effects") => {
+                self.effects_library_open = !self.effects_library_open;
+                ctx.request_repaint();
+            }
             (_, "Media Pool") | (_, "Media Storage") => self.import_dialog(ctx),
             (_, "Effects") if page != P::Color => self.page = P::Effects,
             (_, "Effects") => self.page = P::Effects,
@@ -1150,11 +1163,14 @@ mod tests {
         assert_eq!(page_from_name("photo"), Some(Page::Capture));
         assert_eq!(page_from_name("Photo"), Some(Page::Capture));
         assert_eq!(page_from_name("capture"), Some(Page::Capture));
-        assert_eq!(page_from_name("fusion"), Some(Page::Effects));
+        assert_eq!(page_from_name("Spectra"), Some(Page::Effects));
         assert_eq!(page_from_name("effects"), Some(Page::Effects));
-        assert_eq!(page_from_name("fairlight"), Some(Page::Audio));
+        assert_eq!(page_from_name("Decibel"), Some(Page::Audio));
         assert_eq!(page_from_name("audio"), Some(Page::Audio));
         assert_eq!(page_from_name(" color "), Some(Page::Color));
         assert_eq!(page_from_name("nonsense"), None);
+        // The names the tabs had before are not names of the pages any more.
+        assert_eq!(page_from_name("fusion"), None);
+        assert_eq!(page_from_name("fairlight"), None);
     }
 }

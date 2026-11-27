@@ -38,14 +38,14 @@ Entire Timeline|全体
 Estimated File Size|推定サイズ
 Every|毎
 Export Video|書き出し
-Fairlight|Fairlight
+Decibel|Decibel
 File Name|ファイル名
 Format|形式
 Frame rate|フレーム
 Frame reordering|フレーム並替
 Full Frames|全フレーム
 Full Screen|全画面
-Fusion|Fusion
+Spectra|Spectra
 Gain|ゲイン
 Gamma|ガンマ
 Generator|生成

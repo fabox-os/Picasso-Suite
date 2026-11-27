@@ -180,10 +180,14 @@ pub enum EffectKind {
     Contrast,
     Gamma,
     Saturation,
+    /// A storm in the top of the picture: a pale glow and now and then a bolt of light.
+    StormFlash,
+    /// The picture shakes on the beat and settles between beats.
+    DownbeatJolt,
 }
 
 impl EffectKind {
-    pub const ALL: [Self; 156] = [
+    pub const ALL: [Self; 158] = [
         Self::GaussianBlur,
         Self::Sharpen,
         Self::Mosaic,
@@ -340,6 +344,8 @@ impl EffectKind {
         Self::Contrast,
         Self::Gamma,
         Self::Saturation,
+        Self::StormFlash,
+        Self::DownbeatJolt,
     ];
 
     /// Whether the effect reads other frames of the clip, so the compositor has to draw it (it
@@ -519,6 +525,8 @@ impl EffectKind {
             Self::Contrast => "Contrast",
             Self::Gamma => "Gamma",
             Self::Saturation => "Saturation",
+            Self::StormFlash => "Storm Flash",
+            Self::DownbeatJolt => "Downbeat Jolt",
         }
     }
 
@@ -678,6 +686,8 @@ impl EffectKind {
             Self::Contrast => 3e+01,
             Self::Gamma => 3e+01,
             Self::Saturation => 4e+01,
+            Self::StormFlash => 6e+01,
+            Self::DownbeatJolt => 5e+01,
         }
     }
 }
@@ -993,7 +1003,9 @@ impl Effect {
             | EffectKind::Brightness
             | EffectKind::Contrast
             | EffectKind::Gamma
-            | EffectKind::Saturation => {
+            | EffectKind::Saturation
+            | EffectKind::StormFlash
+            | EffectKind::DownbeatJolt => {
                 crate::cinema::apply(self.kind, a, rgba, w, h, frame, rate);
             }
             // These read other frames of the clip; the compositor draws them (`picasso-render`).
