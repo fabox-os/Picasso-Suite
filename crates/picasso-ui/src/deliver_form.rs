@@ -45,6 +45,7 @@ mod native {
     use crate::app::StudioApp;
     use crate::chrome::Screen;
     use crate::deliver::{Tab, BAR, LEFT, LEFT_RIGHT, RESOLUTIONS};
+    use crate::fps_prompt::fps_text;
     use crate::icons::{paint, Icon};
     use crate::platform;
     use crate::queue::native::fixed_pcm_audio;
@@ -1043,7 +1044,7 @@ mod native {
             rates.extend(
                 picasso_core::Fps::PRESETS
                     .iter()
-                    .map(|f| (fps_label(*f), true)),
+                    .map(|f| (fps_text(*f), true)),
             );
             let fps_now = self.deliver_ui.fps_choice.min(rates.len() - 1);
             if let Some(i) = combo(
@@ -1069,7 +1070,7 @@ mod native {
             crate::i18n::paint_text(&p,
                 pos2(r.left() + geo().control_left + 4.0, r.center().y),
                 Align2::LEFT_CENTER,
-                format!("{} frames per second", fps_label(shown)),
+                format!("{} frames per second", fps_text(shown)),
                 regular(18.0),
                 Color32::from_rgb(160, 160, 166),
             );
@@ -1732,7 +1733,7 @@ mod native {
             let r = row(ui, 12.0);
             rule(&p, r);
             let on = has_sound && self.deliver.options.audio;
-            // QuickTime offers AAC or Linear PCM; MXF/IMF and Pro Tools offer only PCM.
+            // QuickTime offers AAC or Linear PCM; MXF and Pro Tools offer only PCM.
             let r = row(ui, 44.0 + stack());
             let mov = matches!(preset, Preset::ProRes422 | Preset::DnxHr);
             let pcm_locked = fixed_pcm_audio(preset);
@@ -1850,14 +1851,6 @@ mod native {
             ) {
                 self.set_range_whole(false);
             }
-        }
-    }
-
-    fn fps_label(f: picasso_core::Fps) -> String {
-        if f == picasso_core::Fps::FPS_2997 {
-            "29.97".to_string()
-        } else {
-            format!("{}", f.as_f64())
         }
     }
 }

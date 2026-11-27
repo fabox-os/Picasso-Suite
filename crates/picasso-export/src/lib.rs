@@ -46,7 +46,7 @@ pub enum Preset {
     Mp3,
     /// One PNG per frame, into a folder.
     PngSequence,
-    /// IMF Generic: broadcast video and 48 kHz PCM sound in an MXF file.
+    /// MXF: broadcast video and 48 kHz PCM sound in an MXF file.
     Mxf,
     /// Pro Tools: AAF with baked rendered audio (.wav files alongside).
     ProTools,
@@ -80,7 +80,7 @@ impl Preset {
             Self::Wav => "WAV audio",
             Self::Mp3 => "MP3 audio",
             Self::PngSequence => "PNG sequence",
-            Self::Mxf => "MXF / IMF Generic (MXF)",
+            Self::Mxf => "MXF",
             Self::ProTools => "AAF with rendered audio (Pro Tools)",
         }
     }
@@ -751,10 +751,19 @@ fn pro_tools(
 
     // Render one WAV stem per audio track that has clips in range.
     for (stem_index, track_idx) in track_indices.iter().enumerate() {
+        // Pro Tools names a stem by its audio track number (A1, A2, ...), not by the track's
+        // place in the project (which also counts the video tracks above it).
+        let audio_number = project
+            .tracks
+            .iter()
+            .take(*track_idx)
+            .filter(|t| t.kind == TrackKind::Audio)
+            .count()
+            + 1;
         let stem_name = if track_indices.len() == 1 {
             format!("{stem_base}.wav")
         } else {
-            format!("{stem_base}_A{}.wav", track_idx + 1)
+            format!("{stem_base}_A{audio_number}.wav")
         };
         let wav_path = stem_dir.join(&stem_name);
         wav_paths.push(wav_path.clone());
@@ -769,22 +778,7 @@ fn pro_tools(
                     && c.start < to
                     && c.start.saturating_add(c.len) > from
             })
-            .map(|c| ClipSound {
-                media: c.media,
-                path: c.path.clone(),
-                track: c.track,
-                start: c.start,
-                len: c.len,
-                source_in: c.source_in,
-                speed: c.speed,
-                preserve_pitch: c.preserve_pitch,
-                gain: c.gain,
-                left: c.left,
-                right: c.right,
-                fade_in: c.fade_in,
-                fade_out: c.fade_out,
-                reverse: c.reverse,
-            })
+            .cloned()
             .collect();
 
         let filtered_plan = AudioPlan {
@@ -900,6 +894,7 @@ fn pro_tools(
             link: None,
             nodes: Vec::new(),
             sound: true,
+            voice_dip: None,
             reverse: false,
             freeze: false,
             transition: None,
@@ -932,7 +927,7 @@ fn cleanup_wavs(paths: &[PathBuf]) {
 fn write_silent_wav(path: &Path, frames: u64) -> Result<(), ExportError> {
     let format = WavFormat::Pcm16;
     let samples = frames.saturating_mul(2); // stereo
-    let header = wav_header(format, SAMPLE_RATE, samples)
+    let header = wav_header(format, SAMPLE_RATE, frames)
         .ok_or_else(|| ExportError::Write("that is too long for a WAV file (4 GB)".into()))?;
     let write_err = |e: std::io::Error| ExportError::Write(format!("{}: {e}", path.display()));
     let file = std::fs::File::create(path).map_err(write_err)?;
@@ -1258,9 +1253,9 @@ mod tests {
         }
     }
 
-    /// IMF Generic writes an MXF file with video and 48 kHz PCM audio that ffprobe reads back.
+    /// MXF writes an MXF file with video and 48 kHz PCM audio that ffprobe reads back.
     #[test]
-    fn imf_generic_writes_mxf_with_video_and_pcm_audio() {
+    fn mxf_writes_mxf_with_video_and_pcm_audio() {
         let Some(p) = project(true) else { return };
         if !Preset::Mxf.available() {
             eprintln!("this FFmpeg has no encoder for MXF");
@@ -1273,7 +1268,7 @@ mod tests {
             steps += 1;
             true
         })
-        .unwrap_or_else(|e| panic!("IMF Generic: {e}"));
+        .unwrap_or_else(|e| panic!("MXF: {e}"));
         assert_eq!(steps, 24);
         let Some(text) = streams(&s.path) else { return };
         assert!(
@@ -1434,6 +1429,44 @@ mod tests {
         let _ = std::fs::remove_file(&stem2);
         let _ = std::fs::remove_file(&wav1);
         let _ = std::fs::remove_file(&wav2);
+    }
+
+    /// The silent WAV written when a project has no audio tracks declares the frames it writes,
+    /// so ffprobe reads back the same duration.
+    #[test]
+    fn silent_wav_header_matches_the_frames_written() {
+        let path = std::env::temp_dir().join("picasso_silent_header.wav");
+        let _ = std::fs::remove_file(&path);
+        let frames = 48_000u64;
+        if write_silent_wav(&path, frames).is_err() {
+            return;
+        }
+        let out = std::process::Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&path)
+            .output();
+        let Ok(out) = out else {
+            let _ = std::fs::remove_file(&path);
+            return;
+        };
+        if !out.status.success() {
+            let _ = std::fs::remove_file(&path);
+            return;
+        }
+        let text = String::from_utf8_lossy(&out.stdout);
+        let Ok(duration) = text.trim().parse::<f64>() else {
+            let _ = std::fs::remove_file(&path);
+            return;
+        };
+        assert!((duration - 1.0).abs() < 0.01, "duration {duration}");
+        let _ = std::fs::remove_file(&path);
     }
 
     /// Cancelling a Pro Tools or MXF export leaves no partial files behind.

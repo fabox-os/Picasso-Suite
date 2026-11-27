@@ -500,6 +500,10 @@ pub(crate) fn encode(
                 .ok_or_else(|| ExportError::Encode(format!("{:?} pictures", spec.pixel)))?,
         );
         let mut stream = octx.add_stream(codec).map_err(enc_err)?;
+        stream.set_time_base(time_base);
+        // MXF takes the picture rate from the stream, not from the encoder.
+        stream.set_rate(Rational(fps.num as i32, fps.den as i32));
+        stream.set_avg_frame_rate(Rational(fps.num as i32, fps.den as i32));
         video_index = stream.index();
         let mut enc = codec::context::Context::new_with_codec(codec)
             .encoder()
@@ -591,6 +595,7 @@ pub(crate) fn encode(
         let name = sound.encoder;
         let acodec = encoder::find_by_name(name).ok_or(ExportError::NoEncoder(name))?;
         let mut astream = octx.add_stream(acodec).map_err(enc_err)?;
+        astream.set_time_base(Rational(1, SAMPLE_RATE as i32));
         let stream_index = astream.index();
         let mut a = codec::context::Context::new_with_codec(acodec)
             .encoder()

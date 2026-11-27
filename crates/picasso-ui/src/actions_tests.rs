@@ -1133,6 +1133,7 @@ fn the_render_queue_renders_wav_and_video_one_after_another() {
             gain_db: -6.0,
             fade_in: 12,
             fade_out: 0,
+            ..picasso_core::ClipAudio::default()
         },
     });
     let dir = std::env::temp_dir();
@@ -1410,6 +1411,8 @@ mod deliver_page {
 
     #[test]
     fn the_form_sets_the_size_frame_rate_and_key_frames_of_the_render() {
+        use picasso_core::Fps;
+
         let mut app = app();
         let o = app.export_options();
         // A render starts at 60 frames per second.
@@ -1418,12 +1421,15 @@ mod deliver_page {
             (None, Some(picasso_core::Fps::FPS_60), None)
         );
         app.deliver_ui.res_mode = 4; // 4K UHD
-        app.deliver_ui.fps_choice = 3; // the third preset: 30
+        app.deliver_ui.fps_choice = Fps::PRESETS
+            .iter()
+            .position(|&fps| fps == Fps::FPS_30)
+            .map_or(0, |i| i + 1);
         app.deliver_ui.key_auto = false;
         app.deliver_ui.every = 12;
         let o = app.export_options();
         assert_eq!(o.size, Some((3840, 2160)));
-        assert_eq!(o.fps, picasso_core::Fps::PRESETS.get(2).copied());
+        assert_eq!(o.fps, Some(Fps::FPS_30));
         assert_eq!(o.keyframes, Some(12));
         // A custom size, and a custom vertical resolution that keeps the timeline's shape.
         app.deliver_ui.res_mode = crate::deliver::RESOLUTIONS.len() + 1;
@@ -1433,6 +1439,29 @@ mod deliver_page {
         assert_eq!(app.export_options().size, Some((800, 450)));
         app.deliver_ui.custom = (0, 720);
         assert_eq!(app.export_options().size, Some((1280, 720)));
+    }
+
+    #[test]
+    fn deliver_exports_at_the_exact_preset_rates() {
+        use picasso_core::Fps;
+
+        let mut app = app();
+        for (rate, label) in [
+            (Fps::FPS_23976, "23.976"),
+            (Fps::FPS_48, "48"),
+            (Fps::FPS_5994, "59.94"),
+            (Fps::FPS_11988, "119.88"),
+            (Fps::FPS_120, "120"),
+        ] {
+            app.deliver_ui.fps_choice = Fps::PRESETS
+                .iter()
+                .position(|&preset| preset == rate)
+                .map_or(0, |i| i + 1);
+            assert_eq!(app.export_options().fps, Some(rate));
+            assert_eq!(crate::fps_prompt::fps_text(rate), label);
+        }
+        app.deliver_ui.fps_choice = 0;
+        assert_eq!(app.export_options().fps, None);
     }
 
     #[test]
@@ -1598,14 +1627,14 @@ mod deliver_page {
     }
 
     #[test]
-    fn imf_and_protools_audio_tab_keeps_visible_pcm_and_queues_it() -> Result<(), String> {
+    fn mxf_and_protools_audio_tab_keeps_visible_pcm_and_queues_it() -> Result<(), String> {
         use crate::deliver::Tab;
         use picasso_export::AudioCodec;
         let _english = crate::i18n::CHANGING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::i18n::set(crate::i18n::Language::English);
 
         for (name, preset, file) in [
-            ("IMF Generic", Preset::Mxf, "pcm.mxf"),
+            ("MXF", Preset::Mxf, "pcm.mxf"),
             ("Pro Tools", Preset::ProTools, "pcm.aaf"),
         ] {
             let mut app = app();
@@ -3224,6 +3253,104 @@ fn markers_land_on_the_beats_of_a_real_sound_file() {
     // One undo takes them all away.
     app.session.undo();
     assert_eq!(app.project().markers.len(), before);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn write_wav(name: &str, rate: u32, seconds: usize, level: impl Fn(f64) -> f32) -> std::path::PathBuf {
+    let mut data = Vec::with_capacity(rate as usize * seconds * 4);
+    for i in 0..rate as usize * seconds {
+        let t = i as f64 / f64::from(rate);
+        let v = (level(t) * (std::f32::consts::TAU * 440.0 * t as f32).sin() * 32_000.0) as i16;
+        data.extend_from_slice(&v.to_le_bytes());
+        data.extend_from_slice(&v.to_le_bytes());
+    }
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&rate.to_le_bytes());
+    wav.extend_from_slice(&(rate * 4).to_le_bytes());
+    wav.extend_from_slice(&4u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    wav.extend_from_slice(&data);
+    let path = std::env::temp_dir().join(name);
+    std::fs::write(&path, &wav).unwrap();
+    path
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn music_is_dipped_where_the_other_track_speaks_and_one_undo_takes_it_back() {
+    let seconds = 12usize;
+    // Speech from 3 s to 6 s on one track; the music plays all the time on another.
+    let speech = write_wav("picasso_dip_speech.wav", 48_000, seconds, |t| if (3.0..6.0).contains(&t) { 0.5 } else { 0.0 });
+    let music = write_wav("picasso_dip_music.wav", 48_000, seconds, |_| 0.4);
+    let mut app = app();
+    let fps = app.project().fps.nominal();
+    let frames = fps * seconds as u64;
+    let add = |app: &mut StudioApp, name: &str, path: &std::path::Path| {
+        let Some(picasso_core::Outcome::Media(media)) = app.run(Command::AddMedia {
+            name: name.into(),
+            source: MediaSource::Audio { path: path.to_string_lossy().into_owned() },
+            length: Some(frames),
+            default_duration: frames,
+        }) else {
+            panic!("media")
+        };
+        app.run(Command::AddTrack { kind: picasso_core::TrackKind::Audio });
+        let track = app.project().tracks.iter().rev().find(|t| t.kind == picasso_core::TrackKind::Audio).unwrap().id;
+        let Some(picasso_core::Outcome::Clip(clip)) = app.run(Command::AddClip {
+            track,
+            media,
+            start: 0,
+            duration: Some(frames),
+            with_sound: false,
+        }) else {
+            panic!("clip")
+        };
+        clip
+    };
+    let voice = add(&mut app, "voice", &speech);
+    let song = add(&mut app, "song", &music);
+    app.select_only(song);
+    assert!(app.act_enabled(Act::DipMusic));
+    assert!(!app.act_enabled(Act::RemoveVoiceDip));
+    act(&mut app, Act::DipMusic);
+    let voice_dip = app.project().clip(song).unwrap().1.voice_dip.clone().expect("the music is dipped");
+    assert_eq!(voice_dip.dips.len(), 1, "{voice_dip:?}");
+    // The dip covers 3 s to 6 s of the timeline, give or take a few frames; the speech is not dipped.
+    let (a, b) = voice_dip.dips[0];
+    assert!((a as f64 - fps as f64 * 3.0).abs() <= 3.0 && (b as f64 - fps as f64 * 6.0).abs() <= 3.0, "{voice_dip:?}");
+    assert!(app.project().clip(voice).unwrap().1.voice_dip.is_none());
+    assert!(app.act_enabled(Act::RemoveVoiceDip));
+    // The mixer plans the clip with it.
+    let plan = picasso_audio::plan(app.project());
+    assert!(plan.clips.iter().any(|c| c.voice_dip.is_some()));
+    // One undo takes it all away; voice dip again, then removing it, does too.
+    app.session.undo();
+    assert!(app.project().clip(song).unwrap().1.voice_dip.is_none());
+    act(&mut app, Act::DipMusic);
+    assert!(app.project().clip(song).unwrap().1.voice_dip.is_some());
+    act(&mut app, Act::RemoveVoiceDip);
+    assert!(app.project().clip(song).unwrap().1.voice_dip.is_none());
+    let _ = (std::fs::remove_file(&speech), std::fs::remove_file(&music));
+}
+
+#[test]
+fn the_voice_dip_needs_a_clip_with_a_file_and_says_so() {
+    let mut app = app();
+    // The demo clips are made pictures: no sound file to voice_dip, and nothing dipped to remove.
+    let a = app.project().tracks[0].clips[0].id;
+    app.select_only(a);
+    assert!(!app.act_enabled(Act::DipMusic));
+    assert!(!app.act_enabled(Act::RemoveVoiceDip));
+    act(&mut app, Act::DipMusic);
+    assert!(app.project().clip(a).unwrap().1.voice_dip.is_none());
 }
 
 /// A project with one sound clip made from `samples` (mono, `rate` hertz) in a WAV file named

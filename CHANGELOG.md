@@ -1,5 +1,71 @@
 # Changelog
 
+## Unreleased
+
+### ✨ New
+
+- ✅ **Deliver: MXF and Pro Tools presets.** **MXF** writes an MXF file with MPEG-2, DNxHD or H.264 video and 48 kHz PCM sound through FFmpeg's MXF muxer. **Pro Tools** renders one 48 kHz 16-bit PCM WAV stem per audio track and writes an AAF that references the stems. The AAF uses absolute stem paths and has not been opened in Pro Tools yet; a real IMF package (CPL, PKL and ASSETMAP) is still to do.
+
+### 🔧 Changed
+
+- ✅ Deliver: the fixed PCM choice for MXF and Pro Tools now shows as **PCM**, and the queued job keeps PCM even if the Audio tab was never opened.
+
+## 0.9.0
+
+Built on Picasso's own Rust engine: two new effects, music that gets out of the way of speech, fade curves for every fade, two more test patterns, a size limit for the interface, and new names for two pages: **Spectra** and **Decibel**.
+
+**Status at 0.9.0:** 609 of 638 menu entries work (95.45%) and 119 of 155 roadmap items are done (76.77%).
+
+### ✨ New
+
+- ✅ **Dip Music Under Voice** (Clip menu): takes the sound of the selected clips down by 12 dB wherever the clips on the other tracks are loud, with a 0.2 s ramp down before the speech and a 0.5 s ramp up after it, and the music staying down between words less than 1.2 s apart. **Remove Voice Dip** takes it away. The dips are kept with the clip in frames of the timeline, so they stay with the speech when the clip is moved or cut. The mixer and the export apply them, and the whole pass is one undo step. The speech is found by a level detector that needs no model download.
+- ✅ **Fade curves:** a **Fade curve** list in the Inspector's Sound section: Straight (as before, and the default), Even power, Midway, Late rise, Early rise and Silk. It shapes every fade in and out, in the viewer, in playback and in an export. At a crossfade, a curve on both clips gives an even-power or silk crossfade. It stays on both halves when a clip is cut, and a straight fade is not written to the project file, so old projects read the same.
+- ✅ **Storm Flash** (Picasso FX > Film and Light): a pale glow in the top of the picture and now and then a bolt of light that wanders down from it.
+- ✅ **Downbeat Jolt** (Picasso FX > Zoom and Pulse): the picture shakes hardest on the beat and settles between beats.
+- ✅ **Studio Bars** (Generators > Test Patterns): the SMPTE ECR 1-1978 bars, with seven 75 % bars, the reversed strip, and the -I, white, +Q and PLUGE row.
+- ✅ **Tenfold Grey** (Generators > Test Patterns): ten equal grey steps from black to white, next to the eleven of Grey Scale.
+- ✅ **Interface size** (System Preferences > Interface > Largest size, issue #66): **Fit window** (the default, as before) scales the whole interface with the window; 100%, 125%, 150% and 200% of the system's scale stop it from growing past that size in a big window, with the layout kept in the middle.
+
+### 🔧 Changed
+
+- ✅ **Page names:** the **Fusion** page is now **Spectra** and the **Fairlight** page is now **Decibel**, in the page bar, the translations (all 39 languages), the README and the website. The icons are the same. `--page=spectra` and `--page=decibel` open them from the command line; `--page=fusion` and `--page=fairlight` no longer do.
+- ✅ Version 0.9.0 in the footer, the Linux package data, the README download table and the website.
+
+### 🔒 Checked and faster
+
+- ✅ A voice dip read from a project file is put in order and bounded like the other settings: at most 4096 dips, ramps of at most about a million frames, a level of at most 0 dB; one with nothing left in it is dropped.
+- ✅ Dip Music Under Voice listens to at most 5 minutes of each clip and 15 minutes in all, and says so when it cut a long clip short, so the window is not held for long.
+- ✅ Storm Flash skips the part of the picture with no sky and works out a bolt only where there is one: about 2.5 ms for a 1080p picture, with the same pixels as the plain version (tested over 400 frames). Downbeat Jolt takes about 10 ms at 1080p.
+- ✅ 998 tests pass, clippy shows no errors, and the install tests passed on Debian 12, Ubuntu 22.04 and 24.04, Fedora and openSUSE, on amd64 and ARM64.
+
+### ⚠️ Known limitations
+
+- ❌ The voice dip's amount (12 dB), ramps and sensitivity are fixed, and everything that makes sound on the other tracks counts as speech, not only voices.
+- ❌ The fade curve belongs to the clip: the two clips of a crossfade cannot have different curves.
+- ❌ Not made yet: the depth effects, the face effects, Audio Spectrum Bars and Audio Waveform Line, Motion Smoothing, Drop Shadow, Stop Motion, Edge Wipe, Dip to Color Dissolve, lower thirds and scrolling titles, and the camera looks (Night Vision, Binoculars, CCTV and others). See the roadmap.
+
+## 0.8.1
+
+Effect bundles you can install, a docked Effects Library on the Edit page, 23.976 and the other missing frame rates, and tracks that appear when you drag a clip past the last one. Most of this version was written by GMNEdits.
+
+### ✨ New
+- ✅ **Effect bundles:** **File > Import > Effect Bundle...**, or a `.picef` file dropped on the window, installs a zip of effect templates, titles, transitions and look-up tables. A bundle is untrusted input and is read within limits: 64 MB for the file, 256 entries, 16 MB for an entry (read through a cap, so a zip bomb stops there), no entry whose name is absolute, holds `..`, a drive letter, a backslash or a control character, and only `.cube` tables and `.json` descriptors are kept, each checked and brought into range. Effect templates appear in the Edit page's Presets list, titles and transitions in **Effects > Titles** and **Effects > Video Transitions**, and look-up tables in the Color page's LUTs window. A bundle with nothing usable, a corrupt one and one over a limit are refused with the reason. (GMNEdits)
+- ✅ **Effects Library:** on the Edit page the top-left **Effects** button opens a library in place of the Bins and the Media Pool, with Video Transitions, Titles, Generators, Effects, Looks and Audio FX, a search box that filters across all of them, and each item added to the clip or timeline with one undo step. **Media Pool** brings the pool back. (GMNEdits, rebased onto the new Edit layout)
+- ✅ **More frame rates:** Project Settings and Deliver offer 23.976, 24, 25, 29.97, 30, 48, 59.94, 60, 119.88 and 120. The rates that are not whole numbers are kept exactly (24000/1001, 60000/1001, 120000/1001), so sound no longer slips against the picture over a long timeline at 23.976. A render still starts at 60. (GMNEdits, fixes #57)
+- ✅ **New tracks when dragging:** dragging a clip above the top video track or below the bottom audio track makes a new track, and a clip with a linked picture or sound takes its partner along, also onto a new track. The whole drag is one undo step, and with Linked Selection off only the dragged clip moves. (GMNEdits)
+
+### 🐛 Fixed
+- 🐛 **Edit page with the Inspector open:** the timeline viewer now stays visible in the centre column (it was hidden behind the Inspector, with the empty source viewer left on screen), and the transport icons of the timeline viewer no longer show blank tooltips. (GMNEdits)
+
+### 🔧 Changed
+- 🔧 On the Edit page the **Effects** button opens the Effects Library instead of the Inspector (the clip's own effects are still in the Inspector), and **Media Pool** closes the library instead of opening the import window.
+- 🔧 The list of frame rates in `picasso-core` (`Fps::PRESETS`) has ten entries instead of five, in ascending order.
+- 🔧 Reading an effect bundle is in `picasso-drp`, next to the project reader.
+
+### ⚠️ Known limitations
+- Effect bundles hold Picasso's own descriptors; bundles from other programs are not read. An installed title or transition has the settings its descriptor gives and no more.
+- 23.976 and the high rates are offered and exported exactly, but drop-frame timecode is still counted only for 29.97 and 59.94.
+
 ## 0.8.0
 
 More of the editor's own tools: 29 sound effects for tracks, 22 more picture effects (141 in all), 18 look transitions (115 transitions), 17 ways for a title to come in, 34 keyframe curves, 12 one-click Looks, markers on the beat, a video layout chooser for new projects and subtitles made from speech (Whisper, run in pure Rust on this computer).

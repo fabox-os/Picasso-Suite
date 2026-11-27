@@ -1,6 +1,6 @@
 # Roadmap
 
-Status at 0.8.0 and what was made since.
+Status at 0.9.0 and what was made since.
 
 ## Done
 
@@ -24,7 +24,7 @@ Status at 0.8.0 and what was made since.
 - [x] Fixes: Media and Deliver no longer flash black when opened; clips dropped anywhere on the Cut page's timelines land on a track; dragging the playhead no longer flashes black
 - [x] Deliver: AV1 (MP4), VP9 (WebM), DNxHR LB to 444 (QuickTime), lossless FFV1 (Matroska) and MP3; 10-bit H.264, H.265, AV1 and VP9
 - [x] Deliver: graphics card encoders (NVIDIA NVENC, Intel Quick Sync, AMD AMF, Apple VideoToolbox, VA-API) for H.264, H.265 and AV1, checked at start so those without a card are greyed out
-- [x] Deliver: IMF Generic and Pro Tools presets - an MXF writer (MXF container, MPEG-2/DNxHD/H.264 video, 48 kHz PCM audio) for IMF Generic, and Pro Tools renders baked .wav audio plus an AAF that references it
+- [x] Deliver: MXF preset (FFmpeg's MXF muxer: MPEG-2/DNxHD/H.264 video, 48 kHz PCM audio) and Pro Tools renders baked .wav audio plus an AAF that references it (absolute stem paths; not yet opened in Pro Tools)
 - [x] Decoding on the graphics card (D3D11, VideoToolbox, VA-API, CUDA) with a System Preferences switch, falling back to the processor
 - [x] Keyboard Customization: every command's keys can be changed, a taken key is moved after asking, saved in the preferences
 - [x] Interchange: OpenTimelineIO export (File > Export > Timeline: OpenTimelineIO)
@@ -78,7 +78,7 @@ Status at 0.8.0 and what was made since.
 - [x] Project: autosave every minute beside the project file with "Recover unsaved changes?" at the next open; File > Media Management: Relink Missing Media (matched by name, never guessed when two files share one) and Archive Project (the files the timelines use copied into a folder with a project that points at them)
 - [x] Performance: Optimised Media can be cancelled, and a file with a variable frame rate is read as it is instead of getting a constant-rate copy a frame off
 - [x] Security: the updater downloads over HTTPS only, takes only a plain package file name from GitHub and works in a private folder nobody can guess; the optimised media index can only name files inside its folder
-- [x] Fixes: the Edit page's Inspector scrolls with the wheel (it shared an id with another list; a test now checks that no page draws two widgets with one id); its Effects button opens the Inspector instead of jumping to Fusion; menus open on the Media and Deliver pages; exports no longer read back one frame short
+- [x] Fixes: the Edit page's Inspector scrolls with the wheel (it shared an id with another list; a test now checks that no page draws two widgets with one id); its Effects button opens the Inspector instead of jumping to Spectra; menus open on the Media and Deliver pages; exports no longer read back one frame short
 - [x] Development: the tests that make a video or a tone with ffmpeg each write a file of their own, so the whole suite no longer fails at random when they run at the same time
 - [x] Linux: the program no longer closes when the X server cannot list the monitors (`RandrBadCrtc` on Intel graphics made winit panic, even at the start; it logs a warning and carries on), from a copy of winit 0.30.13 in `third_party/winit`
 - [x] Effects: Green Screen and Blue Screen keys (**Picasso FX > Key**: chroma plane distance, soft edge, spill removal; the strength is the tolerance)
@@ -113,10 +113,22 @@ Status at 0.8.0 and what was made since.
 - [x] Project: Choose Video Layout (YouTube, Instagram, Facebook, TikTok and more: a platform, a template and a quality give the picture size; asked on a new project and from File)
 - [x] Titles: 17 ways to come in (fade, slides, rise, drop, zooms, pop, stamp, spin, blur, wipe, typewriter, flicker, glitch), set in the Inspector's Text+ section with a duration
 - [x] Tracking: use `picasso-track` in the interface: a Track button for Match Move and Stabilization in the Inspector on the Edit page, and window tracking on the Color page
+- [x] Effects: effect bundles (`.picef` files, a zip of effect templates, titles, transitions and LUTs) installed from File > Import > Effect Bundle or dropped on the window, read within size limits like every other file (at most 256 entries, 16 MB an entry and 64 MB read, entries that name a place outside the bundle, a device or a control character refused, LUTs parsed and checked), and offered in the Effect Bundles window and the Inspector's presets
+- [x] Edit: a docked Effects Library in place of the Bins and Media Pool (the top-left **Effects** button toggles it; Video Transitions, Titles, Generators, Effects, Looks and Audio FX, searched by name, each added with one undo step)
+- [x] Timeline: dragging a clip above the top or below the bottom track makes a new track for it, and a linked picture and sound move together (one undo step)
+- [x] Project: 23.976, 48, 59.94, 119.88 and 120 frames per second in Project Settings and Deliver, stored exactly (24000/1001 and so on), so sound does not drift over a long timeline
+- [x] Edit: with the Inspector open the timeline viewer stays in the centre column; the transport icons of the timeline viewer have their tooltips
+- [x] Effects: Storm Flash (a pale glow in the top of the picture and now and then a bolt of light; Picasso FX > Film and Light) and Downbeat Jolt (the picture shakes on the beat and settles; Picasso FX > Zoom and Pulse), written in Rust on Picasso's own technology (the processor effect engine of `picasso-color`, so they run on every machine, in the viewer and in an export)
+- [x] Audio: fade curves (Straight, Even power, Midway, Late rise, Early rise, Silk) for the fade in and out of a clip and for crossfades, set in the Inspector, kept with the clip and applied by the mixer and the export
+- [x] Generators: Studio Bars (ECR 1-1978: 75 % bars, reversed strip, -I, white, +Q and PLUGE row) and Tenfold Grey, drawn by Picasso's own generator code
+- [x] Audio: Clip > Dip Music Under Voice and Clip > Remove Voice Dip (the selected clips go down 12 dB where the clips on the other tracks are loud, with a ramp down before and up after, kept with the clip in frames of the timeline, applied by the mixer and the export, one undo step), built on Picasso's own technology (the Rust mixer of `picasso-audio`, the command and undo system of `picasso-core`, and a level detector that needs no model download)
+- [x] Interface: the page tabs Fusion and Fairlight are called Spectra and Decibel (same icons; `--page=spectra` and `--page=decibel`)
+- [x] Interface: System Preferences > Interface > Largest size (Fit window, or 100% to 200% of the system scale) keeps the interface from growing past a size in a big window, with the layout centred (issue #66)
 
 ## To do
 
-- [ ] Interface density: finish the pages measured on the 1080p screenshots (`docs/reference/resolve-1080p`). Done: page bar, labelled top toolbars, Cut, Edit, Fusion, Fairlight, Photo, Color, Media, Deliver. Every page is at Resolve's 1080p size; next, check the same pages at 4K and at small windows
+- [ ] Interface density: finish the pages measured on the 1080p screenshots (`docs/reference/resolve-1080p`). Done: page bar, labelled top toolbars, Cut, Edit, Spectra, Decibel, Photo, Color, Media, Deliver. Every page is at Resolve's 1080p size; next, check the same pages at 4K and at small windows
+- [ ] Deliver: a real IMF package (CPL, PKL and ASSETMAP around the MXF essence) and a Pro Tools AAF tried in Pro Tools
 - [ ] Effects: Color Palette (a strip of the picture's main colours), Dust Buster and Patch Replacer (they need a region you place), and the time effects seeing the effects before them in the stack
 - [ ] Transitions: motion blur, border and reverse on Slide Out, Split and Barn Door, and the Wipe Reverse option
 - [ ] Keys with a colour picked from the picture (Custom Key Color, HSL Key by hue, 3D Keyer colours), the matte and status views, and spill removal for other colours
@@ -132,8 +144,11 @@ Status at 0.8.0 and what was made since.
 - [ ] Performance: optimised media's menu items and Media Management section are translated (the Cancel button and the "Read as it is" state are done: a copy can be stopped, and a variable frame rate file is read as it is)
 - [ ] Project: libraries, metadata import/export, Lightbox, dual screen, clean feed
 - [ ] Help: tutorials (the Welcome dialog was removed); Check for Updates: the release workflow now updates the .deb, .rpm, macOS app, Windows folder and Flatpak in place on every build (`--update-from`), and its first run is still to come (0.6.0's Flatpak test failed because the build container has no `flatpak-session-helper`); the download from GitHub itself is only tried on Windows
+- [ ] Generators: not made yet: Drop Shadow, Stop Motion, Edge Wipe, Dip to Color Dissolve, the lower thirds and Scroll titles, Adjustment Clip, and the camera looks (Night Vision, Binoculars, CCTV, DSLR, Video Camera, Video Call, Drone Overlay)
+- [ ] Project: a single-file project that holds the edit and its media (a ZIP64 file with crash-safe saves), and project libraries
+- [ ] Audio: the voice dip's amount (12 dB), ramps and sensitivity are fixed; a window to set them, and telling speech from other sound
+- [ ] More effects and looks not made yet: the depth effects (fog, depth of field, relight, view and Behind Subject need a depth model), the face effects (alien head, big eyes, fat and slim face, fisheye, swirl, wide mouth, retouch, swap, 3D mesh and props need face landmarks), Audio Spectrum Bars and Audio Waveform Line (need the sound in the renderer), Motion Smoothing (frame interpolation), and 11 of its 23 effect templates (most use those effects)
 - [ ] Plugins: OpenFX (OFX) image effect plugins, the open standard: find and load plugins from the standard folders, show their parameters in the inspector, run them on a clip and in an export, on the processor first and then the graphics card
-- [ ] Effect bundles: `.picef` files (a zip of effect templates, titles, transitions and LUTs) installed from the menu and offered in the effects library, read within size limits like every other file
 - [ ] Platforms: macOS (Metal), Linux (Vulkan), browser limits
 - [ ] Linux: native Wayland drag and drop: not possible yet. eframe 0.37 uses winit 0.30.13, which takes no files dropped on a Wayland window; winit's own work on it (rust-windowing/winit#4773 is open, #4009 was closed unmerged) is in no release, 0.31 is a beta. Until then the window opens through XWayland. Writing it here against Wayland's data device would be a second, untestable copy of what winit will do. Meanwhile the XWayland path is made sturdier (a copy of winit 0.30.13 with its X11 drop reader changed, `third_party/winit`: each file of a drag is read on its own, a drop that comes before the file manager's list waits for it, and every failure is a warning in the session log; File > Media Management says so on Wayland). It compiles for Linux and its list reading is tested, but it has not been tried on a Wayland desktop: a tester with Nautilus and a large batch is needed, and the session log says which cause it was if files are still lost
 - [ ] Linux: Flathub submission, for the project's owner: a pull request to flathub/flathub with the manifest. The linter's findings on it: the id `io.github.fabox_os.PicassoSuite` does not match the repository's name (`appid-url-not-reachable`: it looks for github.com/fabox-os/picassosuite, the repository is Picasso-Suite; changing the id would make it a new app for people with the current Flatpak, so the id stays and the request for an exception is written in `packaging/flathub/README.md`); the X11 + Wayland sockets (exception text in `packaging/flathub/README.md`); and a newer runtime (26.08)
@@ -142,7 +157,7 @@ Status at 0.8.0 and what was made since.
 - [ ] Subtitles from speech: word-by-word times (a model with them, or aligning the words to the sound), speaker labels, the larger models and the graphics card, a retry at other temperatures for noisy recordings, subtitles from the sound of the whole timeline and not only one clip, and the window's text in the other languages
 - [ ] Keyframes: a curve editor (draw the two handles of a cubic, a graph of the value), curves that survive a cut in the middle of a segment, and curves on effect settings
 - [ ] Looks: beat-driven looks (a punch, a shake or a flash on every beat, from the markers or the sound), Looks you save yourself, and the picture-and-title templates that go with them
-- [ ] Beat: clips that snap to the beat, cutting on the beat, and the tempo and downbeats in the Fairlight page; reversed and frozen clips
+- [ ] Beat: clips that snap to the beat, cutting on the beat, and the tempo and downbeats in the Decibel page; reversed and frozen clips
 - [ ] Titles: letter-by-letter and word-by-word animation (a stagger), animations out as well as in, and a pack of styles (karaoke, neon, chrome, handwritten)
 - [ ] Project: video layout favourites and a custom size in the chooser
 - [ ] Interchange: try the AAF in Media Composer, Pro Tools and Premiere, and the XML in Final Cut Pro 7, Premiere and Resolve (CI checks every export with pyaaf2 and an XML parser, and the AAF reader reads an Avid-style file written by pyaaf2; the editors themselves need testers)

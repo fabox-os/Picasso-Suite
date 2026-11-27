@@ -103,8 +103,8 @@ pub(crate) const ENTRIES: [Entry; 16] = [
         available: true,
     },
     Entry {
-        name: "IMF Generic",
-        badge: Badge::Film("IMF", Color32::from_rgb(58, 58, 64)),
+        name: "MXF",
+        badge: Badge::Film("MXF", Color32::from_rgb(58, 58, 64)),
         sizes: &[],
         available: true,
     },
@@ -214,7 +214,7 @@ pub(crate) fn settings(entry: &Entry, size: Option<&str>) -> Option<Settings> {
             s.preset = Preset::Wav;
             options.video = false;
         }
-        "IMF Generic" => {
+        "MXF" => {
             s.preset = Preset::Mxf;
             options.audio_codec = AudioCodec::Pcm;
         }
@@ -578,11 +578,11 @@ mod tests {
         );
         let audio = ENTRIES.iter().find(|e| e.name == "Audio Only").unwrap();
         assert_eq!(settings(audio, None).unwrap().preset, Preset::Wav);
-        let imf = ENTRIES.iter().find(|e| e.name == "IMF Generic").unwrap();
-        assert!(imf.available);
-        assert_eq!(settings(imf, None).unwrap().preset, Preset::Mxf);
+        let mxf = ENTRIES.iter().find(|e| e.name == "MXF").unwrap();
+        assert!(mxf.available);
+        assert_eq!(settings(mxf, None).unwrap().preset, Preset::Mxf);
         assert_eq!(
-            settings(imf, None).unwrap().options.audio_codec,
+            settings(mxf, None).unwrap().options.audio_codec,
             AudioCodec::Pcm
         );
         let pt = ENTRIES.iter().find(|e| e.name == "Pro Tools").unwrap();
