@@ -123,6 +123,7 @@ Status at 0.9.0 and what was made since.
 - [x] Audio: Clip > Dip Music Under Voice and Clip > Remove Voice Dip (the selected clips go down 12 dB where the clips on the other tracks are loud, with a ramp down before and up after, kept with the clip in frames of the timeline, applied by the mixer and the export, one undo step), built on Picasso's own technology (the Rust mixer of `picasso-audio`, the command and undo system of `picasso-core`, and a level detector that needs no model download)
 - [x] Interface: the page tabs Fusion and Fairlight are called Spectra and Decibel (same icons; `--page=spectra` and `--page=decibel`)
 - [x] Interface: System Preferences > Interface > Largest size (Fit window, or 100% to 200% of the system scale) keeps the interface from growing past a size in a big window, with the layout centred (issue #66)
+- [x] Interchange: speed changes, reverse and freeze in AAF (written with time-warp operation groups, read back with them), markers in AAF (written and read as locators), nested sequences in OTIO, XML and AAF imports (a nested stack, sequence or composition becomes a compound clip); OTIO export from `picasso-bridge` (`export-otio` command)
 
 ## To do
 
@@ -160,5 +161,4 @@ Status at 0.9.0 and what was made since.
 - [ ] Titles: letter-by-letter and word-by-word animation (a stagger), animations out as well as in, and a pack of styles (karaoke, neon, chrome, handwritten)
 - [ ] Project: video layout favourites and a custom size in the chooser
 - [ ] Interchange: try the AAF in Media Composer, Pro Tools and Premiere, and the XML in Final Cut Pro 7, Premiere and Resolve (CI checks every export with pyaaf2 and an XML parser, and the AAF reader reads an Avid-style file written by pyaaf2; the editors themselves need testers)
-- [ ] Interchange: speed changes, reverse and freeze in AAF (written at normal speed, read without them), markers in AAF, nested sequences in OTIO, XML and AAF imports; OTIO export from `picasso-bridge`
 - [ ] Interface: more translations: the text of dialogs, tooltips and status messages (the menus and about 190 pieces of text of the pages are done in all thirty-nine languages), right-to-left layout for Arabic (the pages are not mirrored, and a wrapped sentence reads in the wrong line order), and more languages

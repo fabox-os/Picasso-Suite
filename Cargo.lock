@@ -2429,6 +2429,7 @@ dependencies = [
 name = "picasso-bridge"
 version = "0.9.0"
 dependencies = [
+ "picasso-core",
  "picasso-drp",
 ]
 
